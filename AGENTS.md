@@ -34,3 +34,33 @@ Prereq (once): `./setup.sh` — generates `apps/api/.env` from `.env.example`.
 - Teardown: `docker compose -f docker-compose-test.yml down -v`
 
 See `apps/api/tests/RUNNING_TESTS.md` for the full walkthrough and troubleshooting; see `apps/api/tests/TESTING_GUIDE.md` for test conventions and fixtures.
+
+Known test-stack issue: `requirements/test.txt` pins httpx 0.24.1, which breaks with anyio ≥ 4.15 (openai import crashes). Work around per run:
+
+```bash
+docker compose -f docker-compose-test.yml run --rm api-tests sh -c 'pip install -q "anyio<4.15" && pytest <args>'
+```
+
+## Self-host images (integration/selfhost only)
+
+The deployment in `~/docker/plane` runs images built from the `integration/selfhost` branch. Rebuild and redeploy procedure:
+
+```bash
+git checkout integration/selfhost
+
+# Build only what changed (repo root is the build context for the frontends)
+docker build -f apps/api/Dockerfile.api -t plane-api:latest apps/api
+docker build -f apps/web/Dockerfile.web -t plane-web:latest .
+docker build -f apps/space/Dockerfile.space -t plane-space:latest .
+docker build -f apps/admin/Dockerfile.admin -t plane-admin:latest .
+
+# Recreate the affected services and apply DB migrations
+cd ~/docker/plane
+docker compose up -d --force-recreate api worker beat-worker web space admin
+docker exec api python manage.py migrate
+```
+
+Notes:
+
+- The web/admin Caddy static rate limit is raised to 3000 req/min on this branch (`apps/*/caddy/Caddyfile`); rebuilding from any other branch restores the upstream 300/min and cold-cache page loads will 429.
+- When upstream `preview` moves forward, re-merge the source branches (`feat/*`, `fix/*`) into `integration/selfhost` before rebuilding.
