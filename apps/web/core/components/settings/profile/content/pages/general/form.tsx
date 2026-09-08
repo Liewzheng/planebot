@@ -100,8 +100,8 @@ export const GeneralProfileSettingsForm = observer(function GeneralProfileSettin
       .then(() => {
         setToast({
           type: TOAST_TYPE.SUCCESS,
-          title: "Success!",
-          message: "Profile picture deleted successfully.",
+          title: t("toast.success"),
+          message: t("account_settings.profile.general.toasts.picture_deleted"),
         });
         setValue("avatar_url", "");
         return;
@@ -109,8 +109,8 @@ export const GeneralProfileSettingsForm = observer(function GeneralProfileSettin
       .catch(() => {
         setToast({
           type: TOAST_TYPE.ERROR,
-          title: "Error!",
-          message: "There was some error in deleting your profile picture. Please try again.",
+          title: t("toast.error"),
+          message: t("account_settings.profile.general.toasts.picture_delete_failed"),
         });
       })
       .finally(() => {
@@ -178,14 +178,14 @@ export const GeneralProfileSettingsForm = observer(function GeneralProfileSettin
       .finally(() => setIsLoading(false));
 
     setPromiseToast(updatePromise, {
-      loading: "Updating...",
+      loading: t("account_settings.profile.general.toasts.updating"),
       success: {
-        title: "Success!",
-        message: () => `Profile updated successfully.`,
+        title: t("toast.success"),
+        message: () => t("account_settings.profile.general.toasts.updated"),
       },
       error: {
-        title: "Error!",
-        message: () => `There was some error in updating your profile. Please try again.`,
+        title: t("toast.error"),
+        message: () => t("account_settings.profile.general.toasts.update_failed"),
       },
     });
   };
@@ -277,7 +277,7 @@ export const GeneralProfileSettingsForm = observer(function GeneralProfileSettin
                   control={control}
                   name="first_name"
                   rules={{
-                    required: "Please enter first name",
+                    required: t("account_settings.profile.general.form.errors.first_name_required"),
                     validate: validatePersonName,
                   }}
                   render={({ field: { value, onChange, ref } }) => (
@@ -291,7 +291,7 @@ export const GeneralProfileSettingsForm = observer(function GeneralProfileSettin
                           value={value}
                           onChange={onChange}
                           ref={ref}
-                          placeholder="Enter your first name"
+                          placeholder={t("account_settings.profile.general.form.first_name_placeholder")}
                           maxLength={50}
                           autoComplete="on"
                         />
@@ -320,7 +320,7 @@ export const GeneralProfileSettingsForm = observer(function GeneralProfileSettin
                           value={value}
                           onChange={onChange}
                           ref={ref}
-                          placeholder="Enter your last name"
+                          placeholder={t("account_settings.profile.general.form.last_name_placeholder")}
                           maxLength={50}
                           autoComplete="on"
                         />
@@ -339,7 +339,7 @@ export const GeneralProfileSettingsForm = observer(function GeneralProfileSettin
                   control={control}
                   name="display_name"
                   rules={{
-                    required: "Display name is required.",
+                    required: t("account_settings.profile.general.form.errors.display_name_required"),
                     validate: validateDisplayName,
                   }}
                   render={({ field: { value, onChange, ref } }) => (
@@ -353,7 +353,7 @@ export const GeneralProfileSettingsForm = observer(function GeneralProfileSettin
                           value={value}
                           onChange={onChange}
                           ref={ref}
-                          placeholder="Enter your display name"
+                          placeholder={t("account_settings.profile.general.form.display_name_placeholder")}
                           maxLength={50}
                         />
                       </InputGroup>
@@ -373,7 +373,7 @@ export const GeneralProfileSettingsForm = observer(function GeneralProfileSettin
                   control={control}
                   name="email"
                   rules={{
-                    required: "Email is required.",
+                    required: t("account_settings.profile.general.form.errors.email_required"),
                   }}
                   render={({ field: { value, ref } }) => (
                     <Field name="email" invalid={Boolean(errors.email)}>
@@ -385,7 +385,7 @@ export const GeneralProfileSettingsForm = observer(function GeneralProfileSettin
                           type="email"
                           value={value}
                           ref={ref}
-                          placeholder="Enter your email"
+                          placeholder={t("account_settings.profile.general.form.email_placeholder")}
                           autoComplete="on"
                           disabled
                         />
