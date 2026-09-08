@@ -67,5 +67,23 @@
       "title": "图表",
       "description": "创建 Mermaid 图表。"
     }
+  },
+  "mathBlock": {
+    "slash_command": {
+      "title": "公式",
+      "description": "插入 LaTeX 数学公式。"
+    },
+    "node_view": {
+      "placeholder": "输入 LaTeX，例如 E = mc^2",
+      "edit_aria": "编辑 LaTeX 源码",
+      "invalid_latex": "LaTeX 无效"
+    }
+  },
+  "mathInline": {
+    "node_view": {
+      "placeholder": "输入 LaTeX，例如 E = mc^2",
+      "edit_aria": "编辑 LaTeX 源码",
+      "invalid_latex": "LaTeX 无效"
+    }
   }
 }

@@ -75,6 +75,8 @@ CUSTOM_TAGS = {
     "label",
     "input",
     "image-component",
+    "math-block",
+    "math-inline",
 }
 ALLOWED_TAGS = nh3.ALLOWED_TAGS | CUSTOM_TAGS
 
@@ -113,6 +115,12 @@ ATTRIBUTES = {
     },
     "a": {"href", "target"},
     # editor node/tag attributes
+    "math-block": {
+        "data-latex",
+    },
+    "math-inline": {
+        "data-latex",
+    },
     "image-component": {
         "id",
         "width",

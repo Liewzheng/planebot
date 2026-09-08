@@ -213,9 +213,15 @@ catalogs:
     '@types/jscodeshift':
       specifier: ^17.3.0
       version: 17.3.0
+    '@types/katex':
+      specifier: ^0.16.7
+      version: 0.16.8
     '@types/lodash-es':
       specifier: 4.17.12
       version: 4.17.12
+    '@types/markdown-it':
+      specifier: 14.1.2
+      version: 14.1.2
     '@types/mdast':
       specifier: ^4.0.4
       version: 4.0.4
@@ -339,6 +345,9 @@ catalogs:
     jsx-dom-cjs:
       specifier: ^8.0.3
       version: 8.1.6
+    katex:
+      specifier: 0.16.11
+      version: 0.16.11
     linkifyjs:
       specifier: ^4.3.2
       version: 4.3.2
@@ -639,6 +648,9 @@ importers:
       isbot:
         specifier: 'catalog:'
         version: 5.2.1
+      katex:
+        specifier: 'catalog:'
+        version: 0.16.11
       lodash-es:
         specifier: 4.18.1
         version: 4.18.1
@@ -926,6 +938,9 @@ importers:
       isbot:
         specifier: 'catalog:'
         version: 5.2.1
+      katex:
+        specifier: 'catalog:'
+        version: 0.16.11
       lodash-es:
         specifier: 4.18.1
         version: 4.18.1
@@ -1107,6 +1122,9 @@ importers:
       isbot:
         specifier: 'catalog:'
         version: 5.2.1
+      katex:
+        specifier: 'catalog:'
+        version: 0.16.11
       lodash-es:
         specifier: 4.18.1
         version: 4.18.1
@@ -1403,6 +1421,9 @@ importers:
       jsx-dom-cjs:
         specifier: 'catalog:'
         version: 8.1.6
+      katex:
+        specifier: 'catalog:'
+        version: 0.16.11
       linkifyjs:
         specifier: 'catalog:'
         version: 4.3.2
@@ -1427,6 +1448,9 @@ importers:
       react-dom:
         specifier: 19.2.8
         version: 19.2.8(react@19.2.8)
+      react-i18next:
+        specifier: 'catalog:'
+        version: 16.6.6(i18next@25.10.9(typescript@5.8.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.8.3)
       tippy.js:
         specifier: 'catalog:'
         version: 6.3.7
@@ -1455,9 +1479,15 @@ importers:
       '@plane/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
+      '@types/katex':
+        specifier: 'catalog:'
+        version: 0.16.8
       '@types/lodash-es':
         specifier: 'catalog:'
         version: 4.17.12
+      '@types/markdown-it':
+        specifier: 'catalog:'
+        version: 14.1.2
       '@types/node':
         specifier: 'catalog:'
         version: 22.12.0
@@ -1515,7 +1545,7 @@ importers:
         version: 19.2.8
       react-i18next:
         specifier: 'catalog:'
-        version: 16.6.6(i18next@25.10.9(typescript@5.8.3))(react@19.2.8)(typescript@5.8.3)
+        version: 16.6.6(i18next@25.10.9(typescript@5.8.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.8.3)
     devDependencies:
       '@plane/typescript-config':
         specifier: workspace:*
@@ -5263,6 +5293,9 @@ packages:
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
+  '@types/katex@0.16.8':
+    resolution: {integrity: sha512-trgaNyfU+Xh2Tc+ABIb44a5AYUpicB3uwirOioeOkNPPbmgRNtcWyDeeFRzjPZENO9Vq8gvVqfhaaXWLlevVwg==}
+
   '@types/linkify-it@3.0.5':
     resolution: {integrity: sha512-yg6E+u0/+Zjva+buc3EIb+29XEg4wltq7cSmd4Uc2EE/1nUVmxyzpX6gUXD0V8jIrG0r7YeOGVIbYRkxeooCtw==}
 
@@ -7465,6 +7498,10 @@ packages:
 
   jsx-dom-cjs@8.1.6:
     resolution: {integrity: sha512-aeGqlIZ3IBKF2+B0cKXZGh10OHxxABuHD9tlS10suXDXXG0c4wMkJios9xVslduflSNEQJVlicME3EBCYgxGvA==}
+
+  katex@0.16.11:
+    resolution: {integrity: sha512-RQrI8rlHY92OLf3rho/Ts8i/XvjgguEjOkO1BEXcU3N8BqPpSzBNwV/G0Ukr+P/l3ivvJUE/Fa/CwbS6HesGNQ==}
+    hasBin: true
 
   katex@0.16.47:
     resolution: {integrity: sha512-Eeo8Ys1doU1z+x8AZsPpQu+p/QcZBI5PeOo7QGQdy2x2m0MU/hYagBbGOmXwr5KVbEfVuWv9LpnQWeehogurjg==}
@@ -12980,6 +13017,8 @@ snapshots:
 
   '@types/json-schema@7.0.15': {}
 
+  '@types/katex@0.16.8': {}
+
   '@types/linkify-it@3.0.5': {}
 
   '@types/linkify-it@5.0.0': {}
@@ -15379,6 +15418,10 @@ snapshots:
     dependencies:
       csstype: 3.2.3
 
+  katex@0.16.11:
+    dependencies:
+      commander: 8.3.0
+
   katex@0.16.47:
     dependencies:
       commander: 8.3.0
@@ -16981,7 +17024,7 @@ snapshots:
     dependencies:
       react: 19.2.8
 
-  react-i18next@16.6.6(i18next@25.10.9(typescript@5.8.3))(react@19.2.8)(typescript@5.8.3):
+  react-i18next@16.6.6(i18next@25.10.9(typescript@5.8.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.8.3):
     dependencies:
       '@babel/runtime': 7.29.7
       html-parse-stringify: 3.0.1
@@ -16989,6 +17032,7 @@ snapshots:
       react: 19.2.8
       use-sync-external-store: 1.6.0(react@19.2.8)
     optionalDependencies:
+      react-dom: 19.2.8(react@19.2.8)
       typescript: 5.8.3
 
   react-is@19.2.8: {}
