@@ -1032,6 +1032,9 @@ importers:
       '@headlessui/react':
         specifier: 'catalog:'
         version: 2.2.10(patch_hash=8724cd84d4ad5d9c0d0631bc7d2636b91579f2d8f4033e62484c12b81916e354)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@hocuspocus/provider':
+        specifier: 'catalog:'
+        version: 2.15.2(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27)
       '@makeplane/propel':
         specifier: 'catalog:'
         version: 0.3.0(@date-fns/tz@1.4.1)(@types/react@19.2.17)(date-fns@4.1.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.1.17)
