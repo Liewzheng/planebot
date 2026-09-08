@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { Smile } from "lucide-react";
+import { Smile, Workflow } from "lucide-react";
 import {
   ChatOutline,
   CodeOutline,
@@ -178,6 +178,16 @@ export const getSlashCommandFilteredSections =
             searchTerms: ["codeblock"],
             icon: <CodeOutline className="size-3.5" />,
             command: ({ editor, range }) => editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
+          },
+          {
+            commandKey: "diagram",
+            key: "diagram",
+            title: "Diagram",
+            description: "Create a Mermaid diagram.",
+            searchTerms: ["diagram", "mermaid", "chart", "flowchart", "graph"],
+            icon: <Workflow className="size-3.5" />,
+            command: ({ editor, range }) =>
+              editor.chain().focus().deleteRange(range).toggleCodeBlock({ language: "mermaid" }).run(),
           },
           {
             commandKey: "callout",

@@ -13,10 +13,12 @@ import { useState } from "react";
 // ui
 import { Tooltip } from "@plane/propel/tooltip";
 // plane utils
-import { cn } from "@plane/utils";
+import { cn, isMermaidLanguage } from "@plane/utils";
 // types
 import type { TCodeBlockAttributes } from "./types";
 import { ECodeBlockAttributeNames } from "./types";
+// components
+import { MermaidDiagram } from "./mermaid-diagram";
 
 // we just have ts support for now
 const lowlight = createLowlight(common);
@@ -67,6 +69,8 @@ export function CodeBlockComponent({ node }: Props) {
       <pre className="my-2 rounded-lg bg-layer-3 p-4 text-primary">
         <NodeViewContent as="code" className="whitespace-pre-wrap" />
       </pre>
+
+      {isMermaidLanguage(attrs[ECodeBlockAttributeNames.LANGUAGE]) && <MermaidDiagram source={node.textContent} />}
     </NodeViewWrapper>
   );
 }
