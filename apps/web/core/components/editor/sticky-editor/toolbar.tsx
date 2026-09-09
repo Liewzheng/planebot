@@ -18,6 +18,7 @@ import type { ToolbarMenuItem } from "@plane/editor";
 import { TOOLBAR_ITEMS } from "@plane/editor";
 // helpers
 import { ColorPalette } from "./color-palette";
+import { useTranslation } from "@plane/i18n";
 
 type Props = {
   executeCommand: (item: ToolbarMenuItem) => void;
@@ -30,6 +31,7 @@ const toolbarItems = TOOLBAR_ITEMS.sticky;
 
 export function StickyEditorToolbar(props: Props) {
   const { executeCommand, editorRef, handleColorChange, handleDelete } = props;
+  const { t } = useTranslation();
 
   // State to manage active states of toolbar items
   const [activeStates, setActiveStates] = useState<Record<string, boolean>>({});
@@ -103,7 +105,7 @@ export function StickyEditorToolbar(props: Props) {
         </div>
       </div>
       {/* delete action */}
-      <Tooltip label="Delete">
+      <Tooltip label={t("delete")}>
         <button type="button" onClick={handleDelete} className="my-auto text-primary/50">
           <DeleteOutline className="size-4" />
         </button>

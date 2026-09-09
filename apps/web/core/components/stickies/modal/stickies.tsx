@@ -15,6 +15,7 @@ import { useSticky } from "@/hooks/use-stickies";
 import { StickiesTruncated } from "../layout/stickies-truncated";
 import { useStickyOperations } from "../sticky/use-operations";
 import { StickySearch } from "./search";
+import { useTranslation } from "@plane/i18n";
 
 type TProps = {
   handleClose?: () => void;
@@ -22,6 +23,7 @@ type TProps = {
 
 export const Stickies = observer(function Stickies(props: TProps) {
   const { handleClose } = props;
+  const { t } = useTranslation();
   // navigation
   const { workspaceSlug } = useParams();
   // store hooks
@@ -55,7 +57,7 @@ export const Stickies = observer(function Stickies(props: TProps) {
                 <div
                   className={`h-4 w-4 animate-spin rounded-full border-2 border-accent-strong border-t-transparent`}
                   role="status"
-                  aria-label="loading"
+                  aria-label={t("loading")}
                 />
               </div>
             )}

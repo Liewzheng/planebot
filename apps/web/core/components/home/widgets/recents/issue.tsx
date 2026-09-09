@@ -21,6 +21,7 @@ import { IssueIdentifier } from "@/components/issues/issue-detail/issue-identifi
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useProject } from "@/hooks/store/use-project";
 import { useProjectState } from "@/hooks/store/use-project-state";
+import { useTranslation } from "@plane/i18n";
 
 type BlockProps = {
   activity: TActivityEntityData;
@@ -29,6 +30,7 @@ type BlockProps = {
 };
 export const RecentIssue = observer(function RecentIssue(props: BlockProps) {
   const { activity, ref, workspaceSlug } = props;
+  const { t } = useTranslation();
   // hooks
   const { getStateById } = useProjectState();
   const { setPeekIssue } = useIssueDetail();
@@ -125,7 +127,7 @@ export const RecentIssue = observer(function RecentIssue(props: BlockProps) {
                 buttonVariant={issueDetails?.assignees?.length > 0 ? "transparent-without-text" : "border-without-text"}
                 buttonClassName={issueDetails?.assignees?.length > 0 ? "hover:bg-transparent px-0" : ""}
                 showTooltip={issueDetails?.assignees?.length === 0}
-                placeholder="Assignees"
+                placeholder={t("assignees")}
                 optionsClassName="z-10"
                 tooltipContent=""
               />

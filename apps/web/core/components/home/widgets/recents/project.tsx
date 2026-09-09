@@ -12,6 +12,7 @@ import { calculateTimeAgo } from "@plane/utils";
 // components
 import { ListItem } from "@/components/core/list";
 import { MemberDropdown } from "@/components/dropdowns/member/dropdown";
+import { useTranslation } from "@plane/i18n";
 // helpers
 
 type BlockProps = {
@@ -21,6 +22,7 @@ type BlockProps = {
 };
 export function RecentProject(props: BlockProps) {
   const { activity, ref, workspaceSlug } = props;
+  const { t } = useTranslation();
   // router
   const router = useRouter();
   // derived values
@@ -63,7 +65,7 @@ export function RecentProject(props: BlockProps) {
                 }
                 buttonClassName={projectDetails?.project_members?.length > 0 ? "hover:bg-transparent px-0" : ""}
                 showTooltip={projectDetails?.project_members?.length === 0}
-                placeholder="Assignees"
+                placeholder={t("assignees")}
                 optionsClassName="z-10"
                 tooltipContent=""
               />
