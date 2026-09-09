@@ -26,6 +26,12 @@
 
 Meet [Plane](https://plane.so/), an open-source project management tool to track issues, run ~sprints~ cycles, and manage product roadmaps without the chaos of managing the tool itself. 🧘‍♀️
 
+> **About this fork**
+>
+> **planebot** is a community fork of [Plane](https://github.com/makeplane/plane), maintained for self-hosted teams. It stays close to upstream CE and adds community-driven features (AI service accounts, Mermaid/KaTeX rendering, localization fixes, and more).
+>
+> Huge thanks to [Plane Software, Inc.](https://plane.so) and all upstream contributors for building and open-sourcing Plane under the AGPL-3.0 license. This fork exists because of their work—please consider [giving the original repository a star](https://github.com/makeplane/plane).
+
 > Plane is evolving every day. Your suggestions, ideas, and reported bugs help us immensely. Do not hesitate to join in the conversation on [Forum](https://forum.plane.so) or raise a GitHub issue. We read everything and respond to most.
 
 ## 🚀 Installation
