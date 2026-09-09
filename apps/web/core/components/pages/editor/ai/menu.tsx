@@ -25,6 +25,7 @@ import { AI_EDITOR_TASKS, LOADING_TEXTS } from "@plane/constants";
 import type { TTaskPayload } from "@/services/ai.service";
 import { AIService } from "@/services/ai.service";
 import { AskPiMenu } from "./ask-pi-menu";
+import { useTranslation } from "@plane/i18n";
 const aiService = new AIService();
 
 type Props = {
@@ -70,6 +71,7 @@ const TONES_LIST = [
 
 export function EditorAIMenu(props: Props) {
   const { editorRef, isOpen, onClose, workspaceId, workspaceSlug } = props;
+  const { t } = useTranslation();
   // states
   const [activeTask, setActiveTask] = useState<AI_EDITOR_TASKS | null>(null);
   const [response, setResponse] = useState<string | undefined>(undefined);
@@ -162,7 +164,6 @@ export function EditorAIMenu(props: Props) {
         <div className="w-[210px] flex-shrink-0 overflow-y-auto px-2 py-2.5 transition-all">
           {MENU_ITEMS.map((item) => {
             const isActiveTask = activeTask === item.key;
-
             return (
               <button
                 key={item.key}
@@ -238,7 +239,7 @@ export function EditorAIMenu(props: Props) {
                       >
                         Replace selection
                       </button>
-                      <Tooltip label="Add to next line">
+                      <Tooltip label={t("add_to_next_line")}>
                         <button
                           type="button"
                           className="grid size-6 flex-shrink-0 place-items-center rounded-sm outline-none hover:bg-layer-1"

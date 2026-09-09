@@ -15,6 +15,7 @@ import { RichTextEditor } from "@/components/editor/rich-text";
 // helpers
 // hooks
 import { useWorkspace } from "@/hooks/store/use-workspace";
+import { useTranslation } from "@plane/i18n";
 
 type Props = {
   handleInsertText: (insertOnNextLine: boolean) => void;
@@ -32,6 +33,8 @@ export function AskPiMenu(props: Props) {
   const { getWorkspaceBySlug } = useWorkspace();
   // derived values
   const workspaceId = getWorkspaceBySlug(workspaceSlug)?.id ?? "";
+
+  const { t } = useTranslation();
 
   return (
     <>
@@ -65,7 +68,7 @@ export function AskPiMenu(props: Props) {
               >
                 Replace selection
               </button>
-              <Tooltip label="Add to next line">
+              <Tooltip label={t("add_to_next_line")}>
                 <button
                   type="button"
                   className="grid size-6 flex-shrink-0 place-items-center rounded-sm outline-none hover:bg-layer-1"
