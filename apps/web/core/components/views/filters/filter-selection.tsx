@@ -88,7 +88,7 @@ export const ViewFiltersSelection = observer(function ViewFiltersSelection(props
                 favorites: !filters.filters?.favorites,
               })
             }
-            title="Favorites"
+            title={t("favorites")}
           />
         </div>
 

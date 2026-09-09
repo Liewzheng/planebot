@@ -156,7 +156,7 @@ export const WorkspaceDetails = observer(function WorkspaceDetails() {
                   <img
                     src={getFileURL(workspaceLogo)}
                     className="absolute top-0 left-0 size-full rounded-md object-cover"
-                    alt="Workspace Logo"
+                    alt={t("workspace_logo")}
                   />
                 </div>
               ) : (
