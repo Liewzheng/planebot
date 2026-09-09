@@ -28,6 +28,26 @@ lowlight.register("ts", ts);
 
 const MERMAID_LANGUAGE = "mermaid";
 
+// Mermaid renders its SVG with width="100%", which collapses when used as an
+// <img> src. For the full-screen preview we inject an explicit width/height
+// (derived from the viewBox) so the image has an intrinsic size.
+const patchSvgForPreview = (svg: string): string => {
+  const vb = svg.match(/viewBox="([^"]+)"/);
+  if (!vb) return svg;
+  const [, , w, h] = vb[1]
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  if (!w || !h) return svg;
+  return svg
+    .replace(/\swidth="[^"]*"/, "")
+    .replace(/\sheight="[^"]*"/, "")
+    .replace(/<svg/, `<svg width="${w}" height="${h}"`);
+};
+
+const svgToDataUri = (svg: string): string =>
+  `data:image/svg+xml;charset=utf-8,${encodeURIComponent(patchSvgForPreview(svg))}`;
+
 const hashSource = async (source: string): Promise<string> => {
   // crypto.subtle is only available in secure contexts; fall back to a fast
   // string hash so self-hosted HTTP IPs still get cache invalidation.
@@ -62,6 +82,7 @@ export function CodeBlockComponent(props: NodeViewProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [imageSrc, setImageSrc] = useState<string | undefined>(undefined);
   const [imageDownloadSrc, setImageDownloadSrc] = useState<string | undefined>(undefined);
+  const [cachedSvg, setCachedSvg] = useState<string | undefined>(undefined);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   // derived values
@@ -103,21 +124,39 @@ export function CodeBlockComponent(props: NodeViewProps) {
   const showImage = renderMermaid && hideSource && !!mermaidImageId && !isImageStale;
   const showLive = renderMermaid && (!hideSource || !mermaidImageId || isImageStale);
 
-  // resolve the cached image URL when displayed. Prefer the stored workspace
+  // resolve the cached image locale when displayed. Prefer the stored workspace
   // asset URL (served inline); fall back to resolving by asset id for legacy
-  // blocks that only store mermaidImageId.
+  // blocks that only store mermaidImageId. We also fetch the raw SVG text so it
+  // can be rendered inline (mermaid svg uses width="100%", which collapses in an
+  // <img>), and build a sized data URI for the full-screen preview.
   useEffect(() => {
+    let cancelled = false;
+    const fetchSvg = async (url: string) => {
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          const text = await res.text();
+          if (!cancelled && text.trimStart().startsWith("<svg")) setCachedSvg(text);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
     if (!showImage || !mermaidImageId) {
       setImageSrc(undefined);
       setImageDownloadSrc(undefined);
+      setCachedSvg(undefined);
       return;
     }
+
     if (mermaidImageUrl) {
       setImageSrc(mermaidImageUrl);
       setImageDownloadSrc(mermaidImageUrl);
+      void fetchSvg(mermaidImageUrl);
       return;
     }
-    let cancelled = false;
+
     const resolve = async () => {
       try {
         const getSrc = extension.options.getAssetSrc as (path: string) => Promise<string> | undefined;
@@ -127,6 +166,7 @@ export function CodeBlockComponent(props: NodeViewProps) {
         if (!cancelled) {
           setImageSrc(src);
           setImageDownloadSrc(downloadSrc);
+          void fetchSvg(src);
         }
       } catch (error) {
         console.error("Failed to resolve mermaid image source:", error);
@@ -278,23 +318,40 @@ export function CodeBlockComponent(props: NodeViewProps) {
 
       {showLive && renderMermaid && <MermaidDiagram source={node.textContent} />}
 
-      {showImage && imageSrc && (
+      {showImage && (cachedSvg || imageSrc) && (
         <div className="my-2 flex justify-center rounded-lg border border-subtle bg-layer-3 p-4">
-          <button type="button" onClick={() => setIsPreviewOpen(true)} className="mermaid-diagram-image-button">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={imageSrc}
-              alt={altText}
-              className="mermaid-diagram-image max-w-full cursor-zoom-in rounded-md object-contain"
+          {cachedSvg ? (
+            <button
+              type="button"
+              onClick={() => setIsPreviewOpen(true)}
+              className="mermaid-diagram-image-button mermaid-diagram-image max-w-full cursor-zoom-in"
+              aria-label={`View diagram: ${altText}`}
+              // mermaid svg uses width="100%", so inject it into a sized element
+              // rather than using an <img> (which collapses to zero width).
+              dangerouslySetInnerHTML={{ __html: cachedSvg }}
             />
-          </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsPreviewOpen(true)}
+              className="mermaid-diagram-image-button"
+              aria-label={`View diagram: ${altText}`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imageSrc}
+                alt={altText}
+                className="mermaid-diagram-image max-w-full cursor-zoom-in rounded-md object-contain"
+              />
+            </button>
+          )}
         </div>
       )}
 
-      {isPreviewOpen && imageSrc && (
+      {isPreviewOpen && cachedSvg && (
         <ImageFullScreenModal
-          src={imageSrc}
-          downloadSrc={imageDownloadSrc ?? imageSrc}
+          src={svgToDataUri(cachedSvg)}
+          downloadSrc={imageDownloadSrc ?? imageSrc ?? ""}
           isFullScreenEnabled={isPreviewOpen}
           toggleFullScreenMode={setIsPreviewOpen}
           aspectRatio={16 / 9}
