@@ -6,7 +6,9 @@
 
 import { useEffect, useRef, useState } from "react";
 // plane utils
-import { formatMermaidError, getMermaidTheme, cn } from "@plane/utils";
+import { cn } from "@plane/utils";
+// local imports
+import { formatMermaidError, renderMermaidToSVG } from "./mermaid-render";
 
 type Props = {
   source: string;
@@ -14,16 +16,6 @@ type Props = {
 
 // debounce delay (ms) before re-rendering the diagram while the source is being edited
 const RENDER_DEBOUNCE_MS = 400;
-
-// mermaid is dynamically imported on the client to keep it out of the initial bundle
-let mermaidModulePromise: Promise<typeof import("mermaid").default> | undefined;
-const loadMermaid = () => {
-  mermaidModulePromise ??= import("mermaid").then((module) => module.default);
-  return mermaidModulePromise;
-};
-
-let initializedTheme: string | undefined;
-let renderIdCounter = 0;
 
 const getThemeAttribute = (element: HTMLElement | null): string | null => {
   const themedAncestor = element?.closest("[data-theme]");
@@ -62,23 +54,14 @@ export function MermaidDiagram({ source }: Props) {
     const renderTimer = setTimeout(() => {
       void (async () => {
         try {
-          const mermaid = await loadMermaid();
+          const svg = await renderMermaidToSVG(source, themeAttribute ?? undefined);
           if (cancelled) return;
-
-          const theme = getMermaidTheme(themeAttribute);
-          if (initializedTheme !== theme) {
-            mermaid.initialize({ startOnLoad: false, theme });
-            initializedTheme = theme;
-          }
 
           const container = containerRef.current;
           if (!container) {
             setIsLoading(false);
             return;
           }
-
-          const { svg } = await mermaid.render(`mermaid-diagram-${++renderIdCounter}`, source);
-          if (cancelled) return;
 
           container.innerHTML = svg;
           setError(null);

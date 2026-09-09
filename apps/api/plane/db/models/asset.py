@@ -44,6 +44,7 @@ class FileAsset(BaseModel):
         PROJECT_COVER = "PROJECT_COVER"
         DRAFT_ISSUE_ATTACHMENT = "DRAFT_ISSUE_ATTACHMENT"
         DRAFT_ISSUE_DESCRIPTION = "DRAFT_ISSUE_DESCRIPTION"
+        MERMAID_DIAGRAM = "MERMAID_DIAGRAM"
 
     attributes = models.JSONField(default=dict)
     asset = models.FileField(upload_to=get_upload_path, max_length=800)
@@ -97,7 +98,10 @@ class FileAsset(BaseModel):
             self.EntityTypeContext.COMMENT_DESCRIPTION,
             self.EntityTypeContext.PAGE_DESCRIPTION,
             self.EntityTypeContext.DRAFT_ISSUE_DESCRIPTION,
+            self.EntityTypeContext.MERMAID_DIAGRAM,
         ]:
-            return f"/api/assets/v2/workspaces/{self.workspace.slug}/projects/{self.project_id}/{self.id}/"
+            if self.project_id:
+                return f"/api/assets/v2/workspaces/{self.workspace.slug}/projects/{self.project_id}/{self.id}/"
+            return f"/api/assets/v2/workspaces/{self.workspace.slug}/{self.id}/"
 
         return None

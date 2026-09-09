@@ -93,6 +93,10 @@ export const useEditorConfig = () => {
         },
         upload: uploadFile,
         duplicate: duplicateFile,
+        uploadMermaidDiagram: projectId
+          ? async (svgBlob: Blob, sourceHash: string) =>
+              fileService.uploadMermaidDiagram(workspaceSlug, projectId, svgBlob, sourceHash)
+          : undefined,
         validation: {
           maxFileSize,
         },
