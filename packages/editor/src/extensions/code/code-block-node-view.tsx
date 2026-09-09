@@ -68,6 +68,7 @@ export function CodeBlockComponent(props: NodeViewProps) {
   const attrs = node.attrs as TCodeBlockAttributes;
   const currentLanguage = attrs[ECodeBlockAttributeNames.LANGUAGE] ?? "";
   const mermaidImageId = attrs[ECodeBlockAttributeNames.MERMAID_IMAGE_ID] ?? null;
+  const mermaidImageUrl = attrs[ECodeBlockAttributeNames.MERMAID_IMAGE_URL] ?? null;
   const cachedSourceHash = attrs[ECodeBlockAttributeNames.MERMAID_SOURCE_HASH] ?? null;
   const hideSource = attrs[ECodeBlockAttributeNames.MERMAID_HIDE_SOURCE] ?? false;
 
@@ -102,11 +103,18 @@ export function CodeBlockComponent(props: NodeViewProps) {
   const showImage = renderMermaid && hideSource && !!mermaidImageId && !isImageStale;
   const showLive = renderMermaid && (!hideSource || !mermaidImageId || isImageStale);
 
-  // resolve the cached image URL when displayed
+  // resolve the cached image URL when displayed. Prefer the stored workspace
+  // asset URL (served inline); fall back to resolving by asset id for legacy
+  // blocks that only store mermaidImageId.
   useEffect(() => {
     if (!showImage || !mermaidImageId) {
       setImageSrc(undefined);
       setImageDownloadSrc(undefined);
+      return;
+    }
+    if (mermaidImageUrl) {
+      setImageSrc(mermaidImageUrl);
+      setImageDownloadSrc(mermaidImageUrl);
       return;
     }
     let cancelled = false;
@@ -128,7 +136,13 @@ export function CodeBlockComponent(props: NodeViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [showImage, mermaidImageId, extension.options.getAssetSrc, extension.options.getAssetDownloadSrc]);
+  }, [
+    showImage,
+    mermaidImageId,
+    mermaidImageUrl,
+    extension.options.getAssetSrc,
+    extension.options.getAssetDownloadSrc,
+  ]);
 
   // languages supported by lowlight plus mermaid (rendered as a diagram, not highlighted)
   const languageOptions = useMemo(() => {
@@ -184,9 +198,10 @@ export function CodeBlockComponent(props: NodeViewProps) {
       const themeAttribute = document.documentElement.getAttribute("data-theme");
       const svg = await renderMermaidToSVG(node.textContent, themeAttribute ?? undefined);
       const svgBlob = new Blob([svg], { type: "image/svg+xml" });
-      const { assetId } = await upload(svgBlob, sourceHash);
+      const { assetId, assetUrl } = await upload(svgBlob, sourceHash);
       updateAttributes({
         [ECodeBlockAttributeNames.MERMAID_IMAGE_ID]: assetId,
+        [ECodeBlockAttributeNames.MERMAID_IMAGE_URL]: assetUrl,
         [ECodeBlockAttributeNames.MERMAID_SOURCE_HASH]: sourceHash,
         [ECodeBlockAttributeNames.MERMAID_HIDE_SOURCE]: true,
       });
