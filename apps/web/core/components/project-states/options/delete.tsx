@@ -8,6 +8,7 @@ import { useState } from "react";
 import { observer } from "mobx-react";
 import { CloseOutline, LoadingOutline } from "@makeplane/propel/icons";
 // plane imports
+import { useTranslation } from "@plane/i18n";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import { Tooltip } from "@makeplane/propel/components/tooltip";
 import type { IState, TStateOperationsCallbacks } from "@plane/types";
@@ -24,6 +25,7 @@ type TStateDelete = {
 
 export const StateDelete = observer(function StateDelete(props: TStateDelete) {
   const { totalStates, state, deleteStateCallback } = props;
+  const { t } = useTranslation();
   // hooks
   const { isMobile } = usePlatformOS();
   // states
@@ -67,7 +69,7 @@ export const StateDelete = observer(function StateDelete(props: TStateDelete) {
         handleSubmit={handleDeleteState}
         isSubmitting={isDelete}
         isOpen={isDeleteModal}
-        title="Delete State"
+        title={t("delete_state")}
         content={
           <>
             Are you sure you want to delete state- <span className="font-medium text-primary">{state?.name}</span>? All

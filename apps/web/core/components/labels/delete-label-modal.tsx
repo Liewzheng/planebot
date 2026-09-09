@@ -7,6 +7,8 @@
 import { useState } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
+// plane imports
+import { useTranslation } from "@plane/i18n";
 // types
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import type { IIssueLabel } from "@plane/types";
@@ -23,6 +25,7 @@ type Props = {
 
 export const DeleteLabelModal = observer(function DeleteLabelModal(props: Props) {
   const { isOpen, onClose, data } = props;
+  const { t } = useTranslation();
   // router
   const { workspaceSlug, projectId } = useParams();
   // store hooks
@@ -61,7 +64,7 @@ export const DeleteLabelModal = observer(function DeleteLabelModal(props: Props)
       handleSubmit={handleDeletion}
       isSubmitting={isDeleteLoading}
       isOpen={isOpen}
-      title="Delete Label"
+      title={t("delete_label")}
       content={
         <>
           Are you sure you want to delete <span className="font-medium text-primary">{data?.name}</span>? This will

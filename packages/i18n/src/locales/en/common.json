@@ -874,5 +874,14 @@
       "description": "Export work items to a JSON file.",
       "short_description": "Export as json"
     }
-  }
+  },
+  "delete_state": "Delete State",
+  "delete_label": "Delete Label",
+  "delete_cycle": "Delete cycle",
+  "delete_webhook": "Delete webhook",
+  "delete_page": "Delete page",
+  "estimates_list": "Estimates list",
+  "archived_estimates": "Archived estimates",
+  "toggle_webhook": "Toggle webhook",
+  "enable_webhook": "Enable webhook"
 }
