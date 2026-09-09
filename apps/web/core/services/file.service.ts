@@ -103,9 +103,12 @@ export class FileService extends APIService {
     sourceHash: string
   ): Promise<{ assetId: string; assetUrl: string }> {
     const svgFile = new File([svgBlob], `${sourceHash}.svg`, { type: "image/svg+xml" });
-    const fileMetaData = await getFileMetaDataForUpload(svgFile);
+    // The signature-based MIME detector cannot identify SVG (XML), so set the
+    // metadata directly instead of relying on getFileMetaDataForUpload.
     return this.post(`/api/assets/v2/workspaces/${workspaceSlug}/`, {
-      ...fileMetaData,
+      name: svgFile.name,
+      size: svgFile.size,
+      type: "image/svg+xml",
       entity_type: "MERMAID_DIAGRAM",
       entity_identifier: projectId,
       mermaid_source_hash: sourceHash,
