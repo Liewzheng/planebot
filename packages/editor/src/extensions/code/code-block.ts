@@ -94,6 +94,10 @@ export const CodeBlock = Node.create<CodeBlockOptions>({
         default: null,
         rendered: false,
       },
+      mermaidImageUrl: {
+        default: null,
+        rendered: false,
+      },
       mermaidSourceHash: {
         default: null,
         rendered: false,

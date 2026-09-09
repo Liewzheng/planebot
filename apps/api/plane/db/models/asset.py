@@ -98,10 +98,15 @@ class FileAsset(BaseModel):
             self.EntityTypeContext.COMMENT_DESCRIPTION,
             self.EntityTypeContext.PAGE_DESCRIPTION,
             self.EntityTypeContext.DRAFT_ISSUE_DESCRIPTION,
-            self.EntityTypeContext.MERMAID_DIAGRAM,
         ]:
             if self.project_id:
                 return f"/api/assets/v2/workspaces/{self.workspace.slug}/projects/{self.project_id}/{self.id}/"
+            return f"/api/assets/v2/workspaces/{self.workspace.slug}/{self.id}/"
+
+        # Mermaid diagrams are served by the workspace asset endpoint with an
+        # inline disposition (the project-path endpoint forces attachment, which
+        # makes browsers download instead of rendering the image).
+        if self.entity_type == self.EntityTypeContext.MERMAID_DIAGRAM:
             return f"/api/assets/v2/workspaces/{self.workspace.slug}/{self.id}/"
 
         return None
