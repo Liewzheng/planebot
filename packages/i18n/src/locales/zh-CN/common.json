@@ -960,5 +960,9 @@
   "upload_progress": "上传进度",
   "view_does_not_exist": "视图不存在",
   "view_work_items_will_appear_here": "工作项将显示在这里",
-  "work_item_does_not_exist": "工作项不存在"
+  "work_item_does_not_exist": "工作项不存在",
+  "no_matching_cycles": "没有匹配的周期",
+  "no_matching_modules": "没有匹配的模块",
+  "plane_work_items": "Plane 工作项",
+  "user": "用户"
 }

@@ -301,7 +301,7 @@ export const ActiveCycleStats = observer(function ActiveCycleStats(props: Active
                         title={
                           <div className="flex items-center gap-2">
                             <div className="h-5 w-5 rounded-full border-2 border-subtle bg-layer-1">
-                              <img src={userImage} height="100%" width="100%" className="rounded-full" alt="User" />
+                              <img src={userImage} height="100%" width="100%" className="rounded-full" alt={t("user")} />
                             </div>
                             <span>{t("no_assignee")}</span>
                           </div>
