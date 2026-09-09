@@ -40,18 +40,30 @@ export const MathInlineExtension = MathInlineExtensionConfig.extend({
   },
 
   addInputRules() {
+    // input rules only behave correctly when the typed text is the closing
+    // `$` itself, so anchor the match to the end of the text before the
+    // cursor (a `$...$` span in the middle of a pasted/inserted string must
+    // not match — the appendTransaction plugin below converts those)
+    const anchoredInputRegex = new RegExp(`${MATH_INLINE_INPUT_REGEX.source}$`);
     return [
       // typing a closing `$` converts `$...$` to an inline math node.
       // the trailing typed `$` is consumed by the rule, so only the
       // matched range (without the last char) needs replacing.
       new InputRule({
-        find: MATH_INLINE_INPUT_REGEX,
+        find: anchoredInputRegex,
         handler: ({ state, range, match }) => {
           const latex = match[1];
           if (!latex || !isValidInlineMathContent(latex)) return;
+          // for multi-character inserts (paste, programmatic insertText) the
+          // rule's computed range can point outside the document or at
+          // unrelated content — bail out and let the text insert normally;
+          // the appendTransaction plugin converts those spans instead
+          if (range.from < 0 || range.to > state.doc.content.size || range.from > range.to) return;
+          // the in-document text covered by the range must be the match
+          // without the trailing typed `$`
+          if (state.doc.textBetween(range.from, range.to, "￼", "￼") !== match[0].slice(0, -1)) return;
           // a preceding `$` means this is part of a `$$` block — block math wins
-          const charBeforeMatch = state.doc.textBetween(range.from - 1, range.from, "", "￼");
-          if (charBeforeMatch === "$") return;
+          if (range.from > 0 && state.doc.textBetween(range.from - 1, range.from, "", "￼") === "$") return;
           const node = this.type.create({
             [EMathInlineAttributeNames.LATEX]: latex,
           });

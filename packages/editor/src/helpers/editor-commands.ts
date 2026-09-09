@@ -193,8 +193,11 @@ export const insertCallout = (editor: Editor, range?: Range) => {
 };
 
 export const insertMathBlock = (editor: Editor, range?: Range) => {
-  if (range) editor.chain().focus().deleteRange(range).insertMathBlock().run();
-  else editor.chain().focus().insertMathBlock().run();
+  // no .focus() here: tiptap's focus command re-focuses the editor
+  // asynchronously (requestAnimationFrame), which would steal focus back from
+  // the auto-focused source textarea of the new math block
+  if (range) editor.chain().deleteRange(range).insertMathBlock().run();
+  else editor.chain().insertMathBlock().run();
 };
 
 export const openEmojiPicker = (editor: Editor, range?: Range) => {

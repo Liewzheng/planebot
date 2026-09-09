@@ -56,7 +56,11 @@ export function MathBlockNodeView(props: NodeViewProps) {
   }, [latex]);
 
   useEffect(() => {
-    if (isEditing) textareaRef.current?.focus();
+    if (!isEditing) return;
+    // on creation ProseMirror attaches the node view's DOM only after this
+    // effect runs, and focusing a detached element is a no-op — defer a frame
+    const frame = requestAnimationFrame(() => textareaRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
   }, [isEditing]);
 
   const startEditing = () => {

@@ -22,7 +22,13 @@ export function EditorContentWrapper(props: Props) {
   return (
     <div
       tabIndex={tabIndex}
-      onFocus={() => editor?.chain().focus(undefined, { scrollIntoView: false }).run()}
+      onFocus={(event) => {
+        // only redirect focus that lands on the wrapper itself (e.g. via
+        // tabIndex); focus entering interactive elements inside node views
+        // (e.g. the math block source textarea) must stay where it is
+        if (event.target !== event.currentTarget) return;
+        editor?.chain().focus(undefined, { scrollIntoView: false }).run();
+      }}
       className={className}
     >
       <EditorContent editor={editor} id={id} />

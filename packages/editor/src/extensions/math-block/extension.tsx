@@ -57,9 +57,12 @@ export const MathBlockExtension = MathBlockExtensionConfig.extend({
           if ($from.parent.textContent.trim() !== MATH_BLOCK_DELIMITER) return false;
 
           const nodePos = $from.before();
+          // no .focus() here: the editor already has focus while typing, and
+          // tiptap's focus command re-focuses the editor asynchronously
+          // (requestAnimationFrame), which would steal focus back from the
+          // auto-focused source textarea of the new math block
           return editor
             .chain()
-            .focus()
             .deleteRange({ from: nodePos, to: nodePos + $from.parent.nodeSize })
             .insertMathBlock()
             .run();
