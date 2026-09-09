@@ -16,6 +16,23 @@ export const MERMAID_LANGUAGE = "mermaid";
 export const isMermaidLanguage = (language: unknown): boolean =>
   typeof language === "string" && language.trim().toLowerCase() === MERMAID_LANGUAGE;
 
+/**
+ * @description Mermaid diagram type keywords that unambiguously identify a diagram source
+ * when the code block has no explicit language set
+ */
+const MERMAID_DIAGRAM_TYPE_PATTERN =
+  /^(flowchart|graph)\s+(TD|TB|BT|LR|RL|SN|SF|MS|MB)\b|^(sequenceDiagram|classDiagram|stateDiagram|erDiagram|requirementDiagram|gantt|pie\b|journey|mindmap|timeline|quadrantChart|gitGraph|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment|sankey-beta|xychart-beta|block-beta|packet-beta|kanban|architecture-beta|radar|treemap)\b/;
+
+/**
+ * @description check if code block content without a language attribute looks like a Mermaid diagram
+ * @param {string} source
+ */
+export const isLikelyMermaidSource = (source: string): boolean => {
+  if (!source) return false;
+  const firstLine = source.trimStart().split("\n", 1)[0].trim();
+  return MERMAID_DIAGRAM_TYPE_PATTERN.test(firstLine);
+};
+
 export type TMermaidTheme = "default" | "dark";
 
 /**

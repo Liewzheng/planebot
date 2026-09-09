@@ -13,7 +13,7 @@ import { useMemo, useState } from "react";
 // ui
 import { Tooltip } from "@plane/propel/tooltip";
 // plane utils
-import { cn, isMermaidLanguage } from "@plane/utils";
+import { cn, isLikelyMermaidSource, isMermaidLanguage } from "@plane/utils";
 // types
 import type { TCodeBlockAttributes } from "./types";
 import { ECodeBlockAttributeNames } from "./types";
@@ -32,6 +32,12 @@ export function CodeBlockComponent(props: NodeViewProps) {
   // derived values
   const attrs = node.attrs as TCodeBlockAttributes;
   const currentLanguage = attrs[ECodeBlockAttributeNames.LANGUAGE] ?? "";
+
+  // render as a diagram when the language is mermaid, or when no language is set
+  // but the content is unmistakably a mermaid diagram (e.g. pasted without a fence language)
+  const renderMermaid =
+    isMermaidLanguage(attrs[ECodeBlockAttributeNames.LANGUAGE]) ||
+    (!currentLanguage && isLikelyMermaidSource(node.textContent));
 
   // languages supported by lowlight plus mermaid (rendered as a diagram, not highlighted)
   const languageOptions = useMemo(() => {
@@ -108,7 +114,7 @@ export function CodeBlockComponent(props: NodeViewProps) {
         <NodeViewContent as="code" className="whitespace-pre-wrap" />
       </pre>
 
-      {isMermaidLanguage(attrs[ECodeBlockAttributeNames.LANGUAGE]) && <MermaidDiagram source={node.textContent} />}
+      {renderMermaid && <MermaidDiagram source={node.textContent} />}
     </NodeViewWrapper>
   );
 }
