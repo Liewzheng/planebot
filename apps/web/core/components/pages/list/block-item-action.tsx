@@ -7,6 +7,7 @@
 import { observer } from "mobx-react";
 import { GlobeOutline, InfoOutline, LockOutline, MinusOutline } from "@makeplane/propel/icons";
 // plane imports
+import { useTranslation } from "@plane/i18n";
 import { Avatar } from "@makeplane/propel/components/avatar";
 import { Tooltip } from "@makeplane/propel/components/tooltip";
 import { FavoriteStar } from "@plane/ui";
@@ -29,6 +30,7 @@ type Props = {
 
 export const BlockItemAction = observer(function BlockItemAction(props: Props) {
   const { page, parentRef, storeType } = props;
+  const { t } = useTranslation();
   // store hooks
   const { getUserDetails } = useMember();
   // page operations
@@ -53,7 +55,7 @@ export const BlockItemAction = observer(function BlockItemAction(props: Props) {
         </Tooltip>
       </div>
       <div className="cursor-default text-tertiary">
-        <Tooltip label={access === 0 ? "Public" : "Private"}>
+        <Tooltip label={access === 0 ? t("public") : t("private")}>
           {access === 0 ? <GlobeOutline className="h-4 w-4" /> : <LockOutline className="h-4 w-4" />}
         </Tooltip>
       </div>
