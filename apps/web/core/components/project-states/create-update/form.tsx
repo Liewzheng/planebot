@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { TwitterPicker } from "react-color";
+import { useTranslation } from "@plane/i18n";
 import { Field } from "@makeplane/propel/components/field";
 import { Input, InputGroup } from "@makeplane/propel/components/input";
 import { Button } from "@plane/propel/button";
@@ -32,6 +33,8 @@ function PopoverButton({ color }: { color?: string }) {
 
 export function StateForm(props: TStateForm) {
   const { data, onSubmit, onCancel, buttonDisabled, buttonTitle } = props;
+  // translation
+  const { t } = useTranslation();
   // states
   const [formData, setFromData] = useState<Partial<IState> | undefined>(undefined);
   const [errors, setErrors] = useState<Partial<Record<keyof IState, string>> | undefined>(undefined);
@@ -51,7 +54,7 @@ export function StateForm(props: TStateForm) {
     const name = formData?.name || undefined;
     if (!formData || !name) {
       let currentErrors: Partial<Record<keyof IState, string>> = {};
-      if (!name) currentErrors = { ...currentErrors, name: "Name is required" };
+      if (!name) currentErrors = { ...currentErrors, name: t("name_is_required") };
       setErrors(currentErrors);
       return;
     }
@@ -81,7 +84,7 @@ export function StateForm(props: TStateForm) {
               id="name"
               type="text"
               name="name"
-              placeholder="Name"
+              placeholder={t("common.name")}
               value={formData?.name}
               onChange={(e) => handleFormData("name", e.target.value)}
               maxLength={100}
@@ -94,7 +97,7 @@ export function StateForm(props: TStateForm) {
         <TextArea
           id="description"
           name="description"
-          placeholder="Describe this state for your members."
+          placeholder={t("workflows.workflow_states.description_placeholder")}
           value={formData?.description}
           onChange={(e) => handleFormData("description", e.target.value)}
           hasError={(errors && Boolean(errors.description)) || false}
@@ -106,7 +109,7 @@ export function StateForm(props: TStateForm) {
             {buttonTitle}
           </Button>
           <Button type="button" variant="secondary" size="lg" disabled={buttonDisabled} onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </Button>
         </div>
       </div>

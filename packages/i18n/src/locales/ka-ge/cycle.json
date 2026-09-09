@@ -20,7 +20,15 @@
   },
   "cycle": {
     "label": "{count, plural, one {ციკლი} other {ციკლები}}",
-    "no_cycle": "ციკლი არ არის"
+    "no_cycle": "ციკლი არ არის",
+    "transfer_issues_modal": {
+      "fetch_details_error": "Unable to fetch cycle details",
+      "no_cycles": "You don’t have any current cycle. Please create one to transfer the work items.",
+      "search_placeholder": "Search for a cycle...",
+      "title": "Transfer work items",
+      "transfer_error": "Unable to transfer work items. Please try again.",
+      "transfer_success": "Work items have been transferred successfully"
+    }
   },
   "active_cycle_analytics": {
     "empty_state": {

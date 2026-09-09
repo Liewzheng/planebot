@@ -413,6 +413,29 @@
           "message": "Something went wrong."
         }
       }
+    },
+    "modals": {
+      "delete_project": {
+        "button": "Delete project",
+        "confirm_instruction": "To confirm, type {value} below:",
+        "confirm_placeholder": "Enter 'delete my project'",
+        "deleting": "Deleting",
+        "description": "Are you sure you want to delete project {name}? All of the data related to the project will be permanently removed. This action cannot be undone",
+        "title": "Delete project"
+      },
+      "leave_project": {
+        "button": "Leave Project",
+        "confirm_instruction": "To confirm, type {value} below:",
+        "confirm_placeholder": "Enter 'leave project'",
+        "description": "Are you sure you want to leave the project -{name}? All of the work items associated with you will become inaccessible.",
+        "leaving": "Leaving...",
+        "name_placeholder": "Enter project name",
+        "title": "Leave Project",
+        "toast_confirm_mismatch": "Please confirm leaving the project by typing the 'Leave Project'.",
+        "toast_fill_all": "Please fill all fields.",
+        "toast_name_mismatch": "Please enter the project name as shown in the description."
+      },
+      "name_instruction": "Enter the project name {name} to continue:"
     }
   }
 }

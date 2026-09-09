@@ -57,7 +57,6 @@
     "no_worklogs": "No worklogs yet",
     "no_history": "No history yet"
   },
-  "preferences": "პრეფერენციები",
   "language_and_time": "ენა და დრო",
   "notifications": "შეტყობინებები",
   "workspaces": "სამუშაო სივრცეები",
@@ -324,10 +323,6 @@
   "deleting": "წაშლა",
   "make_a_copy": "ასლის გაკეთება",
   "move_to_project": "პროექტში გადატანა",
-  "good": "კარგი",
-  "morning": "დილა",
-  "afternoon": "შუადღე",
-  "evening": "საღამო",
   "show_all": "ყველას ჩვენება",
   "show_less": "ნაკლების ჩვენება",
   "no_data_yet": "ჯერ მონაცემები არ არის",
@@ -866,6 +861,18 @@
       "title": "JSON",
       "description": "ექსპორტირეთ სამუშაო ელემენტები JSON ფაილში.",
       "short_description": "ექსპორტი json-ად"
+    }
+  },
+  "good_afternoon": "Good afternoon",
+  "good_evening": "Good evening",
+  "good_morning": "Good morning",
+  "please_select_at_least_one_work_item": "Please select at least one work item.",
+  "reactions": {
+    "toasts": {
+      "created": "Reaction created successfully",
+      "creation_failed": "Reaction creation failed",
+      "remove_failed": "Reaction remove failed",
+      "removed": "Reaction removed successfully"
     }
   }
 }

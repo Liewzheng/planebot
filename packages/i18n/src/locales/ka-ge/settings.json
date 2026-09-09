@@ -37,11 +37,44 @@
         "states": {
           "sending": "Sending"
         }
+      },
+      "general": {
+        "form": {
+          "display_name_placeholder": "Enter your display name",
+          "email_placeholder": "Enter your email",
+          "errors": {
+            "display_name_required": "Display name is required.",
+            "email_required": "Email is required.",
+            "first_name_required": "Please enter first name"
+          },
+          "first_name_placeholder": "Enter your first name",
+          "last_name_placeholder": "Enter your last name"
+        },
+        "toasts": {
+          "picture_delete_failed": "There was some error in deleting your profile picture. Please try again.",
+          "picture_deleted": "Profile picture deleted successfully.",
+          "update_failed": "There was some error in updating your profile. Please try again.",
+          "updated": "Profile updated successfully.",
+          "updating": "Updating..."
+        }
       }
     },
     "preferences": {
       "heading": "პრეფერენციები",
-      "description": "მორგეთ თქვენი აპლიკაციის გამოცდილება თქვენი სამუშაოს მიხედვით"
+      "description": "მორგეთ თქვენი აპლიკაციის გამოცდილება თქვენი სამუშაოს მიხედვით",
+      "select_a_language": "Select a language",
+      "start_of_week": {
+        "description": "This will change how all calendars in your app look.",
+        "title": "First day of the week"
+      },
+      "toasts": {
+        "language_update_failed": "Failed to update language",
+        "language_updated": "Language updated successfully",
+        "start_of_week_update_failed": "Please try again later.",
+        "start_of_week_updated": "First day of the week updated successfully",
+        "timezone_update_failed": "Failed to update timezone",
+        "timezone_updated": "Timezone updated successfully"
+      }
     },
     "notifications": {
       "heading": "ელფოსტის შეტყობინებები",

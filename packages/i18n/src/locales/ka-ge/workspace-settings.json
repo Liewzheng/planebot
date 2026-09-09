@@ -626,6 +626,12 @@
         "title": "ჯერ იმპორტები არ არის",
         "description": "იპოვეთ ყველა თქვენი წინა იმპორტი აქ და ჩამოტვირთეთ ისინი."
       }
+    },
+    "toasts": {
+      "picture_remove_failed": "There was some error in deleting your profile picture. Please try again.",
+      "picture_removed": "Workspace picture removed successfully.",
+      "updated": "Workspace updated successfully",
+      "url_copied": "Workspace URL copied to the clipboard."
     }
   }
 }

@@ -61,5 +61,29 @@
       "use_this": "Use this",
       "refine": "Refine"
     }
+  },
+  "mathBlock": {
+    "node_view": {
+      "edit_aria": "Edit LaTeX source",
+      "invalid_latex": "Invalid LaTeX",
+      "placeholder": "Enter LaTeX, e.g. E = mc^2"
+    },
+    "slash_command": {
+      "description": "Insert a LaTeX math equation.",
+      "title": "Math"
+    }
+  },
+  "mathInline": {
+    "node_view": {
+      "edit_aria": "Edit LaTeX source",
+      "invalid_latex": "Invalid LaTeX",
+      "placeholder": "Enter LaTeX, e.g. E = mc^2"
+    }
+  },
+  "slash_commands": {
+    "diagram": {
+      "description": "Create a Mermaid diagram.",
+      "title": "Diagram"
+    }
   }
 }

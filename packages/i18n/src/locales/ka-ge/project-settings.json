@@ -521,6 +521,12 @@
           }
         }
       }
-    }
+    },
+    "feature_toasts": {
+      "update_failed": "Something went wrong while updating project feature. Please try again.",
+      "updated": "Project feature updated successfully.",
+      "updating": "Updating project feature..."
+    },
+    "label": "Project settings"
   }
 }
