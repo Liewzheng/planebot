@@ -114,5 +114,13 @@
   "align": "对齐",
   "view_full_screen": "全屏查看",
   "view_image_full_screen": "全屏查看图片",
-  "download": "下载"
+  "download": "下载",
+  "delete": "删除",
+  "duplicate": "复制",
+  "clear_contents": "清空内容",
+  "insert_left": "在左侧插入",
+  "insert_right": "在右侧插入",
+  "insert_above": "在上方插入",
+  "insert_below": "在下方插入",
+  "fit_to_width": "适应宽度"
 }

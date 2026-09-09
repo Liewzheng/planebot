@@ -964,5 +964,9 @@
   "no_matching_cycles": "没有匹配的周期",
   "no_matching_modules": "没有匹配的模块",
   "plane_work_items": "Plane 工作项",
-  "user": "用户"
+  "user": "用户",
+  "move": "移动",
+  "archive_success": "归档成功",
+  "restore_success": "恢复成功",
+  "new_work_item": "新建工作项"
 }
