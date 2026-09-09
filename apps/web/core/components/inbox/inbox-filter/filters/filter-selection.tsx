@@ -17,6 +17,7 @@ import { FilterLabels } from "./labels";
 import { FilterMember } from "./members";
 import { FilterPriority } from "./priority";
 import { FilterStatus } from "./status";
+import { useTranslation } from "@plane/i18n";
 
 export const InboxIssueFilterSelection = observer(function InboxIssueFilterSelection() {
   // hooks
@@ -28,6 +29,8 @@ export const InboxIssueFilterSelection = observer(function InboxIssueFilterSelec
   // states
   const [filtersSearchQuery, setFiltersSearchQuery] = useState("");
 
+  const { t } = useTranslation();
+
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
       <div className="bg-surface-1 p-2.5 pb-0">
@@ -36,7 +39,7 @@ export const InboxIssueFilterSelection = observer(function InboxIssueFilterSelec
           <input
             type="text"
             className="w-full bg-surface-2 outline-none placeholder:text-placeholder"
-            placeholder="Search"
+            placeholder={t("search")}
             value={filtersSearchQuery}
             onChange={(e) => setFiltersSearchQuery(e.target.value)}
             autoFocus={!isMobile}
@@ -62,7 +65,7 @@ export const InboxIssueFilterSelection = observer(function InboxIssueFilterSelec
         <div className="py-2">
           <FilterMember
             filterKey="assignees"
-            label="Assignees"
+            label={t("assignees")}
             searchQuery={filtersSearchQuery}
             memberIds={projectMemberIds ?? []}
           />

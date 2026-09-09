@@ -21,6 +21,7 @@ import { FiltersDropdown } from "@/components/issues/issue-layouts/filters";
 import { useCycleFilter } from "@/hooks/store/use-cycle-filter";
 // local imports
 import { CycleFiltersSelection } from "../dropdowns";
+import { useTranslation } from "@plane/i18n";
 
 export const ArchivedCyclesHeader = observer(function ArchivedCyclesHeader() {
   // router
@@ -69,6 +70,8 @@ export const ArchivedCyclesHeader = observer(function ArchivedCyclesHeader() {
 
   const isFiltersApplied = calculateTotalFilters(currentProjectArchivedFilters ?? {}) !== 0;
 
+  const { t } = useTranslation();
+
   return (
     <div className="group relative flex border-b border-subtle">
       <div className="horizontal-scrollbar scrollbar-sm flex w-full items-center gap-2 overflow-x-auto px-4">
@@ -100,7 +103,7 @@ export const ArchivedCyclesHeader = observer(function ArchivedCyclesHeader() {
           <input
             ref={inputRef}
             className="w-full max-w-[234px] border-none bg-transparent text-13 text-primary placeholder:text-placeholder focus:outline-none"
-            placeholder="Search"
+            placeholder={t("search")}
             value={archivedCyclesSearchQuery}
             onChange={(e) => updateArchivedCyclesSearchQuery(e.target.value)}
             onKeyDown={handleInputKeyDown}
@@ -120,7 +123,7 @@ export const ArchivedCyclesHeader = observer(function ArchivedCyclesHeader() {
         </div>
         <FiltersDropdown
           icon={<FilterOutline className="h-3 w-3" />}
-          title="Filters"
+          title={t("filters")}
           placement="bottom-end"
           isFiltersApplied={isFiltersApplied}
         >

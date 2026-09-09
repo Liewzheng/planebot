@@ -20,6 +20,7 @@ import useSWR from "swr";
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
 // local imports
 import { StarUsOnGitHubLink } from "@/app/(all)/[workspaceSlug]/(projects)/star-us-link";
+import { useTranslation } from "@plane/i18n";
 
 export const TopNavigationRoot = observer(function TopNavigationRoot() {
   // router
@@ -44,6 +45,8 @@ export const TopNavigationRoot = observer(function TopNavigationRoot() {
     ? unreadNotificationsCount.mention_unread_notifications_count
     : unreadNotificationsCount.total_unread_notifications_count;
 
+  const { t } = useTranslation();
+
   return (
     <div
       className={cn("z-[27] flex min-h-10 w-full items-center bg-canvas px-3.5 transition-all duration-300", {
@@ -60,7 +63,7 @@ export const TopNavigationRoot = observer(function TopNavigationRoot() {
       </div>
       {/* Additional Actions */}
       <div className="flex flex-1 shrink-0 items-center justify-end gap-1">
-        <Tooltip label="Inbox" side="bottom">
+        <Tooltip label={t("inbox")} side="bottom">
           <AppSidebarItem
             variant="link"
             item={{

@@ -16,11 +16,13 @@ import { InboxIssueAppliedFiltersMember } from "./member";
 import { InboxIssueAppliedFiltersPriority } from "./priority";
 import { InboxIssueAppliedFiltersState } from "./state";
 import { InboxIssueAppliedFiltersStatus } from "./status";
+import { useTranslation } from "@plane/i18n";
 
 export const InboxIssueAppliedFilters = observer(function InboxIssueAppliedFilters() {
   const { getAppliedFiltersCount } = useProjectInbox();
 
   if (getAppliedFiltersCount === 0) return <></>;
+  const { t } = useTranslation();
   return (
     <Header variant={EHeaderVariant.TERNARY}>
       {/* status */}
@@ -30,7 +32,7 @@ export const InboxIssueAppliedFilters = observer(function InboxIssueAppliedFilte
       {/* priority */}
       <InboxIssueAppliedFiltersPriority />
       {/* assignees */}
-      <InboxIssueAppliedFiltersMember filterKey="assignees" label="Assignees" />
+      <InboxIssueAppliedFiltersMember filterKey="assignees" label={t("assignees")} />
       {/* created_by */}
       <InboxIssueAppliedFiltersMember filterKey="created_by" label="Created By" />
       {/* label */}
