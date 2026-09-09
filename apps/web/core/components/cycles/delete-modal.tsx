@@ -82,7 +82,7 @@ export const CycleDeleteModal = observer(function CycleDeleteModal(props: ICycle
       handleSubmit={formSubmit}
       isSubmitting={loader}
       isOpen={isOpen}
-      title="Delete cycle"
+      title={t("delete_cycle")}
       content={
         <>
           Are you sure you want to delete cycle{' "'}

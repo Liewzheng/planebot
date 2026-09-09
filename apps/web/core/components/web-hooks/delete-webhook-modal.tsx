@@ -6,6 +6,8 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
+// plane imports
+import { useTranslation } from "@plane/i18n";
 // ui
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import { AlertModalCore } from "@plane/ui";
@@ -20,6 +22,7 @@ interface IDeleteWebhook {
 
 export function DeleteWebhookModal(props: IDeleteWebhook) {
   const { isOpen, onClose } = props;
+  const { t } = useTranslation();
   // states
   const [isDeleting, setIsDeleting] = useState(false);
   // router
@@ -60,7 +63,7 @@ export function DeleteWebhookModal(props: IDeleteWebhook) {
       handleSubmit={handleDelete}
       isSubmitting={isDeleting}
       isOpen={isOpen}
-      title="Delete webhook"
+      title={t("delete_webhook")}
       content={
         <>
           Are you sure you want to delete this webhook? Future events will not be delivered to this webhook. This action

@@ -874,5 +874,14 @@
       "description": "将工作项导出为 JSON 文件。",
       "short_description": "导出为 JSON"
     }
-  }
+  },
+  "delete_state": "删除状态",
+  "delete_label": "删除标签",
+  "delete_cycle": "删除周期",
+  "delete_webhook": "删除 Webhook",
+  "delete_page": "删除页面",
+  "estimates_list": "估算列表",
+  "archived_estimates": "已归档估算",
+  "toggle_webhook": "切换 Webhook",
+  "enable_webhook": "启用 Webhook"
 }

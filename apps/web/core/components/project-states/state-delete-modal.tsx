@@ -8,6 +8,7 @@ import { useState } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 // Plane imports
+import { useTranslation } from "@plane/i18n";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import type { IState } from "@plane/types";
 // ui
@@ -23,6 +24,7 @@ type TStateDeleteModal = {
 
 export const StateDeleteModal = observer(function StateDeleteModal(props: TStateDeleteModal) {
   const { isOpen, onClose, data } = props;
+  const { t } = useTranslation();
   // states
   const [isDeleteLoading, setIsDeleteLoading] = useState(false);
   // router
@@ -69,7 +71,7 @@ export const StateDeleteModal = observer(function StateDeleteModal(props: TState
       handleSubmit={handleDeletion}
       isSubmitting={isDeleteLoading}
       isOpen={isOpen}
-      title="Delete State"
+      title={t("delete_state")}
       content={
         <>
           Are you sure you want to delete state- <span className="font-medium text-primary">{data?.name}</span>? All of
