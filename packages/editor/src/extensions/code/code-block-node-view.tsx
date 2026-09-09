@@ -43,13 +43,16 @@ const patchSvgForPreview = (svg: string): string => {
   if (!w || !h) return svg;
   // Mermaid SVGs are transparent by default; the inline (page) view keeps that,
   // but the full-screen preview should show a solid light background so the
-  // diagram is distinguishable. Insert a white rect as the first child.
-  return svg
+  // diagram is distinguishable. Insert a white rect as the first child, AFTER
+  // the complete <svg> opening tag (the "width" replacement above strips the
+  // original width/height attributes, so the tag still ends with ">").
+  const sized = svg
     .replace(/\swidth="[^"]*"/, "")
     .replace(/\sheight="[^"]*"/, "")
     .replace(/<br\b([^>]*?)\/?>/gi, (_m, attrs) => `<br${attrs ? ` ${attrs.trim()}` : ""}/>`)
     .replace(/<hr\b([^>]*?)\/?>/gi, (_m, attrs) => `<hr${attrs ? ` ${attrs.trim()}` : ""}/>`)
-    .replace(/<svg/, `<svg width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#ffffff"/>`);
+    .replace(/<svg/, `<svg width="${w}" height="${h}"`);
+  return sized.replace(/(<svg[^>]*>)/, `$1<rect width="${w}" height="${h}" fill="#ffffff"/>`);
 };
 
 const svgToDataUri = (svg: string): string =>
