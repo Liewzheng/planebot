@@ -23,6 +23,7 @@ import type { TPageInstance } from "@/store/pages/base-page";
 import { PageActions } from "../../dropdowns";
 import { ExportPageModal } from "../../modals/export-page-modal";
 import { PAGE_NAVIGATION_PANE_TABS_QUERY_PARAM } from "../../navigation-pane";
+import { useTranslation } from "@plane/i18n";
 
 type Props = {
   page: TPageInstance;
@@ -55,7 +56,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
           customContent: (
             <>
               Full width
-              <Switch size="sm" checked={isFullWidth} onCheckedChange={() => {}} aria-label="Full width" />
+              <Switch size="sm" checked={isFullWidth} onCheckedChange={() => {}} aria-label={t("full_width")} />
             </>
           ),
           className: "flex items-center justify-between gap-2",
@@ -70,7 +71,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
                 size="sm"
                 checked={isStickyToolbarEnabled}
                 onCheckedChange={() => {}}
-                aria-label="Sticky toolbar"
+                aria-label={t("sticky_toolbar")}
               />
             </>
           ),
@@ -128,6 +129,8 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
       setIsExportModalOpen,
     ]
   );
+
+  const { t } = useTranslation();
 
   return (
     <>
