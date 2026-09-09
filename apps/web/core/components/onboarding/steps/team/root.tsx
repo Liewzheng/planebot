@@ -263,6 +263,7 @@ const InviteMemberInput = observer(function InviteMemberInput(props: InviteMembe
 
 export const InviteTeamStep = observer(function InviteTeamStep(props: Props) {
   const { handleStepChange } = props;
+  const { t } = useTranslation();
 
   const [isInvitationDisabled, setIsInvitationDisabled] = useState(true);
 
@@ -346,7 +347,7 @@ export const InviteTeamStep = observer(function InviteTeamStep(props: Props) {
       }}
     >
       <CommonOnboardingHeader
-        title="Invite your teammates"
+        title={t("invite_your_teammates")}
         description="Work in plane happens best with your team. Invite them now to use Plane to its potential."
       />
       <div className="w-full py-4 text-13">

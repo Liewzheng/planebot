@@ -224,7 +224,7 @@ export function CreateApiTokenForm(props: Props) {
                     minDate={tomorrow}
                     icon={<CalendarOutline className="h-3 w-3" />}
                     buttonVariant="border-with-text"
-                    placeholder="Set date"
+                    placeholder={t("set_date")}
                     disabled={neverExpires}
                   />
                 </div>

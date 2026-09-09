@@ -166,7 +166,7 @@ export const ModuleListItemAction = observer(function ModuleListItemAction(props
           <ButtonAvatars showTooltip={false} userIds={moduleLeadDetails?.id} />
         </span>
       ) : (
-        <Tooltip label="No lead">
+        <Tooltip label={t("no_lead")}>
           <UserAltOutline className="h-4 w-4 text-tertiary" />
         </Tooltip>
       )}

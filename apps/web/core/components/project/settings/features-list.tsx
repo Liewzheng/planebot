@@ -120,7 +120,7 @@ export const ProjectFeaturesList = observer(function ProjectFeaturesList(props: 
                   <span className="flex items-center gap-2">
                     {t(featureItem.key)}
                     {featureItem.isPro && (
-                      <Tooltip label="Pro feature">
+                      <Tooltip label={t("pro_feature")}>
                         <UpgradeBadge className="rounded-sm" />
                       </Tooltip>
                     )}
