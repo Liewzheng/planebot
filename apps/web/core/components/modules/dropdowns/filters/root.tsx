@@ -15,6 +15,7 @@ import { FilterOption } from "@/components/issues/issue-layouts/filters";
 import { FilterLead, FilterMembers, FilterStartDate, FilterStatus, FilterTargetDate } from "@/components/modules";
 // hooks
 import { usePlatformOS } from "@/hooks/use-platform-os";
+import { useTranslation } from "@plane/i18n";
 
 type Props = {
   displayFilters: TModuleDisplayFilters;
@@ -34,6 +35,7 @@ export const ModuleFiltersSelection = observer(function ModuleFiltersSelection(p
     memberIds,
     isArchived = false,
   } = props;
+  const { t } = useTranslation();
   // states
   const [filtersSearchQuery, setFiltersSearchQuery] = useState("");
   // store
@@ -47,7 +49,7 @@ export const ModuleFiltersSelection = observer(function ModuleFiltersSelection(p
           <input
             type="text"
             className="w-full bg-surface-2 outline-none placeholder:text-placeholder"
-            placeholder="Search"
+            placeholder={t("search")}
             value={filtersSearchQuery}
             onChange={(e) => setFiltersSearchQuery(e.target.value)}
             autoFocus={!isMobile}
@@ -69,7 +71,7 @@ export const ModuleFiltersSelection = observer(function ModuleFiltersSelection(p
                   favorites: !displayFilters.favorites,
                 })
               }
-              title="Favorites"
+              title={t("favorites")}
             />
           </div>
         )}

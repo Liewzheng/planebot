@@ -11,6 +11,7 @@ import { cn } from "@plane/utils";
 // hooks
 import { useModule } from "@/hooks/store/use-module";
 import { usePlatformOS } from "@/hooks/use-platform-os";
+import { useTranslation } from "@plane/i18n";
 
 type ModuleButtonContentProps = {
   disabled: boolean;
@@ -40,6 +41,7 @@ export function ModuleButtonContent(props: ModuleButtonContentProps) {
     value,
     className,
   } = props;
+  const { t } = useTranslation();
   // store hooks
   const { getModuleById } = useModule();
   const { isMobile } = usePlatformOS();
@@ -83,7 +85,7 @@ export function ModuleButtonContent(props: ModuleButtonContentProps) {
                     </Tooltip>
                   )}
                   {!disabled && (
-                    <Tooltip label="Remove" disabled={!showTooltip || isMobile}>
+                    <Tooltip label={t("remove")} disabled={!showTooltip || isMobile}>
                       <button
                         type="button"
                         className="flex-shrink-0"

@@ -12,6 +12,7 @@ import { PROJECT_CREATED_AT_FILTER_OPTIONS } from "@plane/constants";
 import { isInDateFormat } from "@plane/utils";
 import { DateFilterModal } from "@/components/core/filters/date-filter-modal";
 import { FilterHeader, FilterOption } from "@/components/issues/issue-layouts/filters";
+import { useTranslation } from "@plane/i18n";
 
 // helpers
 
@@ -23,6 +24,7 @@ type Props = {
 
 export const FilterCreatedDate = observer(function FilterCreatedDate(props: Props) {
   const { appliedFilters, handleUpdate, searchQuery } = props;
+  const { t } = useTranslation();
   // state
   const [previewEnabled, setPreviewEnabled] = useState(true);
   const [isDateFilterModalOpen, setIsDateFilterModalOpen] = useState(false);
@@ -74,7 +76,7 @@ export const FilterCreatedDate = observer(function FilterCreatedDate(props: Prop
               <FilterOption
                 isChecked={isCustomDateSelected()}
                 onClick={handleCustomDate}
-                title="Custom"
+                title={t("custom theme")}
                 multiple={false}
               />
             </>

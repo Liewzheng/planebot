@@ -29,6 +29,7 @@ import { useProjectState } from "@/hooks/store/use-project-state";
 import { useWorkspaceDraftIssues } from "@/hooks/store/workspace-draft";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 import { IssuePropertyLabels } from "../issue-layouts/properties";
+import { useTranslation } from "@plane/i18n";
 // local components
 
 export interface IIssueProperties {
@@ -41,6 +42,7 @@ export interface IIssueProperties {
 
 export const DraftIssueProperties = observer(function DraftIssueProperties(props: IIssueProperties) {
   const { issue, updateIssue, className } = props;
+  const { t } = useTranslation();
   // store hooks
   const { getProjectById } = useProject();
   const { labelMap } = useLabel();
@@ -222,7 +224,7 @@ export const DraftIssueProperties = observer(function DraftIssueProperties(props
           buttonVariant={issue.assignee_ids?.length > 0 ? "transparent-without-text" : "border-without-text"}
           buttonClassName={issue.assignee_ids?.length > 0 ? "hover:bg-transparent px-0" : ""}
           showTooltip={issue?.assignee_ids?.length === 0}
-          placeholder="Assignees"
+          placeholder={t("assignees")}
           optionsClassName="z-10"
           tooltipContent=""
           renderByDefault={isMobile}
