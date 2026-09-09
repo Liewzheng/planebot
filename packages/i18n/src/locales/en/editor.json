@@ -104,5 +104,15 @@
   },
   "mermaidDiagram": {
     "rendering": "Rendering diagram…"
-  }
+  },
+  "fullscreen_viewer": "Fullscreen image viewer",
+  "close_viewer": "Close image viewer",
+  "zoom_out": "Zoom out",
+  "zoom_in": "Zoom in",
+  "download_image": "Download image",
+  "open_new_tab": "Open image in new tab",
+  "align": "Align",
+  "view_full_screen": "View in full screen",
+  "view_image_full_screen": "View image in full screen",
+  "download": "Download"
 }

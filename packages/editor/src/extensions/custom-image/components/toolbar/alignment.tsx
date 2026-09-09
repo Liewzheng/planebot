@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 // plane imports
 import { useOutsideClickDetector } from "@plane/hooks";
 import { ChevronDownOutline } from "@makeplane/propel/icons";
@@ -22,6 +23,7 @@ type Props = {
 
 export function ImageAlignmentAction(props: Props) {
   const { activeAlignment, handleChange, isTouchDevice, toggleToolbarViewStatus } = props;
+  const { t } = useTranslation("editor");
   // states
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   // refs
@@ -37,7 +39,7 @@ export function ImageAlignmentAction(props: Props) {
 
   return (
     <div ref={dropdownRef} className="relative h-full">
-      <Tooltip disabled={isTouchDevice} tooltipContent="Align">
+      <Tooltip disabled={isTouchDevice} tooltipContent={t("align")}>
         <button
           type="button"
           className="flex h-full items-center gap-1 text-white/60 transition-colors hover:text-white"
