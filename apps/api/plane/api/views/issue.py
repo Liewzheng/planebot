@@ -76,6 +76,7 @@ from plane.db.models import (
     Project,
     ProjectMember,
     CycleIssue,
+    WorkspaceMember,
     Workspace,
 )
 from plane.settings.storage import S3Storage
@@ -1669,8 +1670,42 @@ class IssueCommentDetailAPIEndpoint(BaseAPIView):
 
         Permanently remove a comment from a work item.
         Records deletion activity for audit purposes.
+
+        Only the comment author, a project admin, or a workspace admin who is a
+        member of the project may delete a comment — mirroring the internal app
+        API (allow_permission(creator=True, allowed_roles=[ROLE.ADMIN])). This
+        prevents any project member holding an API token from deleting other
+        users' comments.
         """
         issue_comment = IssueComment.objects.get(workspace__slug=slug, project_id=project_id, issue_id=issue_id, pk=pk)
+
+        is_creator = issue_comment.actor_id == request.user.id
+        is_project_member = ProjectMember.objects.filter(
+            member=request.user,
+            workspace__slug=slug,
+            project_id=project_id,
+            is_active=True,
+        ).exists()
+        is_project_admin = ProjectMember.objects.filter(
+            member=request.user,
+            workspace__slug=slug,
+            project_id=project_id,
+            role=20,
+            is_active=True,
+        ).exists()
+        is_workspace_admin = is_project_member and WorkspaceMember.objects.filter(
+            member=request.user,
+            workspace__slug=slug,
+            role=20,
+            is_active=True,
+        ).exists()
+
+        if not (is_creator or is_project_admin or is_workspace_admin):
+            return Response(
+                {"error": "You don't have the required permissions to delete this comment."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         current_instance = json.dumps(IssueCommentSerializer(issue_comment).data, cls=DjangoJSONEncoder)
         issue_comment.delete()
         issue_activity.delay(
