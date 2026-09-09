@@ -10,6 +10,7 @@ import ts from "highlight.js/lib/languages/typescript";
 import { common, createLowlight } from "lowlight";
 import { CopyOutline, TickOutline } from "@makeplane/propel/icons";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 // ui
 import { Tooltip } from "@plane/propel/tooltip";
 // plane utils
@@ -87,6 +88,7 @@ const hashSource = async (source: string): Promise<string> => {
 
 export function CodeBlockComponent(props: NodeViewProps) {
   const { node, editor, updateAttributes, extension } = props;
+  const { t } = useTranslation("editor");
   const [copied, setCopied] = useState(false);
   const [sourceHash, setSourceHash] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -279,10 +281,10 @@ export function CodeBlockComponent(props: NodeViewProps) {
           <select
             value={isMermaidLanguage(currentLanguage) ? MERMAID_LANGUAGE : currentLanguage}
             onChange={handleLanguageChange}
-            aria-label="Code language"
+            aria-label={t("codeBlock.language.ariaLabel")}
             className="h-8 cursor-pointer rounded-md border border-subtle bg-layer-1 px-2 text-11 text-secondary backdrop-blur-sm outline-none hover:text-primary"
           >
-            <option value="">Plain text</option>
+            <option value="">{t("codeBlock.language.plainText")}</option>
             {languageOptions.map((language) => (
               <option key={language} value={language}>
                 {language}
@@ -296,12 +298,16 @@ export function CodeBlockComponent(props: NodeViewProps) {
               disabled={isUploading}
               className="h-8 rounded-md border border-subtle bg-layer-1 px-2 text-11 text-secondary backdrop-blur-sm outline-none hover:text-primary disabled:opacity-60"
             >
-              {isUploading ? "Saving…" : hideSource ? "Show source" : "Hide source"}
+              {isUploading
+                ? t("codeBlock.mermaid.saving")
+                : hideSource
+                  ? t("codeBlock.mermaid.showSource")
+                  : t("codeBlock.mermaid.hideSource")}
             </button>
           )}
         </div>
       )}
-      <Tooltip tooltipContent="Copy code">
+      <Tooltip tooltipContent={t("codeBlock.actions.copy")}>
         <button
           type="button"
           className={cn(
@@ -335,7 +341,7 @@ export function CodeBlockComponent(props: NodeViewProps) {
               type="button"
               onClick={() => setIsPreviewOpen(true)}
               className="mermaid-diagram-image-button mermaid-diagram-image max-w-full cursor-zoom-in"
-              aria-label={`View diagram: ${altText}`}
+              aria-label={`${t("codeBlock.view_diagram_aria")}: ${altText}`}
               // mermaid svg uses width="100%", so inject it into a sized element
               // rather than using an <img> (which collapses to zero width).
               dangerouslySetInnerHTML={{ __html: cachedSvg }}
@@ -345,7 +351,7 @@ export function CodeBlockComponent(props: NodeViewProps) {
               type="button"
               onClick={() => setIsPreviewOpen(true)}
               className="mermaid-diagram-image-button"
-              aria-label={`View diagram: ${altText}`}
+              aria-label={`${t("codeBlock.view_diagram_aria")}: ${altText}`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
