@@ -16,6 +16,7 @@ export type TFileHandler = {
   restore: (assetSrc: string) => Promise<void>;
   upload: (blockId: string, file: File) => Promise<string>;
   duplicate: (assetId: string) => Promise<string>;
+  uploadMermaidDiagram?: (svgBlob: Blob, sourceHash: string) => Promise<{ assetId: string; assetUrl: string }>;
   validation: {
     /**
      * @description max file size in bytes

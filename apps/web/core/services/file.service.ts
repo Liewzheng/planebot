@@ -96,6 +96,35 @@ export class FileService extends APIService {
       });
   }
 
+  async uploadMermaidDiagram(
+    workspaceSlug: string,
+    projectId: string,
+    svgBlob: Blob,
+    sourceHash: string
+  ): Promise<{ assetId: string; assetUrl: string }> {
+    const svgFile = new File([svgBlob], `${sourceHash}.svg`, { type: "image/svg+xml" });
+    const fileMetaData = await getFileMetaDataForUpload(svgFile);
+    return this.post(`/api/assets/v2/workspaces/${workspaceSlug}/`, {
+      ...fileMetaData,
+      entity_type: "MERMAID_DIAGRAM",
+      entity_identifier: projectId,
+      mermaid_source_hash: sourceHash,
+    })
+      .then(async (response) => {
+        const signedURLResponse: TFileSignedURLResponse = response?.data;
+        const fileUploadPayload = generateFileUploadPayload(signedURLResponse, svgFile);
+        await this.fileUploadService.uploadFile(signedURLResponse.upload_data.url, fileUploadPayload);
+        await this.updateWorkspaceAssetUploadStatus(workspaceSlug, signedURLResponse.asset_id);
+        return {
+          assetId: signedURLResponse.asset_id,
+          assetUrl: signedURLResponse.asset_url,
+        };
+      })
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
   async deleteWorkspaceAsset(workspaceSlug: string, assetId: string): Promise<void> {
     return this.delete(`/api/assets/v2/workspaces/${workspaceSlug}/${assetId}/`)
       .then((response) => response?.data)
