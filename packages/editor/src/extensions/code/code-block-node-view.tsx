@@ -30,7 +30,9 @@ const MERMAID_LANGUAGE = "mermaid";
 
 // Mermaid renders its SVG with width="100%", which collapses when used as an
 // <img> src. For the full-screen preview we inject an explicit width/height
-// (derived from the viewBox) so the image has an intrinsic size.
+// (derived from the viewBox) so the image has an intrinsic size. Diagram labels
+// can contain HTML void tags like <br> (valid in an HTML context but rejected by
+// strict XML parsing when the SVG is loaded via a data URI), so we self-close them.
 const patchSvgForPreview = (svg: string): string => {
   const vb = svg.match(/viewBox="([^"]+)"/);
   if (!vb) return svg;
@@ -42,6 +44,8 @@ const patchSvgForPreview = (svg: string): string => {
   return svg
     .replace(/\swidth="[^"]*"/, "")
     .replace(/\sheight="[^"]*"/, "")
+    .replace(/<br\b([^>]*?)\/?>/gi, (_m, attrs) => `<br${attrs ? ` ${attrs.trim()}` : ""}/>`)
+    .replace(/<hr\b([^>]*?)\/?>/gi, (_m, attrs) => `<hr${attrs ? ` ${attrs.trim()}` : ""}/>`)
     .replace(/<svg/, `<svg width="${w}" height="${h}"`);
 };
 
