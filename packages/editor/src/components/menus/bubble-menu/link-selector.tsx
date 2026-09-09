@@ -17,6 +17,7 @@ import { isValidHttpUrl } from "@/helpers/common";
 import { setLinkEditor, unsetLinkEditor } from "@/helpers/editor-commands";
 import { FloatingMenuRoot } from "../floating-menu/root";
 import { useFloatingMenu } from "../floating-menu/use-floating-menu";
+import { useTranslation } from "react-i18next";
 
 type Props = {
   editor: Editor;
@@ -46,6 +47,8 @@ export function BubbleMenuLinkSelector(props: Props) {
       setError(true);
     }
   }, [editor, inputRef, context]);
+
+  const { t } = useTranslation("editor");
 
   return (
     <FloatingMenuRoot
@@ -78,7 +81,7 @@ export function BubbleMenuLinkSelector(props: Props) {
           <input
             ref={inputRef}
             type="url"
-            placeholder="Enter or paste a link"
+            placeholder={t("enter_or_paste_a_link")}
             onClick={(e) => e.stopPropagation()}
             className="flex-1 rounded-sm border-r-[0.5px] border-strong bg-surface-1 px-1.5 py-2 text-11 outline-none placeholder:text-placeholder"
             defaultValue={editor.getAttributes("link").href || ""}

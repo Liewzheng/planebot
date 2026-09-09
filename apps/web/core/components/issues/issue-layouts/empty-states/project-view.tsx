@@ -12,6 +12,7 @@ import { EIssuesStoreType } from "@plane/types";
 // hooks
 import { useCommandPalette } from "@/hooks/store/use-command-palette";
 import { useUserPermissions } from "@/hooks/store/user";
+import { useTranslation } from "@plane/i18n";
 
 export const ProjectViewEmptyState = observer(function ProjectViewEmptyState() {
   // store hooks
@@ -24,11 +25,13 @@ export const ProjectViewEmptyState = observer(function ProjectViewEmptyState() {
     EUserPermissionsLevel.PROJECT
   );
 
+  const { t } = useTranslation();
+
   return (
     // TODO: Add translation
     <EmptyStateDetailed
       assetKey="work-item"
-      title="View work items will appear here"
+      title={t("view_work_items_will_appear_here")}
       description="Work items help you track individual pieces of work. With work items, keep track of what's going on, who is working on it, and what's done."
       actions={[
         {

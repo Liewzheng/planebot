@@ -8,6 +8,7 @@ import { Checkbox } from "@makeplane/propel/components/checkbox";
 import { cn } from "@plane/utils";
 // hooks
 import type { TSelectionHelper } from "@/hooks/use-multiple-select";
+import { useTranslation } from "@plane/i18n";
 
 type Props = {
   className?: string;
@@ -23,13 +24,15 @@ export function MultipleSelectGroupAction(props: Props) {
 
   if (selectionHelpers.isSelectionDisabled) return null;
 
+  const { t } = useTranslation();
+
   return (
     <span className={cn("inline-flex", className)}>
       <Checkbox
         checked={groupSelectionStatus === "complete"}
         indeterminate={groupSelectionStatus === "partial"}
         disabled={disabled}
-        aria-label="Select all in group"
+        aria-label={t("select_all_in_group")}
         onCheckedChange={() => selectionHelpers.handleGroupClick(groupID)}
       />
     </span>

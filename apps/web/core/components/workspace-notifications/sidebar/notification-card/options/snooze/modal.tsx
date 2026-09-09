@@ -14,6 +14,7 @@ import { CustomSelect, EModalPosition, EModalWidth, ModalCore } from "@plane/ui"
 // components
 import { getDate, cn } from "@plane/utils";
 import { DateDropdown } from "@/components/dropdowns/date";
+import { useTranslation } from "@plane/i18n";
 
 type TNotificationSnoozeModal = {
   isOpen: boolean;
@@ -112,6 +113,8 @@ export function NotificationSnoozeModal(props: TNotificationSnoozeModal) {
     });
   };
 
+  const { t } = useTranslation();
+
   return (
     <ModalCore isOpen={isOpen} handleClose={handleClose} position={EModalPosition.CENTER} width={EModalWidth.XXL}>
       <form onSubmit={handleSubmit(onSubmit)} className="p-5">
@@ -135,7 +138,7 @@ export function NotificationSnoozeModal(props: TNotificationSnoozeModal) {
               render={({ field: { value, onChange } }) => (
                 <DateDropdown
                   value={value || null}
-                  placeholder="Select date"
+                  placeholder={t("select_date")}
                   onChange={(val) => {
                     setValue("time", undefined);
                     onChange(val);

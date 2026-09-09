@@ -17,6 +17,7 @@ import { EModalPosition, EModalWidth, ModalCore } from "@plane/ui";
 import { getAssetIdFromUrl, getFileURL, checkURLValidity } from "@plane/utils";
 // services
 import { FileService } from "@/services/file.service";
+import { useTranslation } from "@plane/i18n";
 const fileService = new FileService();
 
 type Props = {
@@ -124,6 +125,8 @@ export const UserImageUploadModal = observer(function UserImageUploadModal(props
     }
   };
 
+  const { t } = useTranslation();
+
   return (
     <ModalCore isOpen={isOpen} handleClose={handleClose} position={EModalPosition.CENTER} width={EModalWidth.XL}>
       <div className="space-y-5 px-5 py-8 sm:p-6">
@@ -148,7 +151,7 @@ export const UserImageUploadModal = observer(function UserImageUploadModal(props
                   </button>
                   <img
                     src={image ? URL.createObjectURL(image) : value ? getFileURL(value) : ""}
-                    alt="avatar"
+                    alt={t("avatar")}
                     className="absolute top-0 left-0 h-full w-full rounded-md object-cover"
                   />
                 </>

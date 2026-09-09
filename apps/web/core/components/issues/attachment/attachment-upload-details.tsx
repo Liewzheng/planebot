@@ -16,6 +16,7 @@ import { getFileIcon } from "@/components/icons";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // types
 import type { TAttachmentUploadStatus } from "@/store/issue/issue-details/attachment.store";
+import { useTranslation } from "@plane/i18n";
 
 type Props = {
   uploadStatus: TAttachmentUploadStatus;
@@ -30,6 +31,8 @@ export const IssueAttachmentsUploadDetails = observer(function IssueAttachmentsU
   const fileIcon = getFileIcon(fileExtension, 28);
   // hooks
   const { isMobile } = usePlatformOS();
+
+  const { t } = useTranslation();
 
   return (
     <div className="pointer-events-none flex h-[60px] items-center justify-between gap-1 rounded-md border-[2px] border-subtle bg-surface-2 px-4 py-2 text-13">
@@ -49,7 +52,7 @@ export const IssueAttachmentsUploadDetails = observer(function IssueAttachmentsU
       </div>
       <div className="flex flex-shrink-0 items-center gap-2">
         <span className="flex-shrink-0">
-          <CircularProgress value={uploadStatus.progress} size="md" variant="brand" aria-label="Upload progress" />
+          <CircularProgress value={uploadStatus.progress} size="md" variant="brand" aria-label={t("upload_progress")} />
         </span>
         <div className="flex-shrink-0 text-13 font-medium">{uploadStatus.progress}% done</div>
       </div>

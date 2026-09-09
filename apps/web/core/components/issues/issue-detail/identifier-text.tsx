@@ -8,6 +8,7 @@ import { setToast, TOAST_TYPE } from "@plane/propel/toast";
 import { Tooltip } from "@makeplane/propel/components/tooltip";
 import type { TIdentifierTextProps, TIdentifierTextVariant, TIssueIdentifierSize } from "@plane/types";
 import { cn } from "@plane/utils";
+import { useTranslation } from "@plane/i18n";
 
 const SIZE_MAP: Record<TIssueIdentifierSize, string> = {
   xs: "text-caption-sm-regular",
@@ -26,6 +27,7 @@ const VARIANT_MAP: Record<TIdentifierTextVariant, string> = {
 };
 
 export function IdentifierText(props: TIdentifierTextProps) {
+  const { t } = useTranslation();
   const { identifier, enableClickToCopyIdentifier = false, size = "lg", variant = "default" } = props;
   // handlers
   const handleCopyIssueIdentifier = () => {
@@ -49,7 +51,7 @@ export function IdentifierText(props: TIdentifierTextProps) {
   const variantClassName = VARIANT_MAP[variant];
 
   return (
-    <Tooltip label="Click to copy" disabled={!enableClickToCopyIdentifier}>
+    <Tooltip label={t("click_to_copy")} disabled={!enableClickToCopyIdentifier}>
       <button
         type="button"
         className={cn("text-12 font-medium whitespace-nowrap text-tertiary", textSizeClassName, variantClassName, {

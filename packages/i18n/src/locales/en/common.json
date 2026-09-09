@@ -960,5 +960,9 @@
   "upload_progress": "Upload progress",
   "view_does_not_exist": "View does not exist",
   "view_work_items_will_appear_here": "View work items will appear here",
-  "work_item_does_not_exist": "Work item does not exist"
+  "work_item_does_not_exist": "Work item does not exist",
+  "no_matching_cycles": "No matching cycles",
+  "no_matching_modules": "No matching modules",
+  "plane_work_items": "Plane Work items",
+  "user": "User"
 }

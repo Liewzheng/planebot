@@ -30,6 +30,7 @@ import { useModule } from "@/hooks/store/use-module";
 import { useUserPermissions } from "@/hooks/store/user";
 import { useAppRouter } from "@/hooks/use-app-router";
 import { usePlatformOS } from "@/hooks/use-platform-os";
+import { useTranslation } from "@plane/i18n";
 
 type Props = {
   moduleId: string;
@@ -171,6 +172,8 @@ export const ModuleCardItem = observer(function ModuleCardItem(props: Props) {
   const moduleLeadDetails = moduleDetails.lead_id ? getUserDetails(moduleDetails.lead_id) : undefined;
   const progressValue = moduleTotalIssues > 0 ? (moduleCompletedIssues / moduleTotalIssues) * 100 : 0;
 
+  const { t } = useTranslation();
+
   return (
     <div className="relative" data-prevent-progress>
       <Link ref={parentRef} href={`/${workspaceSlug}/projects/${moduleDetails.project_id}/modules/${moduleDetails.id}`}>
@@ -205,7 +208,7 @@ export const ModuleCardItem = observer(function ModuleCardItem(props: Props) {
                   <ButtonAvatars showTooltip={false} userIds={moduleLeadDetails?.id} />
                 </span>
               ) : (
-                <Tooltip label="No lead">
+                <Tooltip label={t("no_lead")}>
                   <UserAltOutline className="mx-1 h-4 w-4 text-tertiary" />
                 </Tooltip>
               )}
@@ -215,7 +218,7 @@ export const ModuleCardItem = observer(function ModuleCardItem(props: Props) {
               size="md"
               variant="brand"
               showValue={false}
-              aria-label="Module progress"
+              aria-label={t("module_progress")}
             />
             <div className="flex items-center justify-between py-0.5" onClick={handleEventPropagation}>
               <DateRangeDropdown
