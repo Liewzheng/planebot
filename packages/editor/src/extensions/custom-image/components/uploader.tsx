@@ -20,6 +20,7 @@ import { useUploader, useDropZone, uploadFirstFileAndInsertRemaining } from "@/h
 import { ECustomImageStatus } from "../types";
 import { getImageComponentImageFileMap } from "../utils";
 import type { CustomImageNodeViewProps } from "./node-view";
+import { useTranslation } from "react-i18next";
 
 type CustomImageUploaderProps = CustomImageNodeViewProps & {
   failedToLoadImage: boolean;
@@ -208,6 +209,8 @@ export function CustomImageUploader(props: CustomImageUploaderProps) {
     [hasDuplicationFailed, editor.isEditable, updateAttributes]
   );
 
+  const { t } = useTranslation("editor");
+
   return (
     <div
       className={cn(
@@ -247,7 +250,7 @@ export function CustomImageUploader(props: CustomImageUploaderProps) {
               "hover:bg-danger-subtle-hover": selected,
             }
           )}
-          title="Retry duplication"
+          title={t("retry_duplication")}
         >
           <RefreshOutline className="size-3" />
           <span className="text-11">Retry</span>

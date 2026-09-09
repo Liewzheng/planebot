@@ -17,6 +17,7 @@ import { cn } from "@plane/utils";
 // plane web components
 import { SelectXAxis } from "./select-x-axis";
 import { SelectYAxis } from "./select-y-axis";
+import { useTranslation } from "@plane/i18n";
 
 type Props = {
   control: Control<IAnalyticsParams, unknown>;
@@ -37,6 +38,8 @@ export const AnalyticsSelectParams = observer(function AnalyticsSelectParams(pro
     () => ANALYTICS_X_AXIS_VALUES.filter((option) => option.value !== params.x_axis),
     [params.x_axis]
   );
+
+  const { t } = useTranslation();
 
   return (
     <div className={cn("flex w-full justify-between", classNames)}>
@@ -97,7 +100,7 @@ export const AnalyticsSelectParams = observer(function AnalyticsSelectParams(pro
                 </div>
               }
               options={groupByOptions}
-              placeholder="Group By"
+              placeholder={t("group_by")}
               allowNoValue
             />
           )}

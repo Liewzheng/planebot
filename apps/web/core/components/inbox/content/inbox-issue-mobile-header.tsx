@@ -34,6 +34,7 @@ import type { IInboxIssueStore } from "@/store/inbox/inbox-issue.store";
 
 // local imports
 import { InboxIssueStatus } from "../inbox-issue-status";
+import { useTranslation } from "@plane/i18n";
 
 type Props = {
   workspaceSlug: string;
@@ -103,6 +104,8 @@ export const InboxIssueActionsMobileHeader = observer(function InboxIssueActions
     sequenceId: issue?.sequence_id,
   });
 
+  const { t } = useTranslation();
+
   return (
     <Header variant={EHeaderVariant.SECONDARY} className="justify-start">
       {isNotificationEmbed && (
@@ -120,14 +123,14 @@ export const InboxIssueActionsMobileHeader = observer(function InboxIssueActions
             variant="secondary"
             size="lg"
             icon={ChevronUpOutline}
-            aria-label="Previous work item"
+            aria-label={t("previous_work_item")}
             onClick={() => handleInboxIssueNavigation("prev")}
           />
           <IconButton
             variant="secondary"
             size="lg"
             icon={ChevronDownOutline}
-            aria-label="Next work item"
+            aria-label={t("next_work_item")}
             onClick={() => handleInboxIssueNavigation("next")}
           />
         </div>

@@ -10,6 +10,7 @@ import { observer } from "mobx-react";
 import { CloseOutline } from "@makeplane/propel/icons";
 import type { IFilterInstance } from "@plane/shared-state";
 import type { TExternalFilter, TFilterProperty } from "@plane/types";
+import { useTranslation } from "@plane/i18n";
 
 interface FilterItemCloseButtonProps<P extends TFilterProperty, E extends TExternalFilter> {
   conditionId: string;
@@ -26,12 +27,14 @@ export const FilterItemCloseButton = observer(function FilterItemCloseButton<
     filter.removeCondition(conditionId);
   };
 
+  const { t } = useTranslation();
+
   return (
     <button
       onClick={handleRemoveFilter}
       className="bg-layer-transparent px-1.5 text-placeholder hover:bg-layer-transparent-hover hover:text-tertiary focus:outline-none"
       type="button"
-      aria-label="Remove filter"
+      aria-label={t("remove_filter")}
     >
       <CloseOutline className="size-3.5" />
     </button>

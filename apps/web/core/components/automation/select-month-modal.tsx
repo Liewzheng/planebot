@@ -13,6 +13,7 @@ import { Button } from "@plane/propel/button";
 import type { IProject } from "@plane/types";
 // ui
 import { EModalPosition, EModalWidth, ModalCore } from "@plane/ui";
+import { useTranslation } from "@plane/i18n";
 // types
 type Props = {
   isOpen: boolean;
@@ -45,6 +46,8 @@ export function SelectMonthModal({ type, initialValues, isOpen, handleClose, han
     onClose();
   };
 
+  const { t } = useTranslation();
+
   return (
     <ModalCore isOpen={isOpen} handleClose={onClose} position={EModalPosition.CENTER} width={EModalWidth.XXL}>
       <form onSubmit={handleSubmit(onSubmit)}>
@@ -74,7 +77,7 @@ export function SelectMonthModal({ type, initialValues, isOpen, handleClose, han
                               value={value?.toString()}
                               onChange={onChange}
                               ref={ref}
-                              placeholder="Enter Months"
+                              placeholder={t("enter_months")}
                               min={1}
                               max={12}
                             />
@@ -111,7 +114,7 @@ export function SelectMonthModal({ type, initialValues, isOpen, handleClose, han
                               value={value?.toString()}
                               onChange={onChange}
                               ref={ref}
-                              placeholder="Enter Months"
+                              placeholder={t("enter_months")}
                               min={1}
                               max={12}
                             />

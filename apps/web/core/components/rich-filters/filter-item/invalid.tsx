@@ -14,12 +14,15 @@ import { FilterItemCloseButton } from "./close-button";
 import { FilterItemContainer } from "./container";
 import { FilterItemProperty } from "./property";
 import type { IFilterItemProps } from "./root";
+import { useTranslation } from "@plane/i18n";
 
 export const InvalidFilterItem = observer(function InvalidFilterItem<
   P extends TFilterProperty,
   E extends TExternalFilter,
 >(props: IFilterItemProps<P, E>) {
   const { condition, filter, isDisabled = false, showTransition = true } = props;
+
+  const { t } = useTranslation();
 
   return (
     <FilterItemContainer
@@ -32,7 +35,7 @@ export const InvalidFilterItem = observer(function InvalidFilterItem<
       <FilterItemProperty
         conditionId={condition.id}
         icon={WarningCircleOutline}
-        label="Invalid filter"
+        label={t("invalid_filter")}
         filter={filter}
         isDisabled={isDisabled}
       />

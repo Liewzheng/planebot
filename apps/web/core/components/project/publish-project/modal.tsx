@@ -22,6 +22,7 @@ import { Loader, CustomSelect, ModalCore, EModalWidth } from "@plane/ui";
 import { copyTextToClipboard } from "@plane/utils";
 // hooks
 import { useProjectPublish } from "@/hooks/store/use-project-publish";
+import { useTranslation } from "@plane/i18n";
 
 type Props = {
   isOpen: boolean;
@@ -177,6 +178,8 @@ export const PublishProjectModal = observer(function PublishProjectModal(props: 
       })
     );
 
+  const { t } = useTranslation();
+
   return (
     <ModalCore isOpen={isOpen} handleClose={handleClose} width={EModalWidth.XXL}>
       <form onSubmit={handleSubmit(handleFormSubmit)}>
@@ -284,7 +287,7 @@ export const PublishProjectModal = observer(function PublishProjectModal(props: 
                   control={control}
                   name="is_comments_enabled"
                   render={({ field: { onChange, value } }) => (
-                    <Switch size="sm" checked={!!value} onCheckedChange={onChange} aria-label="Allow comments" />
+                    <Switch size="sm" checked={!!value} onCheckedChange={onChange} aria-label={t("allow_comments")} />
                   )}
                 />
               </div>
@@ -294,7 +297,7 @@ export const PublishProjectModal = observer(function PublishProjectModal(props: 
                   control={control}
                   name="is_reactions_enabled"
                   render={({ field: { onChange, value } }) => (
-                    <Switch size="sm" checked={!!value} onCheckedChange={onChange} aria-label="Allow reactions" />
+                    <Switch size="sm" checked={!!value} onCheckedChange={onChange} aria-label={t("allow_reactions")} />
                   )}
                 />
               </div>
@@ -304,7 +307,7 @@ export const PublishProjectModal = observer(function PublishProjectModal(props: 
                   control={control}
                   name="is_votes_enabled"
                   render={({ field: { onChange, value } }) => (
-                    <Switch size="sm" checked={!!value} onCheckedChange={onChange} aria-label="Allow voting" />
+                    <Switch size="sm" checked={!!value} onCheckedChange={onChange} aria-label={t("allow_voting")} />
                   )}
                 />
               </div>

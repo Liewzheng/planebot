@@ -15,6 +15,7 @@ import { DateDropdown } from "@/components/dropdowns/date";
 // helpers
 // hooks
 import { useProjectState } from "@/hooks/store/use-project-state";
+import { useTranslation } from "@plane/i18n";
 
 type Props = {
   issue: TIssue;
@@ -29,6 +30,8 @@ export const SpreadsheetDueDateColumn = observer(function SpreadsheetDueDateColu
   const { getStateById } = useProjectState();
   // derived values
   const stateDetails = getStateById(issue.state_id);
+
+  const { t } = useTranslation();
 
   return (
     <div className="h-11 border-b-[0.5px] border-subtle">
@@ -47,7 +50,7 @@ export const SpreadsheetDueDateColumn = observer(function SpreadsheetDueDateColu
           );
         }}
         disabled={disabled}
-        placeholder="Due date"
+        placeholder={t("common.order_by.due_date")}
         icon={<DueDateOutline className="h-3 w-3 flex-shrink-0" />}
         buttonVariant="transparent-with-text"
         buttonContainerClassName="w-full"

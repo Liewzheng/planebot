@@ -28,6 +28,7 @@ import { useInstance } from "@/hooks/store/use-instance";
 import { useDropdownKeyDown } from "@/hooks/use-dropdown-key-down";
 // services
 import { FileService } from "@/services/file.service";
+import { useTranslation } from "@plane/i18n";
 
 type TTabOption = {
   key: string;
@@ -191,6 +192,8 @@ function ImagePickerPopoverComponent<TFieldValues extends FieldValues = FieldVal
 
   useOutsideClickDetector(ref, handleClose);
 
+  const { t } = useTranslation();
+
   return (
     <Popover className="relative z-19" ref={ref} tabIndex={tabIndex} onKeyDown={handleKeyDown}>
       <Popover.Button className={getButtonStyling("secondary", "sm")} onClick={handleOnClick} disabled={disabled}>
@@ -239,7 +242,7 @@ function ImagePickerPopoverComponent<TFieldValues extends FieldValues = FieldVal
                                 value={value}
                                 onChange={(e) => setFormData({ ...formData, search: e.target.value })}
                                 ref={ref}
-                                placeholder="Search for images"
+                                placeholder={t("search_for_images")}
                               />
                             </InputGroup>
                           )}

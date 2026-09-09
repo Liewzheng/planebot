@@ -20,6 +20,7 @@ import { ModuleListItemAction, ModuleQuickActions } from "@/components/modules";
 import { useModule } from "@/hooks/store/use-module";
 import { useAppRouter } from "@/hooks/use-app-router";
 import { usePlatformOS } from "@/hooks/use-platform-os";
+import { useTranslation } from "@plane/i18n";
 
 type Props = {
   moduleId: string;
@@ -69,6 +70,8 @@ export const ModuleListItem = observer(function ModuleListItem(props: Props) {
 
   const handleItemClick = moduleDetails.archived_at ? handleArchivedModuleClick : undefined;
 
+  const { t } = useTranslation();
+
   return (
     <ListItem
       title={moduleDetails?.name ?? ""}
@@ -81,7 +84,7 @@ export const ModuleListItem = observer(function ModuleListItem(props: Props) {
               value={progress}
               size="md"
               variant={progress === 100 ? "success" : "brand"}
-              aria-label="Module progress"
+              aria-label={t("module_progress")}
             />
           </div>
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">

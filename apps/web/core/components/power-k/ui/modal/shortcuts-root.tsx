@@ -15,6 +15,7 @@ import { ScrollArea } from "@plane/propel/scrollarea";
 import { usePowerK } from "@/hooks/store/use-power-k";
 // local imports
 import { ShortcutRenderer } from "../renderer/shortcut";
+import { useTranslation } from "@plane/i18n";
 
 type Props = {
   isOpen: boolean;
@@ -35,6 +36,8 @@ export function ShortcutsModal(props: Props) {
     onClose();
     setQuery("");
   };
+
+  const { t } = useTranslation();
 
   return (
     <Transition.Root show={isOpen} as={Fragment}>
@@ -80,8 +83,8 @@ export function ShortcutsModal(props: Props) {
                         type="text"
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        placeholder="Search for shortcuts"
-                        aria-label="Search for shortcuts"
+                        placeholder={t("search_for_shortcuts")}
+                        aria-label={t("search_for_shortcuts")}
                         autoFocus
                         tabIndex={1}
                       />

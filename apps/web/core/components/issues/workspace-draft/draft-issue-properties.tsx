@@ -186,7 +186,7 @@ export const DraftIssueProperties = observer(function DraftIssueProperties(props
           value={issue.start_date ?? null}
           onChange={handleStartDate}
           maxDate={maxDate}
-          placeholder="Start date"
+          placeholder={t("common.order_by.start_date")}
           icon={<StartDateOutline className="h-3 w-3 flex-shrink-0" />}
           buttonVariant={issue.start_date ? "border-with-text" : "border-without-text"}
           optionsClassName="z-10"
@@ -201,7 +201,7 @@ export const DraftIssueProperties = observer(function DraftIssueProperties(props
           value={issue?.target_date ?? null}
           onChange={handleTargetDate}
           minDate={minDate}
-          placeholder="Due date"
+          placeholder={t("common.order_by.due_date")}
           icon={<DueDateOutline className="h-3 w-3 flex-shrink-0" />}
           buttonVariant={issue.target_date ? "border-with-text" : "border-without-text"}
           buttonClassName={

@@ -14,6 +14,7 @@ import type { TIssue } from "@plane/types";
 import { ModuleDropdown } from "@/components/dropdowns/module/dropdown";
 // hooks
 import { useIssuesStore } from "@/hooks/use-issue-layout-store";
+import { useTranslation } from "@plane/i18n";
 
 type Props = {
   issue: TIssue;
@@ -46,6 +47,8 @@ export const SpreadsheetModuleColumn = observer(function SpreadsheetModuleColumn
     [workspaceSlug, issue, changeModulesInIssue]
   );
 
+  const { t } = useTranslation();
+
   return (
     <div className="h-11 border-b-[0.5px] border-subtle">
       <ModuleDropdown
@@ -53,7 +56,7 @@ export const SpreadsheetModuleColumn = observer(function SpreadsheetModuleColumn
         value={issue?.module_ids ?? []}
         onChange={handleModule}
         disabled={disabled}
-        placeholder="Select modules"
+        placeholder={t("select_modules")}
         buttonVariant="transparent-with-text"
         buttonContainerClassName="w-full relative flex items-center p-2 group-[.selected-issue-row]:bg-accent-primary/5 group-[.selected-issue-row]:hover:bg-accent-primary/10 px-page-x"
         buttonClassName="relative leading-4 h-4.5 bg-transparent hover:bg-transparent !px-0"

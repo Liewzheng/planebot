@@ -11,6 +11,7 @@ import type { IWebhook } from "@plane/types";
 import { Switch } from "@makeplane/propel/components/switch";
 // hooks
 import { useWebhook } from "@/hooks/store/use-webhook";
+import { useTranslation } from "@plane/i18n";
 
 interface IWebhookListItem {
   webhook: IWebhook;
@@ -27,6 +28,8 @@ export function WebhooksListItem(props: IWebhookListItem) {
     if (!workspaceSlug || !webhook.id) return;
     await updateWebhook(workspaceSlug.toString(), webhook.id, { is_active: !webhook.is_active });
   };
+
+  const { t } = useTranslation();
 
   return (
     <div className="rounded-lg border border-subtle bg-layer-2 px-4 py-3">
@@ -50,7 +53,7 @@ export function WebhooksListItem(props: IWebhookListItem) {
             onCheckedChange={() => {
               void handleToggle();
             }}
-            aria-label="Toggle webhook"
+            aria-label={t("toggle_webhook")}
           />
         </div>
       </Link>
