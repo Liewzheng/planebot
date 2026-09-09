@@ -323,7 +323,7 @@ export const ProfileSetup = observer(function ProfileSetup(props: Props) {
                             autoFocus
                             onChange={onChange}
                             ref={ref}
-                            placeholder="Wilbur"
+                            placeholder={t("wilbur")}
                             autoComplete="on"
                           />
                         </InputGroup>
@@ -363,7 +363,7 @@ export const ProfileSetup = observer(function ProfileSetup(props: Props) {
                             value={value}
                             onChange={onChange}
                             ref={ref}
-                            placeholder="Wright"
+                            placeholder={t("wright")}
                             autoComplete="on"
                           />
                         </InputGroup>

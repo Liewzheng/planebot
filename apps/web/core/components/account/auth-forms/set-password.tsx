@@ -112,7 +112,7 @@ export const SetPasswordForm = observer(function SetPasswordForm() {
 
   return (
     <FormContainer>
-      <AuthFormHeader title="Set password" description="Create a new password." />
+      <AuthFormHeader title={t("set_password")} description="Create a new password." />
       <form className="space-y-4" onSubmit={(e) => handleSubmit(e)}>
         <div className="space-y-1">
           <label className="text-13 font-medium text-tertiary" htmlFor="email">

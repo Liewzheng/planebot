@@ -192,7 +192,7 @@ export function ExistingIssuesListModal(props: Props) {
             </div>
           )}
           {workspaceLevelToggle && (
-            <Tooltip label="Toggle workspace level search" disabled={isMobile}>
+            <Tooltip label={t("toggle_workspace_level_search")} disabled={isMobile}>
               <div
                 className={`flex flex-shrink-0 cursor-pointer items-center gap-1 text-11 ${
                   isWorkspaceLevel ? "text-primary" : "text-secondary"
