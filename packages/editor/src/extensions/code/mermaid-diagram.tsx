@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 // plane utils
 import { cn } from "@plane/utils";
 // local imports
@@ -24,6 +25,7 @@ const getThemeAttribute = (element: HTMLElement | null): string | null => {
 };
 
 export function MermaidDiagram({ source }: Props) {
+  const { t } = useTranslation("editor");
   const containerRef = useRef<HTMLDivElement>(null);
   // states
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +95,7 @@ export function MermaidDiagram({ source }: Props) {
           </pre>
         </>
       )}
-      {!error && isLoading && <div className="mermaid-diagram-loading">Rendering diagram…</div>}
+      {!error && isLoading && <div className="mermaid-diagram-loading">{t("mermaidDiagram.rendering")}</div>}
       <div ref={containerRef} className="mermaid-diagram-canvas" hidden={!!error} />
     </div>
   );

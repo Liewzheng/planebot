@@ -85,5 +85,24 @@
       "edit_aria": "Edit LaTeX source",
       "invalid_latex": "Invalid LaTeX"
     }
+  },
+  "codeBlock": {
+    "language": {
+      "plainText": "Plain text",
+      "ariaLabel": "Code language"
+    },
+    "actions": {
+      "copy": "Copy code",
+      "copied": "Copied"
+    },
+    "mermaid": {
+      "hideSource": "Hide source",
+      "showSource": "Show source",
+      "saving": "Saving…"
+    },
+    "view_diagram_aria": "View diagram"
+  },
+  "mermaidDiagram": {
+    "rendering": "Rendering diagram…"
   }
 }
