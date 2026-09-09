@@ -154,7 +154,7 @@ export const ModuleViewHeader = observer(function ModuleViewHeader() {
       />
       <FiltersDropdown
         icon={<FilterOutline className="h-3 w-3" />}
-        title="Filters"
+        title={t("common.filters")}
         placement="bottom-end"
         isFiltersApplied={isFiltersApplied}
       >

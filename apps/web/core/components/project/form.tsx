@@ -204,7 +204,7 @@ export function ProjectDetailsForm(props: IProjectDetailsForm) {
     <form onSubmit={handleSubmit(onSubmit)}>
       <div className="relative h-44 w-full">
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-        <CoverImage src={coverImage} alt="Project cover image" className="h-44 w-full rounded-md" />
+        <CoverImage src={coverImage} alt={t("project_cover_image_alt")} className="h-44 w-full rounded-md" />
         <div className="absolute bottom-4 z-5 flex w-full items-end justify-between gap-3 px-4">
           <div className="flex flex-grow gap-3 truncate">
             <Controller

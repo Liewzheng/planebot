@@ -122,7 +122,7 @@ export function PageForm(props: Props) {
                 type="text"
                 value={formData.name}
                 onChange={(e) => handleFormData("name", e.target.value)}
-                placeholder="Title"
+                placeholder={t("title")}
                 tabIndex={getIndex("name")}
                 required
                 autoFocus
