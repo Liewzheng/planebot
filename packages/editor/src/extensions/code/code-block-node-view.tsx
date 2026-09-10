@@ -275,7 +275,7 @@ export function CodeBlockComponent(props: NodeViewProps) {
         <div
           contentEditable={false}
           role="presentation"
-          className="absolute top-2 left-2 z-10 flex items-center gap-2"
+          className="absolute top-2 left-2 z-10 hidden items-center gap-2 focus-within:flex group-hover/code:flex"
           onMouseDown={(e) => e.stopPropagation()}
         >
           <select
