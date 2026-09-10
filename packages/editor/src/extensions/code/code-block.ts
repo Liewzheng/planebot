@@ -76,17 +76,28 @@ export const CodeBlock = Node.create<CodeBlockOptions>({
         default: null,
         parseHTML: (element) => {
           const { languageClassPrefix } = this.options;
-          const classNames = [...(element.firstElementChild?.classList || [])];
-          const languages = classNames
-            .filter((className) => className.startsWith(languageClassPrefix))
-            .map((className) => className.replace(languageClassPrefix, ""));
-          const language = languages[0];
+          const prefix = typeof languageClassPrefix === "string" ? languageClassPrefix : "language-";
+          // The class lives on the inner <code>. Read it via querySelector +
+          // getAttribute rather than firstElementChild/classList: the server
+          // side HTML→document conversion runs on zeed-dom, which implements
+          // neither of those.
+          const codeElement =
+            (typeof element.querySelector === "function" ? element.querySelector("code") : null) ??
+            element.firstElementChild ??
+            element;
+          const classAttribute =
+            (typeof codeElement.getAttribute === "function" ? codeElement.getAttribute("class") : null) ??
+            (typeof codeElement.className === "string" ? codeElement.className : "");
+          const language = classAttribute
+            .split(/\s+/)
+            .filter(Boolean)
+            .find((className) => className.startsWith(prefix));
 
           if (!language) {
             return null;
           }
 
-          return language;
+          return language.slice(prefix.length);
         },
         rendered: false,
       },
