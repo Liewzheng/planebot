@@ -32,6 +32,7 @@ type Props = {
 
 export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: Props) {
   const { page, storeType } = props;
+  const { t } = useTranslation();
   // states
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   // navigation
@@ -129,8 +130,6 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
       setIsExportModalOpen,
     ]
   );
-
-  const { t } = useTranslation();
 
   return (
     <>

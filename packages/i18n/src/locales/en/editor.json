@@ -115,12 +115,12 @@
   "view_full_screen": "View in full screen",
   "view_image_full_screen": "View image in full screen",
   "download": "Download",
-  "delete": "Delete",
-  "duplicate": "Duplicate",
   "clear_contents": "Clear contents",
   "insert_left": "Insert left",
   "insert_right": "Insert right",
   "insert_above": "Insert above",
   "insert_below": "Insert below",
-  "fit_to_width": "Fit to width"
+  "fit_to_width": "Fit to width",
+  "block_delete": "Delete",
+  "block_duplicate": "Duplicate"
 }
