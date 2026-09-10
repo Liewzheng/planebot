@@ -82,6 +82,8 @@ export const AddComment = observer(function AddComment(props: Props) {
           render={({ field: { value, onChange } }) => (
             <LiteTextEditor
               editable
+              // Enter inserts a newline now; this callback is only used by the toolbar submit button
+              disabledExtensions={["enter-key"]}
               onEnterKeyPress={(e) => {
                 if (currentUser) handleSubmit(onSubmit)(e);
               }}

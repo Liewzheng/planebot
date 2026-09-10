@@ -75,41 +75,32 @@ export const CommentCardEditForm = observer(function CommentCardEditForm(props: 
 
   return (
     <form className="flex flex-col gap-2">
-      <div
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !isEmpty) handleSubmit(onEnter)(e);
+      <LiteTextEditor
+        editable
+        workspaceId={workspaceId}
+        workspaceSlug={workspaceSlug}
+        ref={editorRef}
+        id={comment.id}
+        initialValue={commentHTML ?? ""}
+        value={null}
+        onChange={(_comment_json, comment_html) => setValue("comment_html", comment_html)}
+        // Enter inserts a newline now; publishing happens only via the submit button below
+        disabledExtensions={["enter-key"]}
+        showSubmitButton={false}
+        uploadFile={async (blockId, file) => {
+          const { asset_id } = await activityOperations.uploadCommentAsset(blockId, file, comment.id);
+          return asset_id;
         }}
-      >
-        <LiteTextEditor
-          editable
-          workspaceId={workspaceId}
-          workspaceSlug={workspaceSlug}
-          ref={editorRef}
-          id={comment.id}
-          initialValue={commentHTML ?? ""}
-          value={null}
-          onChange={(_comment_json, comment_html) => setValue("comment_html", comment_html)}
-          onEnterKeyPress={(e) => {
-            if (!isEmpty && !isSubmitting) {
-              handleSubmit(onEnter)(e);
-            }
-          }}
-          showSubmitButton={false}
-          uploadFile={async (blockId, file) => {
-            const { asset_id } = await activityOperations.uploadCommentAsset(blockId, file, comment.id);
-            return asset_id;
-          }}
-          duplicateFile={async (assetId: string) => {
-            const { asset_id } = await activityOperations.duplicateCommentAsset(assetId, comment.id);
-            return asset_id;
-          }}
-          projectId={projectId}
-          parentClassName="p-2 bg-surface-1"
-          displayConfig={{
-            fontSize: "small-font",
-          }}
-        />
-      </div>
+        duplicateFile={async (assetId: string) => {
+          const { asset_id } = await activityOperations.duplicateCommentAsset(assetId, comment.id);
+          return asset_id;
+        }}
+        projectId={projectId}
+        parentClassName="p-2 bg-surface-1"
+        displayConfig={{
+          fontSize: "small-font",
+        }}
+      />
       <div className="flex gap-2 self-end">
         {!isEmpty && (
           <button

@@ -91,21 +91,7 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
   const isEmpty = isCommentEmpty(commentHTML ?? undefined);
 
   return (
-    <div
-      className={cn("sticky bottom-0 z-[4] bg-surface-1 sm:static")}
-      onKeyDown={(e) => {
-        if (
-          e.key === "Enter" &&
-          !e.shiftKey &&
-          !e.ctrlKey &&
-          !e.metaKey &&
-          !isEmpty &&
-          !isSubmitting &&
-          editorRef.current?.isEditorReadyToDiscard()
-        )
-          handleSubmit(onSubmit)(e);
-      }}
-    >
+    <div className={cn("sticky bottom-0 z-[4] bg-surface-1 sm:static")}>
       <Controller
         name="access"
         control={control}
@@ -121,6 +107,8 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
                 value={"<p></p>"}
                 workspaceSlug={workspaceSlug}
                 projectId={projectId}
+                // Enter inserts a newline now; this callback is only used by the toolbar submit button
+                disabledExtensions={["enter-key"]}
                 onEnterKeyPress={(e) => {
                   if (!isEmpty && !isSubmitting) {
                     handleSubmit(onSubmit)(e);
