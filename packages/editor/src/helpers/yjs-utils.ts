@@ -8,7 +8,7 @@ import { Buffer } from "buffer";
 import type { Extensions, JSONContent } from "@tiptap/core";
 import { getSchema } from "@tiptap/core";
 import { generateHTML, generateJSON } from "@tiptap/html";
-import { prosemirrorJSONToYDoc, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
+import { prosemirrorJSONToYXmlFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
 // extensions
 import type { TDocumentPayload } from "@plane/types";
@@ -26,6 +26,38 @@ export const TITLE_EDITOR_EXTENSIONS: Extensions = TitleExtensions;
 // editor schemas
 const richTextEditorSchema = getSchema(RICH_TEXT_EDITOR_EXTENSIONS);
 const documentEditorSchema = getSchema(DOCUMENT_EDITOR_EXTENSIONS);
+
+/**
+ * @description deterministic Yjs client id derived from the content.
+ *
+ * Every HTML → Yjs conversion used to build a fresh `Y.Doc` with a random
+ * client id, so re-applying the same content to a document that already held
+ * it merged as *new* items and duplicated the page (a page could balloon to
+ * several times its size). Deriving the client id from the content makes a
+ * repeated conversion produce identical items — applying it is idempotent —
+ * while different content still gets a different id and cannot collide.
+ */
+const clientIdForContent = (json: unknown): number => {
+  const text = JSON.stringify(json) ?? "";
+  let hash = 0x811c9dc5; // FNV-1a
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  // Yjs reserves 0 for "no client id"; keep the value a positive 32-bit int.
+  return (hash >>> 0) % 0xffffffff || 1;
+};
+
+/**
+ * @description convert ProseMirror JSON into a Yjs doc with a content-derived,
+ * deterministic client id. See `clientIdForContent`.
+ */
+const jsonToYDoc = (schema: ReturnType<typeof getSchema>, json: JSONContent, fragment: string): Y.Doc => {
+  const ydoc = new Y.Doc();
+  ydoc.clientID = clientIdForContent(json);
+  prosemirrorJSONToYXmlFragment(schema, json, ydoc.getXmlFragment(fragment));
+  return ydoc;
+};
 
 /**
  * @description apply updates to a doc and return the updated doc in binary format
@@ -69,7 +101,7 @@ export const getBinaryDataFromRichTextEditorHTMLString = (descriptionHTML: strin
   // convert HTML to JSON
   const contentJSON = generateJSON(descriptionHTML ?? "<p></p>", RICH_TEXT_EDITOR_EXTENSIONS);
   // convert JSON to Y.Doc format
-  const transformedData = prosemirrorJSONToYDoc(richTextEditorSchema, contentJSON, "default");
+  const transformedData = jsonToYDoc(richTextEditorSchema, contentJSON, "default");
   // convert Y.Doc to Uint8Array format
   const encodedData = Y.encodeStateAsUpdate(transformedData);
   return encodedData;
@@ -107,12 +139,12 @@ export const getBinaryDataFromDocumentEditorHTMLString = (descriptionHTML: strin
   // convert HTML to JSON
   const contentJSON = generateJSON(descriptionHTML ?? "<p></p>", DOCUMENT_EDITOR_EXTENSIONS);
   // convert JSON to Y.Doc format
-  const transformedData = prosemirrorJSONToYDoc(documentEditorSchema, contentJSON, "default");
+  const transformedData = jsonToYDoc(documentEditorSchema, contentJSON, "default");
 
   // If title is provided, merge it into the document
   if (title != null) {
     const titleJSON = generateTitleProsemirrorJson(title);
-    const titleField = prosemirrorJSONToYDoc(documentEditorSchema, titleJSON, "title");
+    const titleField = jsonToYDoc(documentEditorSchema, titleJSON, "title");
     // Encode the title YDoc to updates and apply them to the main document
     const titleUpdates = Y.encodeStateAsUpdate(titleField);
     Y.applyUpdate(transformedData, titleUpdates);
