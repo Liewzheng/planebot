@@ -30,6 +30,7 @@ from plane.db.models import (
 
 from .base import BaseAPIView
 from plane.utils.order_queryset import PAGE_ORDER_BY_ALLOWLIST, sanitize_order_by
+from plane.utils.page_content import sync_page_description_formats
 from plane.utils.openapi import (
     page_docs,
     PAGE_PK_PARAMETER,
@@ -149,6 +150,9 @@ class PageListCreateAPIEndpoint(BaseAPIView):
                     status=status.HTTP_409_CONFLICT,
                 )
             serializer.save()
+            # A page created with HTML only has no Yjs binary yet; convert it so
+            # the collaborative editor can load it without crashing.
+            sync_page_description_formats(serializer.instance)
             page = self.get_queryset().get(pk=serializer.instance.id)
             serializer = PageSerializer(page)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -328,6 +332,9 @@ class PageDetailAPIEndpoint(BaseAPIView):
                     status=status.HTTP_409_CONFLICT,
                 )
             serializer.save()
+            # Backfill the Yjs binary when content was written as HTML only
+            # (e.g. by the CLI) so the web editor can load the page.
+            sync_page_description_formats(page)
             page = self.get_queryset().get(pk=pk)
             serializer = PageSerializer(page)
             return Response(serializer.data, status=status.HTTP_200_OK)
