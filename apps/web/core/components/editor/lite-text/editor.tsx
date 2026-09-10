@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 // plane constants
 import type { EIssueCommentAccessSpecifier } from "@plane/constants";
 // plane imports
@@ -16,6 +16,8 @@ import { cn, isCommentEmpty } from "@plane/utils";
 // components
 import { EditorMentionsRoot } from "@/components/editor/embeds/mentions";
 import { IssueCommentToolbar } from "@/components/editor/lite-text/toolbar";
+// helpers
+import { convertIssueReferencesToLinks, getIssueReferenceConfig } from "@/helpers/issue-reference.helper";
 // hooks
 import { useEditorConfig, useEditorMention } from "@/hooks/editor";
 import { useMember } from "@/hooks/store/use-member";
@@ -68,6 +70,7 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
     workspaceId,
     projectId,
     issue_id,
+    initialValue,
     accessSpecifier,
     handleAccessChange,
     showAccessSpecifier = false,
@@ -116,6 +119,13 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
   }
   // derived values
   const isEmpty = isCommentEmpty(props.initialValue);
+  // link work item references (e.g. PLANE-1) while typing and on paste
+  const issueReference = useMemo(() => getIssueReferenceConfig(workspaceSlug), [workspaceSlug]);
+  // persisted read-only content never goes through the autolink plugin, so link its identifiers once
+  const processedInitialValue = useMemo(
+    () => (editable ? initialValue : convertIssueReferencesToLinks(initialValue, workspaceSlug)),
+    [editable, initialValue, workspaceSlug]
+  );
 
   return (
     <div
@@ -151,6 +161,8 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
                 setEditorRef(isMutableRefObject<EditorRefApi>(ref) ? ref.current : null);
               }
             }}
+            initialValue={processedInitialValue}
+            issueReference={issueReference}
             mentionHandler={{
               searchCallback: async (query) => {
                 const res = await fetchMentions(query);

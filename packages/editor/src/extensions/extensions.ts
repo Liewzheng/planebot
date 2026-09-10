@@ -53,6 +53,7 @@ type TArguments = Pick<
   | "fileHandler"
   | "getEditorMetaData"
   | "isTouchDevice"
+  | "issueReference"
   | "mentionHandler"
   | "placeholder"
   | "showPlaceholderOnEmpty"
@@ -72,6 +73,7 @@ export const CoreEditorExtensions = (args: TArguments): Extensions => {
     flaggedExtensions,
     getEditorMetaData,
     isTouchDevice = false,
+    issueReference,
     mentionHandler,
     placeholder,
     showPlaceholderOnEmpty,
@@ -90,7 +92,9 @@ export const CoreEditorExtensions = (args: TArguments): Extensions => {
     CustomHorizontalRule,
     CustomKeymap,
     ListKeymap({ tabIndex }),
-    CustomLinkExtension,
+    CustomLinkExtension.configure({
+      issueReference,
+    }),
     CustomTypographyExtension,
     Underline,
     TextStyle,

@@ -22,6 +22,18 @@ type LinkProtocolOptions = {
   optionalSlashes?: boolean;
 };
 
+export type TIssueReferenceConfig = {
+  /**
+   * Pattern matching a work item identifier (e.g. PLANE-1). Matched with a
+   * global flag internally, so it does not need the `g` flag itself.
+   */
+  pattern: RegExp;
+  /**
+   * Maps a matched identifier to the href the link should point to.
+   */
+  resolve: (identifier: string) => string;
+};
+
 type LinkOptions = {
   /**
    * If enabled, it adds links as you type.
@@ -54,6 +66,12 @@ type LinkOptions = {
    * @returns - True if the url is valid, false otherwise.
    */
   validate?: (url: string) => boolean;
+  /**
+   * When set, work item identifiers (e.g. PLANE-1) matching the pattern are
+   * linked via `resolve` while typing and on paste. Identifiers are resolved
+   * to internal routes, so they bypass `validate` (which only accepts URLs).
+   */
+  issueReference?: TIssueReferenceConfig;
 };
 
 declare module "@tiptap/core" {
@@ -242,6 +260,27 @@ export const CustomLinkExtension = Mark.create<LinkOptions, CustomLinkStorage>({
                 })
               );
             }
+
+            // Work item identifiers (e.g. PLANE-1) pasted as plain text.
+            if (this.options.issueReference) {
+              const { pattern, resolve } = this.options.issueReference;
+              const globalPattern = new RegExp(pattern.source, pattern.global ? pattern.flags : `${pattern.flags}g`);
+              let match: RegExpExecArray | null;
+              while ((match = globalPattern.exec(text)) !== null) {
+                // Guard against zero-length matches looping forever.
+                if (!match[0]) {
+                  globalPattern.lastIndex += 1;
+                  continue;
+                }
+                foundLinks.push({
+                  text: match[0],
+                  data: {
+                    href: resolve(match[0]),
+                  },
+                  index: match.index,
+                });
+              }
+            }
           }
 
           return foundLinks;
@@ -262,6 +301,7 @@ export const CustomLinkExtension = Mark.create<LinkOptions, CustomLinkStorage>({
         autolink({
           type: this.type,
           validate: this.options.validate,
+          issueReference: this.options.issueReference,
         })
       );
     }
