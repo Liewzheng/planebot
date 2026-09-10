@@ -333,8 +333,11 @@ class PageDetailAPIEndpoint(BaseAPIView):
                 )
             serializer.save()
             # Backfill the Yjs binary when content was written as HTML only
-            # (e.g. by the CLI) so the web editor can load the page.
-            sync_page_description_formats(page)
+            # (e.g. by the CLI) so the web editor can load the page. When the
+            # request changed the HTML, regenerate it even if a binary exists —
+            # this endpoint does not carry the binary, so a stale one would keep
+            # the previous document in the editor.
+            sync_page_description_formats(page, force="description_html" in request.data)
             page = self.get_queryset().get(pk=pk)
             serializer = PageSerializer(page)
             return Response(serializer.data, status=status.HTTP_200_OK)

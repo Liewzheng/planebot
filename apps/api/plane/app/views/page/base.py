@@ -202,8 +202,10 @@ class PageViewSet(BaseViewSet):
             page_description = page.description_html
             if serializer.is_valid():
                 serializer.save()
-                # Backfill the Yjs binary when content was written as HTML only
-                sync_page_description_formats(page)
+                # Backfill the Yjs binary when content was written as HTML only;
+                # regenerate it when the HTML changed (this endpoint carries no
+                # binary, so a stale one would keep the previous document).
+                sync_page_description_formats(page, force="description_html" in request.data)
                 # capture the page transaction
                 if request.data.get("description_html"):
                     page_transaction.delay(

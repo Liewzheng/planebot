@@ -63,13 +63,18 @@ def convert_page_html_to_formats(description_html: str) -> dict:
     return {}
 
 
-def sync_page_description_formats(page) -> bool:
-    """Backfill `description_binary` / `description_json` for a page that has
-    HTML content but no Yjs binary. No-op when a binary is already present.
+def sync_page_description_formats(page, force: bool = False) -> bool:
+    """Backfill `description_binary` / `description_json` for a page written as
+    HTML only.
 
-    Returns True when the page was updated.
+    `force=True` regenerates the formats even when a binary already exists —
+    used when `description_html` changes through an endpoint whose serializer
+    does not carry the binary, so the collaborative editor does not keep
+    serving the previous document. Returns True when the page was updated.
     """
-    if page.description_binary or not page.description_html:
+    if not page.description_html:
+        return False
+    if page.description_binary and not force:
         return False
 
     converted = convert_page_html_to_formats(page.description_html)
