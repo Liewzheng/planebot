@@ -114,7 +114,8 @@ export const CommentCard = observer(function CommentCard(props: Props) {
                     editable
                     anchor={anchor}
                     workspaceId={workspaceID?.toString() ?? ""}
-                    onEnterKeyPress={handleSubmit(handleCommentUpdate)}
+                    // Enter inserts a newline now; publishing happens only via the submit button below
+                    disabledExtensions={["enter-key"]}
                     ref={editorRef}
                     id={comment.id}
                     initialValue={value}
