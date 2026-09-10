@@ -6,6 +6,8 @@
 
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
+// plane i18n
+import { useTranslation } from "@plane/i18n";
 // plane imports
 import { PagesOutline } from "@makeplane/propel/icons";
 import type { ICustomSearchSelectOption } from "@plane/types";
@@ -30,6 +32,8 @@ export interface IPagesHeaderProps {
 const storeType = EPageStoreType.PROJECT;
 
 export const PageDetailsHeader = observer(function PageDetailsHeader() {
+  // plane i18n
+  const { t } = useTranslation();
   // router
   const router = useAppRouter();
   const { workspaceSlug, pageId, projectId } = useParams();
@@ -71,7 +75,7 @@ export const PageDetailsHeader = observer(function PageDetailsHeader() {
             <Breadcrumbs.Item
               component={
                 <BreadcrumbLink
-                  label="Pages"
+                  label={t("pages")}
                   href={`/${workspaceSlug}/projects/${projectId}/pages/`}
                   icon={<PagesOutline className="h-4 w-4 text-tertiary" />}
                 />

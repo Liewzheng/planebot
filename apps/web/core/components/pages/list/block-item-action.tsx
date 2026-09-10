@@ -45,7 +45,7 @@ export const BlockItemAction = observer(function BlockItemAction(props: Props) {
     <>
       {/* page details */}
       <div className="cursor-default">
-        <Tooltip label={`Owned by: ${ownerDetails?.display_name ?? ""}`} layout="stacked">
+        <Tooltip label={t("owned_by", { name: ownerDetails?.display_name ?? "" })} layout="stacked">
           <Avatar
             alt={ownerDetails?.display_name}
             fallback={ownerDetails?.display_name?.[0]?.toUpperCase()}
@@ -63,7 +63,7 @@ export const BlockItemAction = observer(function BlockItemAction(props: Props) {
       <MinusOutline className="-mx-3 h-5 w-5 rotate-90 text-placeholder" />
 
       {/* page info */}
-      <Tooltip label={`Created on ${renderFormattedDate(created_at)}`} layout="stacked">
+      <Tooltip label={t("created_on", { date: renderFormattedDate(created_at) })} layout="stacked">
         <span className="grid h-4 w-4 cursor-default place-items-center">
           <InfoOutline className="h-4 w-4 text-tertiary" />
         </span>

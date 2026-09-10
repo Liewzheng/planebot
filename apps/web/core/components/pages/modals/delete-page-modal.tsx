@@ -29,6 +29,8 @@ type TConfirmPageDeletionProps = {
 
 export const DeletePageModal = observer(function DeletePageModal(props: TConfirmPageDeletionProps) {
   const { isOpen, onClose, page, storeType } = props;
+  // plane i18n
+  const { t } = useTranslation();
   // states
   const [isDeleting, setIsDeleting] = useState(false);
   // store hooks
@@ -53,8 +55,8 @@ export const DeletePageModal = observer(function DeletePageModal(props: TConfirm
         handleClose();
         setToast({
           type: TOAST_TYPE.SUCCESS,
-          title: "Success!",
-          message: "Page deleted successfully.",
+          title: t("success"),
+          message: t("page_deleted_successfully"),
         });
 
         if (routePageId) {
@@ -64,8 +66,8 @@ export const DeletePageModal = observer(function DeletePageModal(props: TConfirm
       .catch(() => {
         setToast({
           type: TOAST_TYPE.ERROR,
-          title: "Error!",
-          message: "Page could not be deleted. Please try again.",
+          title: t("error"),
+          message: t("page_delete_failed"),
         });
       });
 
@@ -74,8 +76,6 @@ export const DeletePageModal = observer(function DeletePageModal(props: TConfirm
 
   if (!page || !page.id) return null;
 
-  const { t } = useTranslation();
-
   return (
     <AlertModalCore
       handleClose={handleClose}
@@ -83,13 +83,7 @@ export const DeletePageModal = observer(function DeletePageModal(props: TConfirm
       isSubmitting={isDeleting}
       isOpen={isOpen}
       title={t("delete_page")}
-      content={
-        <>
-          Are you sure you want to delete page-{" "}
-          <span className="font-medium break-words break-all text-primary">{getPageName(name)}</span> ? The Page will be
-          deleted permanently. This action cannot be undone.
-        </>
-      }
+      content={t("delete_page_confirm", { pageName: getPageName(name) })}
     />
   );
 });

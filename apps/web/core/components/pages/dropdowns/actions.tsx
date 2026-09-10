@@ -22,6 +22,8 @@ import {
 } from "@makeplane/propel/icons";
 // constants
 import { EPageAccess } from "@plane/constants";
+// plane i18n
+import { useTranslation } from "@plane/i18n";
 // plane editor
 // plane ui
 import type { TContextMenuItem } from "@plane/ui";
@@ -62,6 +64,8 @@ type Props = {
 
 export const PageActions = observer(function PageActions(props: Props) {
   const { extraOptions, optionsOrder, page, parentRef, storeType } = props;
+  // plane i18n
+  const { t } = useTranslation();
   // states
   const [deletePageModal, setDeletePageModal] = useState(false);
   const [movePageModal, setMovePageModal] = useState(false);
@@ -96,7 +100,7 @@ export const PageActions = observer(function PageActions(props: Props) {
           action: () => {
             pageOperations.toggleLock();
           },
-          title: is_locked ? "Unlock" : "Lock",
+          title: is_locked ? t("unlock") : t("lock"),
           icon: is_locked ? UnlockedOutline : LockedOutline,
           shouldRender: canCurrentUserLockPage,
         },
@@ -105,21 +109,21 @@ export const PageActions = observer(function PageActions(props: Props) {
           action: () => {
             pageOperations.toggleAccess();
           },
-          title: access === EPageAccess.PUBLIC ? "Make private" : "Make public",
+          title: access === EPageAccess.PUBLIC ? t("make_private") : t("make_public"),
           icon: access === EPageAccess.PUBLIC ? LockOutline : GlobeOutline,
           shouldRender: canCurrentUserChangeAccess && !archived_at,
         },
         {
           key: "open-in-new-tab",
           action: pageOperations.openInNewTab,
-          title: "Open in new tab",
+          title: t("open_in_new_tab"),
           icon: NewTabOutline,
           shouldRender: true,
         },
         {
           key: "copy-link",
           action: pageOperations.copyLink,
-          title: "Copy link",
+          title: t("copy_link"),
           icon: LinkOutline,
           shouldRender: true,
         },
@@ -128,7 +132,7 @@ export const PageActions = observer(function PageActions(props: Props) {
           action: () => {
             pageOperations.duplicate();
           },
-          title: "Make a copy",
+          title: t("make_a_copy"),
           icon: CopyOutline,
           shouldRender: canCurrentUserDuplicatePage,
         },
@@ -137,7 +141,7 @@ export const PageActions = observer(function PageActions(props: Props) {
           action: () => {
             pageOperations.toggleArchive();
           },
-          title: archived_at ? "Restore" : "Archive",
+          title: archived_at ? t("restore") : t("archive"),
           icon: archived_at ? RestoreOutline : ArchiveOutline,
           shouldRender: canCurrentUserArchivePage,
         },
@@ -146,14 +150,14 @@ export const PageActions = observer(function PageActions(props: Props) {
           action: () => {
             setDeletePageModal(true);
           },
-          title: "Delete",
+          title: t("delete"),
           icon: DeleteOutline,
           shouldRender: canCurrentUserDeletePage && !!archived_at,
         },
         {
           key: "move",
           action: () => setMovePageModal(true),
-          title: "Move",
+          title: t("move"),
           icon: ExportOutline,
           shouldRender: canCurrentUserMovePage && isMovePageEnabled,
         },
@@ -176,6 +180,7 @@ export const PageActions = observer(function PageActions(props: Props) {
       canCurrentUserMovePage,
       isMovePageEnabled,
       pageOperations,
+      t,
     ]
   );
   // arrange options
