@@ -223,45 +223,37 @@ export const createRowInsertButton = (editor: Editor, tableInfo: TableInfo): HTM
   return button;
 };
 
+// The table node may render through a custom node view whose root is a wrapper
+// element, so resolve the actual <table> inside it.
+const resolveTableElement = (node: Node | null): HTMLElement | null => {
+  if (!node || node.nodeType !== Node.ELEMENT_NODE) return null;
+  const element = node as HTMLElement;
+  if (element.tagName === "TABLE") return element;
+  return element.querySelector("table");
+};
+
 export const findAllTables = (editor: Editor): TableInfo[] => {
   const tables: TableInfo[] = [];
-  const tableElements = editor.view.dom.querySelectorAll("table");
 
-  tableElements.forEach((tableElement) => {
-    // Find the table's ProseMirror position
-    let tablePos = -1;
-    let tableNode: ProseMirrorNode | null = null;
+  // One pass over the document. The previous implementation called
+  // `dom.querySelectorAll("table")` and then walked the whole document once per
+  // table, making this O(tables x document). It runs on every transaction, so a
+  // page with many tables became unusable (a single keystroke or a column-resize
+  // commit cost ~100ms on a 120-table page).
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.spec.tableRole !== "table") return true;
 
-    // Walk through the document to find matching table nodes
-    editor.state.doc.descendants((node, pos) => {
-      if (node.type.spec.tableRole === "table") {
-        const domAtPos = editor.view.domAtPos(pos + 1);
-        let domTable = domAtPos.node;
-
-        // Navigate to find the table element
-        while (domTable && domTable.parentNode && domTable.nodeType !== Node.ELEMENT_NODE) {
-          domTable = domTable.parentNode;
-        }
-
-        while (domTable && domTable.parentNode && (domTable as HTMLElement).tagName !== "TABLE") {
-          domTable = domTable.parentNode;
-        }
-
-        if (domTable === tableElement) {
-          tablePos = pos;
-          tableNode = node;
-          return false; // Stop iteration
-        }
-      }
-    });
-
-    if (tablePos !== -1 && tableNode) {
+    const tableElement = resolveTableElement(editor.view.nodeDOM(pos));
+    if (tableElement) {
       tables.push({
         tableElement,
-        tableNode,
-        tablePos,
+        tableNode: node,
+        tablePos: pos,
       });
     }
+
+    // tables cannot be nested, no need to look inside
+    return false;
   });
 
   return tables;

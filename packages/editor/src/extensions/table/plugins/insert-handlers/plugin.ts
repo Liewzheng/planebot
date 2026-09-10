@@ -86,8 +86,10 @@ export const TableInsertPlugin = (editor: Editor): Plugin => {
 
       return {
         update(view, prevState) {
-          // Update when document changes
-          if (!prevState.doc.eq(view.state.doc)) {
+          // Identity check: ProseMirror builds a new document object on every
+          // change, and `doc.eq` walks the whole document (very costly on long
+          // pages) to tell us the same thing.
+          if (prevState.doc !== view.state.doc) {
             updateAllTables();
           }
         },

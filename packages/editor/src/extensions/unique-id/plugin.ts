@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { combineTransactionSteps, findChildrenInRange, findDuplicates, getChangedRanges } from "@tiptap/core";
+import { combineTransactionSteps, findChildrenInRange, getChangedRanges } from "@tiptap/core";
 import { Fragment, Slice } from "@tiptap/pm/model";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
@@ -47,15 +47,28 @@ export const createUniqueIDPlugin = (options: UniqueIDOptions) => {
       // get changed ranges based on the old state
       const changes = getChangedRanges(transform);
 
-      // Get all IDs from the entire document to check for duplicates globally
-      const allNodesInDoc: Array<{ node: ProseMirrorNode; pos: number }> = [];
-      newState.doc.descendants((node, pos) => {
-        if (types.includes(node.type.name)) {
-          allNodesInDoc.push({ node, pos });
-        }
-      });
-      const allIds = allNodesInDoc.map(({ node }) => node.attrs[attributeName]).filter((id) => id !== null);
-      const duplicatedIds = findDuplicates(allIds);
+      // Duplicate ids are only relevant for nodes that are *new* in this
+      // transaction yet already carry an id, so the scan is deferred until such
+      // a node is actually found. Building it eagerly walked the whole document
+      // and `findDuplicates` was O(n^2) over every id on every single edit
+      // (~30ms on a long page).
+      let duplicatedIds: string[] | null = null;
+      const getDuplicatedIds = (): string[] => {
+        if (duplicatedIds) return duplicatedIds;
+
+        const idCounts = new Map<string, number>();
+        newState.doc.descendants((node) => {
+          if (!types.includes(node.type.name)) return;
+          const id = node.attrs[attributeName];
+          if (id === null || id === undefined) return;
+          idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+        });
+
+        duplicatedIds = Array.from(idCounts)
+          .filter(([, count]) => count > 1)
+          .map(([id]) => id);
+        return duplicatedIds;
+      };
 
       changes.forEach(({ newRange }) => {
         const newNodes = findChildrenInRange(newState.doc, newRange, (node) => types.includes(node.type.name));
@@ -80,7 +93,7 @@ export const createUniqueIDPlugin = (options: UniqueIDOptions) => {
           const { deleted } = mapping.invert().mapResult(pos);
 
           // If this is a new node (didn't exist in old state) and its ID is duplicated in the entire document
-          const newNode = deleted && duplicatedIds.includes(id);
+          const newNode = deleted && getDuplicatedIds().includes(id);
 
           if (newNode) {
             tr.setNodeMarkup(pos, undefined, {
