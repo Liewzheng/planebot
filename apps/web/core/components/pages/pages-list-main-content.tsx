@@ -66,8 +66,8 @@ export const PagesListMainContent = observer(function PagesListMainContent(props
       .catch((err) => {
         setToast({
           type: TOAST_TYPE.ERROR,
-          title: "Error!",
-          message: err?.data?.error || "Page could not be created. Please try again.",
+          title: t("error"),
+          message: err?.data?.error || t("page_create_failed"),
         });
       })
       .finally(() => setIsCreatingPage(false));
