@@ -96,6 +96,10 @@ export function CodeBlockComponent(props: NodeViewProps) {
   const [imageDownloadSrc, setImageDownloadSrc] = useState<string | undefined>(undefined);
   const [cachedSvg, setCachedSvg] = useState<string | undefined>(undefined);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  // The language picker and mermaid toggle are only mounted while the block is
+  // hovered: a page with many code blocks would otherwise hold one <select>
+  // with ~40 <option> nodes per block, which is a large DOM/layout cost.
+  const [showToolbar, setShowToolbar] = useState(false);
 
   // derived values
   const attrs = node.attrs as TCodeBlockAttributes;
@@ -196,8 +200,10 @@ export function CodeBlockComponent(props: NodeViewProps) {
     extension.options.getAssetDownloadSrc,
   ]);
 
-  // languages supported by lowlight plus mermaid (rendered as a diagram, not highlighted)
+  // languages supported by lowlight plus mermaid (rendered as a diagram, not highlighted).
+  // Only built while the picker is mounted.
   const languageOptions = useMemo(() => {
+    if (!showToolbar) return [];
     const languages = lowlight.listLanguages().toSorted((a, b) => a.localeCompare(b));
     const options = [MERMAID_LANGUAGE, ...languages];
     // keep an explicitly set but unregistered language selectable instead of blanking the picker
@@ -205,7 +211,7 @@ export function CodeBlockComponent(props: NodeViewProps) {
       options.push(currentLanguage);
     }
     return options;
-  }, [currentLanguage]);
+  }, [currentLanguage, showToolbar]);
 
   const copyToClipboard = async (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
     try {
@@ -270,12 +276,17 @@ export function CodeBlockComponent(props: NodeViewProps) {
   }, [node.textContent]);
 
   return (
-    <NodeViewWrapper key={attrs[ECodeBlockAttributeNames.ID]} className="code-block group/code relative">
-      {editor.isEditable && (
+    <NodeViewWrapper
+      key={attrs[ECodeBlockAttributeNames.ID]}
+      className="code-block group/code relative"
+      onMouseEnter={() => setShowToolbar(true)}
+      onMouseLeave={() => setShowToolbar(false)}
+    >
+      {editor.isEditable && showToolbar && (
         <div
           contentEditable={false}
           role="presentation"
-          className="absolute top-2 left-2 z-10 hidden items-center gap-2 focus-within:flex group-hover/code:flex"
+          className="absolute top-2 left-2 z-10 flex items-center gap-2"
           onMouseDown={(e) => e.stopPropagation()}
         >
           <select
