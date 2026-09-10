@@ -634,3 +634,19 @@ span[data-name][data-type="emoji"] img {
 }
 
 /* end inline math styles */
+
+/*
+ * Long-document rendering. The editor does not virtualize, so a page with
+ * dozens of tables and code blocks re-lays-out the whole document on every
+ * keystroke and on each table-column resize step. Skipping layout/paint for
+ * blocks that are far outside the viewport keeps editing responsive.
+ *
+ * `contain-intrinsic-size: auto <fallback>` keeps the scrollbar stable while a
+ * block is skipped and then remembers its real size once rendered, so the
+ * fallback only applies to blocks that were never rendered. Scoped to the
+ * document (page) editor; rich-text/comment editors are short.
+ */
+.document-editor .ProseMirror > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}

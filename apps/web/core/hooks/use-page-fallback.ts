@@ -10,6 +10,8 @@ import type { EditorRefApi, CollaborationState } from "@plane/editor";
 import { convertBinaryDataToBase64String, getBinaryDataFromDocumentEditorHTMLString } from "@plane/editor";
 // plane types
 import type { TDocumentPayload } from "@plane/types";
+// plane utils
+import { isJSONContentEmpty } from "@plane/utils";
 // hooks
 import useAutoSave from "@/hooks/use-auto-save";
 import type { TPageInstance } from "@/store/pages/base-page";
@@ -57,7 +59,16 @@ export const usePageFallback = (args: TArgs) => {
         );
       }
 
-      editor.setProviderDocument(latestDecodedDescription);
+      // Only seed the document when the editor has no content yet.
+      // setProviderDocument applies a Yjs update (merge), so seeding a document
+      // that already has content duplicates the whole page on every fallback
+      // run (the frequent cause of a page ballooning to several times its
+      // size). When content is already present we skip the merge and just save.
+      const { json: currentJSON } = editor.getDocument();
+      if (isJSONContentEmpty(currentJSON as Parameters<typeof isJSONContentEmpty>[0])) {
+        editor.setProviderDocument(latestDecodedDescription);
+      }
+
       const { binary, html, json } = editor.getDocument();
       if (!binary || !json) return;
       const encodedBinary = convertBinaryDataToBase64String(binary);
