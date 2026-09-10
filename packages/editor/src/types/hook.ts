@@ -20,6 +20,7 @@ type TCoreHookProps = Pick<
   | "getEditorMetaData"
   | "handleEditorReady"
   | "isTouchDevice"
+  | "issueReference"
   | "onEditorFocus"
 >;
 

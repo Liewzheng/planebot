@@ -13,6 +13,7 @@ import type { NodeViewProps as TNodeViewProps } from "@tiptap/react";
 import type { TCustomComponentsMetaData } from "@plane/utils";
 // extension types
 import type { TTextAlign } from "@/extensions";
+import type { TIssueReferenceConfig } from "@/extensions/custom-link/extension";
 // plane editor imports
 import type {
   IEditorPropsExtended,
@@ -172,6 +173,7 @@ export type IEditorProps = {
   id: string;
   initialValue: string;
   isTouchDevice?: boolean;
+  issueReference?: TIssueReferenceConfig;
   mentionHandler: TMentionHandler;
   onAssetChange?: (assets: TEditorAsset[]) => void;
   onEditorFocus?: () => void;

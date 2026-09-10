@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { forwardRef } from "react";
+import { forwardRef, useMemo } from "react";
 // plane imports
 import { RichTextEditorWithRef } from "@plane/editor";
 import type { EditorRefApi, IRichTextEditorProps, TFileHandler } from "@plane/editor";
@@ -12,6 +12,8 @@ import type { MakeOptional, TSearchEntityRequestPayload, TSearchResponse } from 
 import { cn } from "@plane/utils";
 // components
 import { EditorMentionsRoot } from "@/components/editor/embeds/mentions";
+// helpers
+import { convertIssueReferencesToLinks, getIssueReferenceConfig } from "@/helpers/issue-reference.helper";
 // hooks
 import { useEditorConfig, useEditorMention } from "@/hooks/editor";
 import { useMember } from "@/hooks/store/use-member";
@@ -49,9 +51,17 @@ export const RichTextEditor = forwardRef(function RichTextEditor(
     workspaceSlug,
     workspaceId,
     projectId,
+    initialValue,
     disabledExtensions: additionalDisabledExtensions = [],
     ...rest
   } = props;
+  // link work item references (e.g. PLANE-1) while typing and on paste
+  const issueReference = useMemo(() => getIssueReferenceConfig(workspaceSlug), [workspaceSlug]);
+  // persisted read-only content never goes through the autolink plugin, so link its identifiers once
+  const processedInitialValue = useMemo(
+    () => (editable === false ? convertIssueReferencesToLinks(initialValue, workspaceSlug) : initialValue),
+    [editable, initialValue, workspaceSlug]
+  );
   // store hooks
   const { getUserDetails } = useMember();
   // editor flaggings
@@ -85,6 +95,8 @@ export const RichTextEditor = forwardRef(function RichTextEditor(
         workspaceSlug,
       })}
       getEditorMetaData={getEditorMetaData}
+      initialValue={processedInitialValue}
+      issueReference={issueReference}
       mentionHandler={{
         searchCallback: async (query) => {
           const res = await fetchMentions(query);

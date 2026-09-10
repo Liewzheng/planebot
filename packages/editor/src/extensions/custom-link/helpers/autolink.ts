@@ -9,10 +9,13 @@ import { combineTransactionSteps, findChildrenInRange, getChangedRanges, getMark
 import type { MarkType } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { find } from "linkifyjs";
+// local imports
+import type { TIssueReferenceConfig } from "../extension";
 
 type AutolinkOptions = {
   type: MarkType;
   validate?: (url: string) => boolean;
+  issueReference?: TIssueReferenceConfig;
 };
 
 export function autolink(options: AutolinkOptions): Plugin {
@@ -69,6 +72,12 @@ export function autolink(options: AutolinkOptions): Plugin {
             return false;
           }
 
+          // Candidates for the link mark: resolved href plus doc positions.
+          const linkCandidates: { from: number; to: number; href: string }[] = [];
+
+          const isInsideCodeMark = (from: number, to: number) =>
+            !!newState.schema.marks.code && newState.doc.rangeHasMark(from, to, newState.schema.marks.code);
+
           find(lastWordBeforeSpace)
             .filter((link) => link.isLink)
             // Calculate link position.
@@ -78,13 +87,7 @@ export function autolink(options: AutolinkOptions): Plugin {
               to: lastWordAndBlockOffset + link.end + 1,
             }))
             // ignore link inside code mark
-            .filter((link) => {
-              if (!newState.schema.marks.code) {
-                return true;
-              }
-
-              return !newState.doc.rangeHasMark(link.from, link.to, newState.schema.marks.code);
-            })
+            .filter((link) => !isInsideCodeMark(link.from, link.to))
             // validate link
             .filter((link) => {
               if (options.validate) {
@@ -92,20 +95,45 @@ export function autolink(options: AutolinkOptions): Plugin {
               }
               return true;
             })
-            // Add link mark.
-            .forEach((link) => {
-              if (getMarksBetween(link.from, link.to, newState.doc).some((item) => item.mark.type === options.type)) {
-                return;
-              }
+            .forEach((link) => linkCandidates.push({ from: link.from, to: link.to, href: link.href }));
 
-              tr.addMark(
-                link.from,
-                link.to,
-                options.type.create({
-                  href: link.href,
-                })
-              );
-            });
+          // Work item identifiers (e.g. PLANE-1) in the same trigger position:
+          // right after the identifier, when a whitespace is typed. These are
+          // resolved to internal routes, so they bypass `validate`.
+          if (options.issueReference) {
+            const { pattern, resolve } = options.issueReference;
+            const globalPattern = new RegExp(pattern.source, pattern.global ? pattern.flags : `${pattern.flags}g`);
+            let match: RegExpExecArray | null;
+            while ((match = globalPattern.exec(lastWordBeforeSpace)) !== null) {
+              // Guard against zero-length matches looping forever.
+              if (!match[0]) {
+                globalPattern.lastIndex += 1;
+                continue;
+              }
+              const from = lastWordAndBlockOffset + match.index + 1;
+              const to = from + match[0].length;
+              // ignore identifier inside code mark
+              if (isInsideCodeMark(from, to)) {
+                continue;
+              }
+              linkCandidates.push({ from, to, href: resolve(match[0]) });
+            }
+          }
+
+          // Add link mark.
+          linkCandidates.forEach(({ from, to, href }) => {
+            if (getMarksBetween(from, to, newState.doc).some((item) => item.mark.type === options.type)) {
+              return;
+            }
+
+            tr.addMark(
+              from,
+              to,
+              options.type.create({
+                href,
+              })
+            );
+          });
         }
       });
 
