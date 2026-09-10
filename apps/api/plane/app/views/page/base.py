@@ -47,6 +47,7 @@ from plane.db.models import (
 )
 from plane.utils.error_codes import ERROR_CODES
 from plane.utils.order_queryset import PAGE_ORDER_BY_ALLOWLIST, sanitize_order_by
+from plane.utils.page_content import sync_page_description_formats
 
 # Local imports
 from ..base import BaseAPIView, BaseViewSet
@@ -155,6 +156,9 @@ class PageViewSet(BaseViewSet):
 
         if serializer.is_valid():
             serializer.save()
+            # Convert HTML-only writes into the document JSON + Yjs binary so the
+            # collaborative editor can load the page.
+            sync_page_description_formats(serializer.instance)
             # capture the page transaction
             page_transaction.delay(
                 new_description_html=request.data.get("description_html", "<p></p>"),
@@ -198,6 +202,8 @@ class PageViewSet(BaseViewSet):
             page_description = page.description_html
             if serializer.is_valid():
                 serializer.save()
+                # Backfill the Yjs binary when content was written as HTML only
+                sync_page_description_formats(page)
                 # capture the page transaction
                 if request.data.get("description_html"):
                     page_transaction.delay(
