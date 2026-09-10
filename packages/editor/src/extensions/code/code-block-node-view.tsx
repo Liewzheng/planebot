@@ -138,7 +138,9 @@ export function CodeBlockComponent(props: NodeViewProps) {
   );
 
   const showImage = renderMermaid && hideSource && !!mermaidImageId && !isImageStale;
-  const showLive = renderMermaid && (!hideSource || !mermaidImageId || isImageStale);
+  // Non-mermaid blocks always render the live editor: only a mermaid block that
+  // has a cached image and "hide source" enabled may show the image instead.
+  const showLive = !renderMermaid || !hideSource || !mermaidImageId || isImageStale;
 
   // resolve the cached image locale when displayed. Prefer the stored workspace
   // asset URL (served inline); fall back to resolving by asset id for legacy
