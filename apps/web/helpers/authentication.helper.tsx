@@ -98,6 +98,17 @@ export enum EAuthenticationErrorCodes {
   ADMIN_USER_ALREADY_EXIST = "5180",
   ADMIN_USER_DOES_NOT_EXIST = "5185",
   ADMIN_USER_DEACTIVATED = "5190",
+  // MFA
+  MFA_CODE_REQUIRED = "5200",
+  MFA_INVALID_CODE = "5205",
+  MFA_SESSION_EXPIRED = "5210",
+  MFA_RECOVERY_CODE_REQUIRED = "5215",
+  MFA_INVALID_RECOVERY_CODE = "5220",
+  MFA_NOT_ENABLED = "5225",
+  MFA_ALREADY_ENABLED = "5230",
+  MFA_PASSWORD_REQUIRED = "5235",
+  MFA_INCORRECT_PASSWORD = "5240",
+  MFA_SETUP_REQUIRED = "5245",
   // Rate limit
   RATE_LIMIT_EXCEEDED = "5900",
 }
@@ -371,6 +382,47 @@ const errorCodeMessages: {
     title: `Admin user deactivated`,
     message: () => <div>Your account is deactivated</div>,
   },
+  // MFA
+  [EAuthenticationErrorCodes.MFA_CODE_REQUIRED]: {
+    title: `Verification code required`,
+    message: () => `Verification code required. Please try again.`,
+  },
+  [EAuthenticationErrorCodes.MFA_INVALID_CODE]: {
+    title: `Invalid code`,
+    message: () => `Invalid code. Please try again.`,
+  },
+  [EAuthenticationErrorCodes.MFA_SESSION_EXPIRED]: {
+    title: `Sign-in session expired`,
+    message: () => `Your sign-in session expired. Please sign in again.`,
+  },
+  [EAuthenticationErrorCodes.MFA_RECOVERY_CODE_REQUIRED]: {
+    title: `Recovery code required`,
+    message: () => `Recovery code required. Please try again.`,
+  },
+  [EAuthenticationErrorCodes.MFA_INVALID_RECOVERY_CODE]: {
+    title: `Invalid recovery code`,
+    message: () => `Invalid recovery code. Please try again.`,
+  },
+  [EAuthenticationErrorCodes.MFA_NOT_ENABLED]: {
+    title: `Two-factor authentication disabled`,
+    message: () => `Two-factor authentication is disabled on this instance. Please contact your administrator.`,
+  },
+  [EAuthenticationErrorCodes.MFA_ALREADY_ENABLED]: {
+    title: `Two-factor authentication already enabled`,
+    message: () => `Two-factor authentication is already enabled for your account.`,
+  },
+  [EAuthenticationErrorCodes.MFA_PASSWORD_REQUIRED]: {
+    title: `Password required`,
+    message: () => `Password required. Please try again.`,
+  },
+  [EAuthenticationErrorCodes.MFA_INCORRECT_PASSWORD]: {
+    title: `Incorrect password`,
+    message: () => `Incorrect password. Please try again.`,
+  },
+  [EAuthenticationErrorCodes.MFA_SETUP_REQUIRED]: {
+    title: `Two-factor setup required`,
+    message: () => `Start the two-factor setup before verifying a code.`,
+  },
   [EAuthenticationErrorCodes.RATE_LIMIT_EXCEEDED]: {
     title: "",
     message: () => `Rate limit exceeded. Please try again later.`,
@@ -429,6 +481,7 @@ export const authErrorHandler = (errorCode: EAuthenticationErrorCodes, email?: s
     EAuthenticationErrorCodes.ADMIN_USER_ALREADY_EXIST,
     EAuthenticationErrorCodes.ADMIN_USER_DOES_NOT_EXIST,
     EAuthenticationErrorCodes.ADMIN_USER_DEACTIVATED,
+    EAuthenticationErrorCodes.MFA_SESSION_EXPIRED,
     EAuthenticationErrorCodes.RATE_LIMIT_EXCEEDED,
     EAuthenticationErrorCodes.PASSWORD_TOO_WEAK,
   ];
