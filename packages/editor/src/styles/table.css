@@ -4,10 +4,15 @@
 
   table {
     border-collapse: collapse;
-    table-layout: fixed;
+    /* hug the content instead of stretching to the container, and let the
+       browser distribute column widths by content (PLANE-45). Once a column
+       is manually resized, updateColumnsOnResize pins the table with an
+       inline `width` + `table-layout: fixed`, which overrides these defaults. */
+    table-layout: auto;
     margin: 0.5rem 0 0 0;
     @apply relative border border-subtle;
-    width: 100%;
+    width: max-content;
+    max-width: 100%;
 
     td,
     th {
