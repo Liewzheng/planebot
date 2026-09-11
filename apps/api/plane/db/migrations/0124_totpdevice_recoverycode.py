@@ -2,6 +2,7 @@
 
 from django.conf import settings
 from django.db import migrations, models
+import django.db.models.deletion
 import uuid
 
 
@@ -17,6 +18,7 @@ class Migration(migrations.Migration):
             fields=[
                 ("created_at", models.DateTimeField(auto_now_add=True, verbose_name="Created At")),
                 ("updated_at", models.DateTimeField(auto_now=True, verbose_name="Last Modified At")),
+                ("deleted_at", models.DateTimeField(blank=True, null=True, verbose_name="Deleted At")),
                 (
                     "id",
                     models.UUIDField(
@@ -31,9 +33,29 @@ class Migration(migrations.Migration):
                 ("secret", models.TextField()),
                 ("confirmed", models.BooleanField(default=False)),
                 (
+                    "created_by",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="%(class)s_created_by",
+                        to=settings.AUTH_USER_MODEL,
+                        verbose_name="Created By",
+                    ),
+                ),
+                (
+                    "updated_by",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="%(class)s_updated_by",
+                        to=settings.AUTH_USER_MODEL,
+                        verbose_name="Last Modified By",
+                    ),
+                ),
+                (
                     "user",
                     models.OneToOneField(
-                        on_delete=models.deletion.CASCADE,
+                        on_delete=django.db.models.deletion.CASCADE,
                         related_name="totp_device",
                         to=settings.AUTH_USER_MODEL,
                     ),
@@ -51,6 +73,7 @@ class Migration(migrations.Migration):
             fields=[
                 ("created_at", models.DateTimeField(auto_now_add=True, verbose_name="Created At")),
                 ("updated_at", models.DateTimeField(auto_now=True, verbose_name="Last Modified At")),
+                ("deleted_at", models.DateTimeField(blank=True, null=True, verbose_name="Deleted At")),
                 (
                     "id",
                     models.UUIDField(
@@ -65,9 +88,29 @@ class Migration(migrations.Migration):
                 ("code_hash", models.CharField(max_length=64)),
                 ("used_at", models.DateTimeField(blank=True, null=True)),
                 (
+                    "created_by",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="%(class)s_created_by",
+                        to=settings.AUTH_USER_MODEL,
+                        verbose_name="Created By",
+                    ),
+                ),
+                (
+                    "updated_by",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="%(class)s_updated_by",
+                        to=settings.AUTH_USER_MODEL,
+                        verbose_name="Last Modified By",
+                    ),
+                ),
+                (
                     "user",
                     models.ForeignKey(
-                        on_delete=models.deletion.CASCADE,
+                        on_delete=django.db.models.deletion.CASCADE,
                         related_name="recovery_codes",
                         to=settings.AUTH_USER_MODEL,
                     ),
