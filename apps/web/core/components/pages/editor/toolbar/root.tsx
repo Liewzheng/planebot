@@ -5,7 +5,7 @@
  */
 
 import { observer } from "mobx-react";
-import { RightSidePaneOutline } from "@makeplane/propel/icons";
+import { EditOutline, RightSidePaneOutline, TickOutline } from "@makeplane/propel/icons";
 // plane imports
 import { useTranslation } from "@plane/i18n";
 import { Tooltip } from "@makeplane/propel/components/tooltip";
@@ -19,12 +19,15 @@ import type { TPageInstance } from "@/store/pages/base-page";
 
 type Props = {
   handleOpenNavigationPane: () => void;
+  isEditing: boolean;
   isNavigationPaneOpen: boolean;
+  onFinishEditing: () => void;
+  onStartEditing: () => void;
   page: TPageInstance;
 };
 
 export const PageEditorToolbarRoot = observer(function PageEditorToolbarRoot(props: Props) {
-  const { handleOpenNavigationPane, isNavigationPaneOpen, page } = props;
+  const { handleOpenNavigationPane, isEditing, isNavigationPaneOpen, onFinishEditing, onStartEditing, page } = props;
   // translation
   const { t } = useTranslation();
   // derived values
@@ -35,7 +38,8 @@ export const PageEditorToolbarRoot = observer(function PageEditorToolbarRoot(pro
   // page filters
   const { isFullWidth, isStickyToolbarEnabled } = usePageFilters();
   // derived values
-  const shouldHideToolbar = !isStickyToolbarEnabled || !isContentEditable;
+  // the rich toolbar is only shown while actively editing; reading mode gets the slim corner bar
+  const shouldHideToolbar = !isStickyToolbarEnabled || !isContentEditable || !isEditing;
 
   return (
     <>
@@ -56,6 +60,16 @@ export const PageEditorToolbarRoot = observer(function PageEditorToolbarRoot(pro
           <div className="flex w-full max-w-full items-center justify-between">
             <div className="flex-1">{editorRef && <PageToolbar editorRef={editorRef} />}</div>
             <div className="flex items-center gap-2">
+              {isEditing && (
+                <button
+                  type="button"
+                  onClick={onFinishEditing}
+                  className="flex items-center gap-1 rounded-sm border border-subtle bg-layer-1 px-2 py-1 text-13 font-medium text-secondary transition-colors hover:bg-layer-transparent-hover hover:text-primary"
+                >
+                  <TickOutline className="size-3.5" />
+                  {t("page_editor.finish_editing")}
+                </button>
+              )}
               {!isNavigationPaneOpen && (
                 <button
                   type="button"
@@ -70,7 +84,20 @@ export const PageEditorToolbarRoot = observer(function PageEditorToolbarRoot(pro
         </div>
       </div>
       {shouldHideToolbar && (
-        <div className="absolute top-0 right-0 z-10 flex h-[52px] items-center px-page-x">
+        <div className="absolute top-0 right-0 z-10 flex h-[52px] items-center gap-2 px-page-x">
+          {isContentEditable && !isEditing && (
+            <Tooltip label={t("page_editor.start_editing")}>
+              <button
+                type="button"
+                onClick={onStartEditing}
+                className="flex items-center gap-1 rounded-sm border border-subtle bg-layer-1 px-2 py-1 text-13 font-medium text-secondary transition-colors hover:bg-layer-transparent-hover hover:text-primary"
+                aria-label={t("page_editor.start_editing")}
+              >
+                <EditOutline className="size-3.5" />
+                {t("page_editor.start_editing")}
+              </button>
+            </Tooltip>
+          )}
           {!isNavigationPaneOpen && (
             <Tooltip label={t("page_navigation_pane.open_button")}>
               <button

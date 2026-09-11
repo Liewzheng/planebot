@@ -62,13 +62,19 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
   const [editorReady, setEditorReady] = useState(false);
   const [collaborationState, setCollaborationState] = useState<CollaborationState | null>(null);
   const [showContentTooLargeBanner, setShowContentTooLargeBanner] = useState(false);
+  // reading mode is the default: the page opens read-only and only becomes
+  // editable after the user explicitly clicks "Edit"
+  const [isEditing, setIsEditing] = useState(false);
   // refs
   const editorRef = useRef<EditorRefApi>(null);
   // derived values
   const {
+    id: pageId,
     isContentEditable,
     editor: { setEditorRef },
   } = page;
+  // a page is editable only when the user has permission AND has entered editing mode
+  const isEditorEditable = isContentEditable && isEditing;
   // page fallback
   const { isFetchingFallbackBinary } = usePageFallback({
     editorRef,
@@ -76,7 +82,14 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
     page,
     collaborationState,
     updatePageDescription: handlers.updateDescription,
+    // never write back from a reading-mode session (incl. the 30s auto-save)
+    enabled: isEditorEditable,
   });
+
+  // leave editing mode when navigating to another page
+  useEffect(() => {
+    setIsEditing(false);
+  }, [pageId]);
 
   const handleEditorReady = useCallback(
     (status: boolean) => {
@@ -91,7 +104,7 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
   useEffect(() => {
     const timer = setTimeout(() => setEditorRef(editorRef.current), 0);
     return () => clearTimeout(timer);
-  }, [isContentEditable, setEditorRef]);
+  }, [isContentEditable, isEditorEditable, setEditorRef]);
 
   // Get extensions and navigation logic from hook
   const {
@@ -158,12 +171,15 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
           fetchVersionDetails={handlers.fetchVersionDetails}
           handleRestore={handleRestoreVersion}
           pageId={page.id ?? ""}
-          restoreEnabled={isContentEditable}
+          restoreEnabled={isEditorEditable}
           storeType={storeType}
         />
         <PageEditorToolbarRoot
           handleOpenNavigationPane={handleOpenNavigationPane}
+          isEditing={isEditing}
           isNavigationPaneOpen={isNavigationPaneOpen}
+          onFinishEditing={() => setIsEditing(false)}
+          onStartEditing={() => setIsEditing(true)}
           page={page}
         />
         {showContentTooLargeBanner && <ContentLimitBanner className="px-page-x" />}
@@ -175,6 +191,7 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
           handleEditorReady={handleEditorReady}
           handleOpenNavigationPane={handleOpenNavigationPane}
           handlers={handlers}
+          isEditable={isEditorEditable}
           isNavigationPaneOpen={isNavigationPaneOpen}
           page={page}
           projectId={projectId}

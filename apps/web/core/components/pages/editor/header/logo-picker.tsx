@@ -15,14 +15,17 @@ import type { TPageInstance } from "@/store/pages/base-page";
 type Props = {
   className?: string;
   page: TPageInstance;
+  /** Effective editability; falls back to the page's permission-based value. */
+  isEditable?: boolean;
 };
 
 export const PageEditorHeaderLogoPicker = observer(function PageEditorHeaderLogoPicker(props: Props) {
-  const { className, page } = props;
+  const { className, page, isEditable } = props;
   // states
   const [isLogoPickerOpen, setIsLogoPickerOpen] = useState(false);
   // derived values
   const { logo_props, isContentEditable, updatePageLogo } = page;
+  const canEdit = isEditable ?? isContentEditable;
   const isLogoSelected = !!logo_props?.in_use;
 
   return (
@@ -39,7 +42,7 @@ export const PageEditorHeaderLogoPicker = observer(function PageEditorHeaderLogo
         label={
           <div
             className={cn("-ml-[8px] grid size-[56px] place-items-center rounded-sm transition-colors", {
-              "hover:bg-layer-1": isContentEditable,
+              "hover:bg-layer-1": canEdit,
             })}
           >
             {isLogoSelected && <Logo logo={logo_props} size={48} type="lucide" />}
@@ -50,7 +53,7 @@ export const PageEditorHeaderLogoPicker = observer(function PageEditorHeaderLogo
         defaultOpen={
           logo_props?.in_use && logo_props?.in_use === "emoji" ? EmojiIconPickerTypes.EMOJI : EmojiIconPickerTypes.ICON
         }
-        disabled={!isContentEditable}
+        disabled={!canEdit}
       />
     </div>
   );
