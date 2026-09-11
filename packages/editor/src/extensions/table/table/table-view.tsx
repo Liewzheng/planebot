@@ -9,6 +9,8 @@ import type { Node as ProseMirrorNode, ResolvedPos } from "@tiptap/pm/model";
 import { TableMap, updateColumnsOnResize } from "@tiptap/pm/tables";
 import type { Decoration, NodeView } from "@tiptap/pm/view";
 import { h } from "jsx-dom-cjs";
+// local imports
+import { DEFAULT_COLUMN_WIDTH } from ".";
 
 export class TableView implements NodeView {
   node: ProseMirrorNode;
@@ -86,7 +88,37 @@ export class TableView implements NodeView {
       this.colgroup.replaceChildren(...cols);
     }
 
+    // A table whose columns are all at the default width has never been
+    // resized — freshly inserted tables and imported content (markdown/HTML
+    // uploads get the default colwidth from the cell/header attribute default)
+    // both land here. Such tables must not be pinned: clear the inline widths
+    // so the CSS `table-layout: auto` + `width: max-content` rules size the
+    // table and its columns by content, live, without manual dragging
+    // (PLANE-45). Tables with any user-resized column keep the pinned layout
+    // from updateColumnsOnResize.
+    if (this.hasOnlyDefaultWidths()) {
+      this.table.style.width = "";
+      this.table.style.minWidth = "";
+      for (const col of Array.from(this.colgroup.children) as HTMLElement[]) {
+        col.style.width = "";
+      }
+      return;
+    }
+
     updateColumnsOnResize(this.node, this.colgroup, this.table, this.cellMinWidth);
+  }
+
+  private hasOnlyDefaultWidths(): boolean {
+    const firstRow = this.node.firstChild;
+    if (!firstRow) return false;
+    let allDefault = true;
+    firstRow.forEach((cell) => {
+      const colwidth = cell.attrs.colwidth as number[] | null;
+      if (colwidth?.some((w) => w !== DEFAULT_COLUMN_WIDTH)) {
+        allDefault = false;
+      }
+    });
+    return allDefault;
   }
 
   ignoreMutation() {
