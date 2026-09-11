@@ -339,7 +339,9 @@ export function CodeBlockComponent(props: NodeViewProps) {
         </button>
       </Tooltip>
 
-      {showLive && (
+      {/* Reading mode (editor not editable): mermaid blocks show only the rendered
+          diagram, never the raw source. Edit mode keeps source + preview (PLANE-42). */}
+      {showLive && (!renderMermaid || editor.isEditable) && (
         <pre className={cn("my-2 rounded-lg bg-layer-3 p-4 text-primary", { "pt-10": editor.isEditable })}>
           <NodeViewContent as="code" className="whitespace-pre-wrap" />
         </pre>
