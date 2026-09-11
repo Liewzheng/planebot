@@ -9,6 +9,7 @@ import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 import { Ban } from "lucide-react";
 import { Avatar } from "@makeplane/propel/components/avatar";
+import { useTranslation } from "@plane/i18n";
 import { EUserProjectRoles } from "@plane/types";
 // plane ui
 import { CustomSearchSelect } from "@plane/ui";
@@ -27,6 +28,8 @@ export const MemberSelect = observer(function MemberSelect(props: Props) {
   const { value, onChange, isDisabled = false } = props;
   // router
   const { projectId } = useParams();
+  // plane hooks
+  const { t } = useTranslation();
   // store hooks
   const {
     project: { projectMemberIds, getProjectMemberDetails },
@@ -83,7 +86,7 @@ export const MemberSelect = observer(function MemberSelect(props: Props) {
           ) : (
             <div className="flex items-center gap-2">
               <Ban className="h-3.5 w-3.5 rotate-90 text-placeholder" />
-              <span className="text-13 text-placeholder">None</span>
+              <span className="text-13 text-placeholder">{t("none")}</span>
             </div>
           )}
         </div>
@@ -99,7 +102,7 @@ export const MemberSelect = observer(function MemberSelect(props: Props) {
             content: (
               <div className="flex items-center gap-2">
                 <Ban className="h-3.5 w-3.5 rotate-90 text-placeholder" />
-                <span className="py-0.5 text-13 text-placeholder">None</span>
+                <span className="py-0.5 text-13 text-placeholder">{t("none")}</span>
               </div>
             ),
           },
