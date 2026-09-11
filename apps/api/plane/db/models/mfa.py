@@ -54,8 +54,10 @@ class TOTPDevice(BaseModel):
 
     @classmethod
     def create_unconfirmed(cls, user) -> "TOTPDevice":
-        # Replace any previous (unconfirmed) setup attempt
-        cls.objects.filter(user=user).delete()
+        # Replace any previous setup attempt — hard delete via all_objects:
+        # the default manager only soft-deletes, and the soft-deleted row
+        # would still trip the OneToOne unique constraint on user_id
+        cls.all_objects.filter(user=user).delete()
         return cls.objects.create(user=user, secret=cls.encrypt_secret(pyotp.random_base32()))
 
     def get_secret(self) -> str:
