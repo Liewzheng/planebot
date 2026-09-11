@@ -48,6 +48,8 @@ python-json-logger==4.0.0
 beautifulsoup4==4.12.3
 # crypto
 cryptography==50.0.0
+# TOTP (MFA)
+pyotp==2.9.0
 # html validator
 lxml==6.1.0
 # s3

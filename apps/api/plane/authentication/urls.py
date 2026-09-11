@@ -21,6 +21,8 @@ from .views import (
     MagicGenerateEndpoint,
     MagicSignInEndpoint,
     MagicSignUpEndpoint,
+    MFATOTPVerifyEndpoint,
+    MFARecoveryCodeVerifyEndpoint,
     SignInAuthEndpoint,
     SignOutAuthEndpoint,
     SignUpAuthEndpoint,
@@ -137,6 +139,9 @@ urlpatterns = [
     ),
     path("change-password/", ChangePasswordEndpoint.as_view(), name="forgot-password"),
     path("set-password/", SetUserPasswordEndpoint.as_view(), name="set-password"),
+    # MFA second factor
+    path("mfa/totp/", MFATOTPVerifyEndpoint.as_view(), name="mfa-totp-verify"),
+    path("mfa/recovery/", MFARecoveryCodeVerifyEndpoint.as_view(), name="mfa-recovery-verify"),
     ## Gitea Oauth
     path("gitea/", GiteaOauthInitiateEndpoint.as_view(), name="gitea-initiate"),
     path("gitea/callback/", GiteaCallbackEndpoint.as_view(), name="gitea-callback"),
