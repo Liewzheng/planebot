@@ -129,7 +129,7 @@ export function NameColumn(props: NameProps) {
                       onClick={() => setRemoveMemberModal(rowData)}
                     >
                       <DeleteOutline className="size-3.5 align-middle" />{" "}
-                      {id === currentUser?.id ? "Leave " : "Remove "}
+                      {id === currentUser?.id ? t("leave") : t("remove")}
                     </button>
                   )
                 }
@@ -157,6 +157,8 @@ export const AccountTypeColumn = observer(function AccountTypeColumn(props: Acco
     control,
     formState: { errors },
   } = useForm();
+  // plane hooks
+  const { t } = useTranslation();
   // store hooks
   const { allowPermissions } = useUserPermissions();
 
@@ -171,17 +173,28 @@ export const AccountTypeColumn = observer(function AccountTypeColumn(props: Acco
   const isRoleNonEditable = isCurrentUser || !isAdminRole;
   const isSuspended = rowData.is_active === false;
 
+  const roleLabel = (role: EUserPermissions) => {
+    switch (Number(role)) {
+      case EUserPermissions.ADMIN:
+        return t("role_admin");
+      case EUserPermissions.GUEST:
+        return t("role_guest");
+      default:
+        return t("role_member");
+    }
+  };
+
   return (
     <>
       {isSuspended ? (
         <div className="flex w-32">
           <Pill variant={EPillVariant.DEFAULT} size={EPillSize.SM} className="border-none">
-            Suspended
+            {t("suspended")}
           </Pill>
         </div>
       ) : isRoleNonEditable ? (
         <div className="flex w-32">
-          <span>{ROLE[rowData.role]}</span>
+          <span>{roleLabel(rowData.role)}</span>
         </div>
       ) : (
         <Controller
@@ -210,7 +223,7 @@ export const AccountTypeColumn = observer(function AccountTypeColumn(props: Acco
               }}
               label={
                 <div className="flex">
-                  <span>{ROLE[rowData.role]}</span>
+                  <span>{roleLabel(rowData.role)}</span>
                 </div>
               }
               buttonClassName={`!px-0 !justify-start hover:bg-surface-1 ${errors.role ? "border-danger-strong" : "border-none"}`}
@@ -219,7 +232,7 @@ export const AccountTypeColumn = observer(function AccountTypeColumn(props: Acco
             >
               {Object.keys(ROLE).map((item) => (
                 <CustomSelect.Option key={item} value={item as unknown as EUserPermissions}>
-                  {ROLE[item as unknown as keyof typeof ROLE]}
+                  {roleLabel(item as unknown as EUserPermissions)}
                 </CustomSelect.Option>
               ))}
             </CustomSelect>
