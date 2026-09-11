@@ -231,8 +231,11 @@ export const WorkspaceDetails = observer(function WorkspaceDetails() {
                     value={value}
                     onChange={onChange}
                     label={
-                      ORGANIZATION_SIZE.find((c) => c === value) ??
-                      t("workspace_settings.settings.general.errors.company_size.select_a_range")
+                      ORGANIZATION_SIZE.find((c) => c === value)
+                        ? value === "Just myself"
+                          ? t("organization_size_just_myself")
+                          : value
+                        : t("workspace_settings.settings.general.errors.company_size.select_a_range")
                     }
                     buttonClassName="border border-subtle bg-layer-2 !shadow-none !rounded-md"
                     input
@@ -240,7 +243,7 @@ export const WorkspaceDetails = observer(function WorkspaceDetails() {
                   >
                     {ORGANIZATION_SIZE.map((item) => (
                       <CustomSelect.Option key={item} value={item}>
-                        {item}
+                        {item === "Just myself" ? t("organization_size_just_myself") : item}
                       </CustomSelect.Option>
                     ))}
                   </CustomSelect>
