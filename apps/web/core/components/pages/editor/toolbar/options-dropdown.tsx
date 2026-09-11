@@ -56,7 +56,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
           action: () => handleFullWidth(!isFullWidth),
           customContent: (
             <>
-              Full width
+              {t("full_width")}
               <Switch size="sm" checked={isFullWidth} onCheckedChange={() => {}} aria-label={t("full_width")} />
             </>
           ),
@@ -67,7 +67,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
           action: () => handleStickyToolbar(!isStickyToolbarEnabled),
           customContent: (
             <>
-              Sticky toolbar
+              {t("sticky_toolbar")}
               <Switch
                 size="sm"
                 checked={isStickyToolbarEnabled}
@@ -86,11 +86,11 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
             editorRef.copyMarkdownToClipboard();
             setToast({
               type: TOAST_TYPE.SUCCESS,
-              title: "Success!",
-              message: "Markdown copied to clipboard.",
+              title: t("toast.success"),
+              message: t("markdown_copied_to_clipboard"),
             });
           },
-          title: "Copy markdown",
+          title: t("common.actions.copy_markdown"),
           icon: ClipboardOutline,
           shouldRender: true,
         },
@@ -105,14 +105,14 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
             });
             router.push(updatedRoute);
           },
-          title: "Version history",
+          title: t("version_history"),
           icon: HistoryOutline,
           shouldRender: true,
         },
         {
           key: "export",
           action: () => setIsExportModalOpen(true),
-          title: "Export",
+          title: t("export"),
           icon: ExportOutline,
           shouldRender: true,
         },
@@ -128,6 +128,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
       updateQueryParams,
       router,
       setIsExportModalOpen,
+      t,
     ]
   );
 
