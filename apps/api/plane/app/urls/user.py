@@ -11,6 +11,10 @@ from plane.app.views import (
     UpdateUserTourCompletedEndpoint,
     UserActivityEndpoint,
     UserActivityGraphEndpoint,
+    UserMFADisableEndpoint,
+    UserMFAEnableEndpoint,
+    UserMFARecoveryCodesRegenerateEndpoint,
+    UserMFASetupEndpoint,
     ## User
     UserEndpoint,
     UserIssueCompletedGraphEndpoint,
@@ -80,6 +84,15 @@ urlpatterns = [
         "users/me/workspaces/<str:slug>/dashboard/",
         UserWorkspaceDashboardEndpoint.as_view(),
         name="user-workspace-dashboard",
+    ),
+    # MFA
+    path("users/me/mfa/setup/", UserMFASetupEndpoint.as_view(), name="user-mfa-setup"),
+    path("users/me/mfa/enable/", UserMFAEnableEndpoint.as_view(), name="user-mfa-enable"),
+    path("users/me/mfa/disable/", UserMFADisableEndpoint.as_view(), name="user-mfa-disable"),
+    path(
+        "users/me/mfa/recovery-codes/regenerate/",
+        UserMFARecoveryCodesRegenerateEndpoint.as_view(),
+        name="user-mfa-recovery-codes-regenerate",
     ),
     ## End User Graph
 ]

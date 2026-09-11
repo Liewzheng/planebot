@@ -11,6 +11,7 @@ from django.views import View
 # Module imports
 from plane.authentication.provider.credentials.email import EmailProvider
 from plane.authentication.utils.login import user_login
+from plane.authentication.utils.mfa import get_mfa_redirect
 from plane.authentication.rate_limit import throttle_auth_redirect
 from plane.license.models import Instance
 from plane.authentication.utils.host import base_host
@@ -112,6 +113,10 @@ class SignInAuthEndpoint(View):
                 callback=post_user_auth_workflow,
             )
             user = provider.authenticate()
+            # Second factor required: park the login and redirect to the MFA step
+            mfa_redirect = get_mfa_redirect(request=request, user=user, next_path=next_path)
+            if mfa_redirect:
+                return mfa_redirect
             # Login the user and record his device info
             user_login(request=request, user=user, is_app=True)
             # Get the redirection path
@@ -220,6 +225,10 @@ class SignUpAuthEndpoint(View):
                 callback=post_user_auth_workflow,
             )
             user = provider.authenticate()
+            # Second factor required: park the login and redirect to the MFA step
+            mfa_redirect = get_mfa_redirect(request=request, user=user, next_path=next_path)
+            if mfa_redirect:
+                return mfa_redirect
             # Login the user and record his device info
             user_login(request=request, user=user, is_app=True)
             # Get the redirection path

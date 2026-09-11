@@ -24,6 +24,12 @@ authentication_config_variables = [
         "category": "AUTHENTICATION",
         "is_encrypted": False,
     },
+    {
+        "key": "IS_MFA_ENABLED",
+        "value": os.environ.get("IS_MFA_ENABLED", "1"),
+        "category": "AUTHENTICATION",
+        "is_encrypted": False,
+    },
 ]
 
 workspace_management_config_variables = [

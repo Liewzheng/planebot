@@ -12,6 +12,7 @@ from django.views import View
 # Module imports
 from plane.authentication.provider.oauth.github import GitHubOAuthProvider
 from plane.authentication.utils.login import user_login
+from plane.authentication.utils.mfa import get_mfa_redirect
 from plane.authentication.utils.redirection_path import get_redirection_path
 from plane.authentication.utils.user_auth_workflow import post_user_auth_workflow
 from plane.license.models import Instance
@@ -88,6 +89,10 @@ class GitHubCallbackEndpoint(View):
         try:
             provider = GitHubOAuthProvider(request=request, code=code, callback=post_user_auth_workflow)
             user = provider.authenticate()
+            # Second factor required: park the login and redirect to the MFA step
+            mfa_redirect = get_mfa_redirect(request=request, user=user, next_path=next_path)
+            if mfa_redirect:
+                return mfa_redirect
             # Login the user and record his device info
             user_login(request=request, user=user, is_app=True)
             if next_path:

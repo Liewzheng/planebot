@@ -17,6 +17,8 @@ import type {
   IUserEmailNotificationSettings,
   TIssuesResponse,
   TUserProfile,
+  TOTPSetupResponse,
+  TRecoveryCodesResponse,
   IEmailCheckResponse,
 } from "@plane/types";
 import { APIService } from "@/services/api.service";
@@ -147,6 +149,58 @@ export class UserService extends APIService {
 
   async changePassword(token: string, data: { old_password?: string; new_password: string }): Promise<any> {
     return this.post(`/auth/change-password/`, data, {
+      headers: {
+        "X-CSRFTOKEN": token,
+      },
+    })
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  async mfaSetup(token: string): Promise<TOTPSetupResponse> {
+    return this.post(
+      `/api/users/me/mfa/setup/`,
+      {},
+      {
+        headers: {
+          "X-CSRFTOKEN": token,
+        },
+      }
+    )
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  async mfaEnable(token: string, data: { code: string }): Promise<TRecoveryCodesResponse> {
+    return this.post(`/api/users/me/mfa/enable/`, data, {
+      headers: {
+        "X-CSRFTOKEN": token,
+      },
+    })
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  async mfaDisable(token: string, data: { password: string }): Promise<any> {
+    return this.post(`/api/users/me/mfa/disable/`, data, {
+      headers: {
+        "X-CSRFTOKEN": token,
+      },
+    })
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  async mfaRegenerateRecoveryCodes(token: string, data: { password: string }): Promise<TRecoveryCodesResponse> {
+    return this.post(`/api/users/me/mfa/recovery-codes/regenerate/`, data, {
       headers: {
         "X-CSRFTOKEN": token,
       },

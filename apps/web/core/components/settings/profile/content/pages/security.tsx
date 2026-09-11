@@ -19,6 +19,7 @@ import { PasswordStrengthIndicator } from "@plane/ui";
 import { getPasswordStrength } from "@plane/utils";
 // components
 import { ProfileSettingsHeading } from "@/components/settings/profile/heading";
+import { TwoFactorAuthSettings } from "@/components/settings/profile/content/pages/two-factor-auth";
 // helpers
 import { authErrorHandler, EAuthenticationErrorCodes, passwordErrors } from "@/helpers/authentication.helper";
 // hooks
@@ -280,6 +281,9 @@ export const SecurityProfileSettings = observer(function SecurityProfileSettings
           </div>
         </div>
       </form>
+      <div className="mt-10 border-t border-subtle pt-8">
+        <TwoFactorAuthSettings />
+      </div>
     </div>
   );
 });

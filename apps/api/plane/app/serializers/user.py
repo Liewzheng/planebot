@@ -6,7 +6,7 @@
 from rest_framework import serializers
 
 # Module import
-from plane.db.models import Account, Profile, User, Workspace, WorkspaceMemberInvite
+from plane.db.models import Account, Profile, TOTPDevice, User, Workspace, WorkspaceMemberInvite
 from plane.utils.url import contains_url
 
 from .base import BaseSerializer
@@ -61,6 +61,8 @@ class UserSerializer(BaseSerializer):
 
 
 class UserMeSerializer(BaseSerializer):
+    is_mfa_enabled = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = [
@@ -83,8 +85,12 @@ class UserMeSerializer(BaseSerializer):
             "is_email_verified",
             "last_login_medium",
             "last_login_time",
+            "is_mfa_enabled",
         ]
         read_only_fields = fields
+
+    def get_is_mfa_enabled(self, obj):
+        return TOTPDevice.objects.filter(user=obj, confirmed=True).exists()
 
 
 class UserMeSettingsSerializer(BaseSerializer):

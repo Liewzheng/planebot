@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 # Module imports
 from plane.authentication.provider.credentials.magic_code import MagicCodeProvider
 from plane.authentication.utils.login import user_login
+from plane.authentication.utils.mfa import get_mfa_redirect
 from plane.authentication.utils.redirection_path import get_redirection_path
 from plane.authentication.utils.user_auth_workflow import post_user_auth_workflow
 from plane.bgtasks.magic_link_code_task import magic_link
@@ -107,14 +108,18 @@ class MagicSignInEndpoint(View):
             )
             user = provider.authenticate()
             profile, _ = Profile.objects.get_or_create(user=user)
-            # Login the user and record his device info
-            user_login(request=request, user=user, is_app=True)
             if user.is_password_autoset and profile.is_onboarded:
                 # Redirect to the home page
                 path = "/"
             else:
                 # Get the redirection path
                 path = str(next_path) if next_path else str(get_redirection_path(user=user))
+            # Second factor required: park the login and redirect to the MFA step
+            mfa_redirect = get_mfa_redirect(request=request, user=user, next_path=path)
+            if mfa_redirect:
+                return mfa_redirect
+            # Login the user and record his device info
+            user_login(request=request, user=user, is_app=True)
             # redirect to referer path
             url = get_safe_redirect_url(
                 base_url=base_host(request=request, is_app=True),
@@ -176,6 +181,10 @@ class MagicSignUpEndpoint(View):
                 callback=post_user_auth_workflow,
             )
             user = provider.authenticate()
+            # Second factor required: park the login and redirect to the MFA step
+            mfa_redirect = get_mfa_redirect(request=request, user=user, next_path=next_path)
+            if mfa_redirect:
+                return mfa_redirect
             # Login the user and record his device info
             user_login(request=request, user=user, is_app=True)
             # Get the redirection path
