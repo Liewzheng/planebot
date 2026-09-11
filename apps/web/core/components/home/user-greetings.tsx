@@ -22,7 +22,7 @@ export const UserGreetingsView = observer(function UserGreetingsView(props: IUse
   // current time hook
   const { currentTime } = useCurrentTime();
   // store hooks
-  const { t } = useTranslation();
+  const { t, currentLocale } = useTranslation();
   // resolved display timezone: user preference (UTC treated as unset) -> workspace timezone -> browser local
   const timeZone = useDisplayTimezone(user?.user_timezone);
 
@@ -34,18 +34,18 @@ export const UserGreetingsView = observer(function UserGreetingsView(props: IUse
     hour: "numeric",
   }).format(currentTime);
 
-  const date = new Intl.DateTimeFormat("en-US", {
+  const date = new Intl.DateTimeFormat(currentLocale, {
     timeZone,
     month: "short",
     day: "numeric",
   }).format(currentTime);
 
-  const weekDay = new Intl.DateTimeFormat("en-US", {
+  const weekDay = new Intl.DateTimeFormat(currentLocale, {
     timeZone,
     weekday: "long",
   }).format(currentTime);
 
-  const timeString = new Intl.DateTimeFormat("en-US", {
+  const timeString = new Intl.DateTimeFormat(currentLocale, {
     timeZone,
     hour12: false, // Use 24-hour format
     hour: "2-digit",
@@ -62,9 +62,7 @@ export const UserGreetingsView = observer(function UserGreetingsView(props: IUse
       </h2>
       <h5 className="flex items-center gap-2 font-medium text-placeholder">
         <div>{greeting === "good_morning" ? "🌤️" : greeting === "good_afternoon" ? "🌥️" : "🌙️"}</div>
-        <div>
-          {weekDay}, {date} {timeString}
-        </div>
+        <div>{t("greeting_date_format", { weekDay, date, time: timeString })}</div>
       </h5>
     </div>
   );
