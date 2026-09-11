@@ -262,7 +262,7 @@ export const SidebarProjectsList = observer(function SidebarProjectsList() {
                           )}
                         >
                           <MoreHorizontalOutline className="size-4 flex-shrink-0" />
-                          <span>{isExtendedProjectSidebarOpened ? "Hide" : "More"}</span>
+                          <span>{isExtendedProjectSidebarOpened ? t("sidebar.hide") : t("sidebar.more")}</span>
                         </button>
                       </SidebarNavItem>
                     )}

@@ -329,6 +329,7 @@
   "good_morning": "Good morning",
   "good_afternoon": "Good afternoon",
   "good_evening": "Good evening",
+  "greeting_date_format": "{weekDay}, {date} {time}",
   "show_all": "Show all",
   "show_less": "Show less",
   "no_data_yet": "No Data yet",

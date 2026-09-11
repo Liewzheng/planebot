@@ -302,7 +302,7 @@ export const AuthPasswordForm = observer(function AuthPasswordForm(props: Props)
             </>
           ) : (
             <Button type="submit" variant="primary" className="w-full" size="xl" disabled={isButtonDisabled}>
-              {isSubmitting ? <Spinner height="20px" width="20px" /> : "Create account"}
+              {isSubmitting ? <Spinner height="20px" width="20px" /> : t("auth.common.create_account")}
             </Button>
           )}
         </div>
