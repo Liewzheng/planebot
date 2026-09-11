@@ -41,6 +41,14 @@ export const usePageFallback = (args: TArgs) => {
   const handleUpdateDescription = useCallback(async () => {
     if (!enabled) return;
     if (!hasConnectionFailed) return;
+    // The document was replaced server-side (API re-upload): our local copy is
+    // stale and the session is being rebuilt from the new content. Writing the
+    // stale editor state back now would clobber the replacement.
+    if (
+      collaborationState?.stage.kind === "disconnected" &&
+      collaborationState.stage.error?.type === "content-replaced"
+    )
+      return;
     const editor = editorRef.current;
     if (!editor) return;
 
@@ -97,6 +105,7 @@ export const usePageFallback = (args: TArgs) => {
     page.description_html,
     page.name,
     enabled,
+    collaborationState,
   ]);
 
   useEffect(() => {

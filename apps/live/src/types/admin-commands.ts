@@ -19,6 +19,12 @@ export enum ForceCloseReason {
   SERVER_SHUTDOWN = "server_shutdown",
   SECURITY_VIOLATION = "security_violation",
   CORRUPTION_DETECTED = "corruption_detected",
+  /**
+   * The document was overwritten through the API (e.g. page re-upload).
+   * The in-memory copy and every client's local cache are stale and must
+   * be discarded so the next sync loads the new content from the database.
+   */
+  CONTENT_REPLACED = "content_replaced",
 }
 
 /**
@@ -143,6 +149,7 @@ export function getForceCloseMessage(reason: ForceCloseReason): string {
     [ForceCloseReason.SERVER_SHUTDOWN]: "Server is shutting down. Please reconnect in a moment.",
     [ForceCloseReason.SECURITY_VIOLATION]: "Security violation detected. Connection terminated.",
     [ForceCloseReason.CORRUPTION_DETECTED]: "Data corruption detected. Please refresh the page.",
+    [ForceCloseReason.CONTENT_REPLACED]: "This page was updated elsewhere. Reloading the latest content.",
   };
 
   return messages[reason] || "Connection closed. Please refresh the page.";

@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // indexeddb
 import { IndexeddbPersistence } from "y-indexeddb";
 // yjs
-import type * as Y from "yjs";
+import * as Y from "yjs";
 // types
 import type { CollaborationState, CollabStage, CollaborationError } from "@/types/collaboration";
 
@@ -20,6 +20,15 @@ const isForcedCloseCode = (code: number | undefined): boolean => {
   // All custom close codes (4000-4003) are treated as forced closes
   return code >= 4000 && code <= 4003;
 };
+
+/**
+ * Close reason sent by the live server when the document was overwritten
+ * through the API (page re-upload). The client's in-memory copy and its
+ * IndexedDB cache are both stale; the session must be rebuilt from scratch
+ * so the new server-side content wins instead of being union-merged with
+ * the old local state.
+ */
+const CONTENT_REPLACED_REASON = "content_replaced";
 
 type UseYjsSetupArgs = {
   docId: string;
@@ -44,12 +53,18 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange }: UseY
   // Provider and Y.Doc in state (nullable until effect runs)
   const [yjsSession, setYjsSession] = useState<{ provider: HocuspocusProvider; ydoc: Y.Doc } | null>(null);
 
+  // Bumped when the session must be rebuilt from scratch (e.g. the document
+  // was replaced server-side): a new provider + fresh Y.Doc is created and
+  // the stale IndexedDB cache is cleared before rebinding.
+  const [sessionEpoch, setSessionEpoch] = useState(0);
+
   // Use refs for values that need to be mutated from callbacks
   const retryCountRef = useRef(0);
   const forcedCloseSignalRef = useRef(false);
   const isDisposedRef = useRef(false);
   const stageRef = useRef<CollabStage>({ kind: "initial" });
   const lastReconnectTimeRef = useRef(0);
+  const clearCacheOnNextSessionRef = useRef(false);
 
   // Create/destroy provider in effect (not during render)
   useEffect(() => {
@@ -142,11 +157,29 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange }: UseY
       if (isDisposedRef.current) return;
 
       const closeCode = closeEvent.event?.code;
+      const closeReason = closeEvent.event?.reason;
       const wsProvider = provider.configuration.websocketProvider;
       const shouldConnect = wsProvider.shouldConnect;
       const isForcedClose = isForcedCloseCode(closeCode) || forcedCloseSignalRef.current || shouldConnect === false;
 
       if (isForcedClose) {
+        // The document was replaced server-side (API re-upload). Our in-memory
+        // copy and IndexedDB cache are stale: rebuilding the session (fresh
+        // Y.Doc + cleared cache) makes the new server content authoritative
+        // instead of union-merging the old content back on reconnect.
+        if (closeReason === CONTENT_REPLACED_REASON) {
+          clearCacheOnNextSessionRef.current = true;
+          const error: CollaborationError = {
+            type: "content-replaced",
+            message: "This page was updated elsewhere. Reloading the latest content.",
+          };
+          const newStage = { kind: "disconnected" as const, error };
+          stageRef.current = newStage;
+          setStage(newStage);
+          setSessionEpoch((epoch) => epoch + 1);
+          return;
+        }
+
         // Determine if this is a manual disconnect or a permanent error
         const isManualDisconnect = shouldConnect === false;
 
@@ -265,32 +298,58 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange }: UseY
 
       permanentlyStopProvider();
     };
-  }, [docId, serverUrl, authToken]);
+  }, [docId, serverUrl, authToken, sessionEpoch]);
 
   // IndexedDB persistence lifecycle
   useEffect(() => {
     if (!yjsSession) return;
 
-    const idbPersistence = new IndexeddbPersistence(docId, yjsSession.provider.document);
+    let idbPersistence: IndexeddbPersistence | null = null;
+    let cancelled = false;
 
-    const onIdbSynced = () => {
-      const yFragment = idbPersistence.doc.getXmlFragment("default");
-      const docLength = yFragment?.length ?? 0;
-      setIsCacheReady(true);
-      setHasCachedContent(docLength > 0);
+    const setupPersistence = async () => {
+      // A content-replaced close means the stored cache holds the old
+      // document: clear it BEFORE binding so the stale state cannot merge
+      // into the fresh Y.Doc (yjs takes the union, which would duplicate
+      // the whole page).
+      if (clearCacheOnNextSessionRef.current) {
+        clearCacheOnNextSessionRef.current = false;
+        const cleaner = new IndexeddbPersistence(docId, new Y.Doc());
+        try {
+          await cleaner.clearData();
+        } catch (error) {
+          console.error(`Error clearing stale IndexedDB cache for ${docId}:`, error);
+        }
+        cleaner.destroy();
+      }
+
+      if (cancelled) return;
+
+      idbPersistence = new IndexeddbPersistence(docId, yjsSession.provider.document);
+
+      const onIdbSynced = () => {
+        const yFragment = idbPersistence!.doc.getXmlFragment("default");
+        const docLength = yFragment?.length ?? 0;
+        setIsCacheReady(true);
+        setHasCachedContent(docLength > 0);
+      };
+
+      idbPersistence.on("synced", onIdbSynced);
     };
 
-    idbPersistence.on("synced", onIdbSynced);
+    setupPersistence();
 
     return () => {
-      idbPersistence.off("synced", onIdbSynced);
-      try {
-        idbPersistence.destroy();
-      } catch (error) {
-        console.error(`Error destroying local provider:`, error);
+      cancelled = true;
+      if (idbPersistence) {
+        try {
+          idbPersistence.destroy();
+        } catch (error) {
+          console.error(`Error destroying local provider:`, error);
+        }
       }
     };
-  }, [docId, yjsSession]);
+  }, [docId, yjsSession, sessionEpoch]);
 
   // Observe Y.Doc content changes to update hasCachedContent (catches fallback scenario)
   useEffect(() => {
