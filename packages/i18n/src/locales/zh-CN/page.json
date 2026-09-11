@@ -76,6 +76,11 @@
     "close_button": "关闭导航面板",
     "outline_floating_button": "打开大纲"
   },
+  "page_editor": {
+    "start_editing": "编辑",
+    "finish_editing": "完成",
+    "read_only_tooltip": "阅读模式"
+  },
   "page_actions": {
     "move_page": {
       "submit_button": {

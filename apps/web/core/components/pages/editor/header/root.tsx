@@ -18,14 +18,20 @@ import { PageEditorHeaderLogoPicker } from "./logo-picker";
 type Props = {
   page: TPageInstance;
   projectId?: string;
+  /**
+   * Effective editability. Defaults to the page's permission-based
+   * `isContentEditable`; pass `false` to force read-only (reading mode).
+   */
+  isEditable?: boolean;
 };
 
 export const PageEditorHeaderRoot = observer(function PageEditorHeaderRoot(props: Props) {
-  const { page } = props;
+  const { page, isEditable } = props;
   // states
   const [isLogoPickerOpen, setIsLogoPickerOpen] = useState(false);
   // derived values
   const { isContentEditable, logo_props, name, updatePageLogo } = page;
+  const canEdit = isEditable ?? isContentEditable;
   const isLogoSelected = !!logo_props?.in_use;
   const isTitleEmpty = !name || name.trim() === "";
 
@@ -66,12 +72,12 @@ export const PageEditorHeaderRoot = observer(function PageEditorHeaderRoot(props
                   ? EmojiIconPickerTypes.EMOJI
                   : EmojiIconPickerTypes.ICON
               }
-              disabled={!isContentEditable}
+              disabled={!canEdit}
             />
           </div>
         )}
       </div>
-      <PageEditorHeaderLogoPicker className="mt-2 flex w-full flex-shrink-0" page={page} />
+      <PageEditorHeaderLogoPicker className="mt-2 flex w-full flex-shrink-0" isEditable={canEdit} page={page} />
     </>
   );
 });

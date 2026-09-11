@@ -76,6 +76,11 @@
     "close_button": "Close navigation pane",
     "outline_floating_button": "Open outline"
   },
+  "page_editor": {
+    "start_editing": "Edit",
+    "finish_editing": "Done",
+    "read_only_tooltip": "Reading mode"
+  },
   "page_actions": {
     "move_page": {
       "submit_button": {

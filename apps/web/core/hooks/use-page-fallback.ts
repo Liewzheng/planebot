@@ -22,10 +22,15 @@ type TArgs = {
   collaborationState: CollaborationState | null;
   updatePageDescription: (data: TDocumentPayload) => Promise<void>;
   page: TPageInstance;
+  /**
+   * When false (e.g. page is open in reading mode), the fallback never writes
+   * to the server: no auto-save on disconnect, no periodic writes.
+   */
+  enabled?: boolean;
 };
 
 export const usePageFallback = (args: TArgs) => {
-  const { editorRef, fetchPageDescription, collaborationState, updatePageDescription, page } = args;
+  const { editorRef, fetchPageDescription, collaborationState, updatePageDescription, page, enabled = true } = args;
   const hasShownFallbackToast = useRef(false);
 
   const [isFetchingFallbackBinary, setIsFetchingFallbackBinary] = useState(false);
@@ -34,6 +39,7 @@ export const usePageFallback = (args: TArgs) => {
   const hasConnectionFailed = collaborationState?.stage.kind === "disconnected";
 
   const handleUpdateDescription = useCallback(async () => {
+    if (!enabled) return;
     if (!hasConnectionFailed) return;
     const editor = editorRef.current;
     if (!editor) return;
@@ -83,7 +89,15 @@ export const usePageFallback = (args: TArgs) => {
     } finally {
       setIsFetchingFallbackBinary(false);
     }
-  }, [editorRef, fetchPageDescription, hasConnectionFailed, updatePageDescription, page.description_html, page.name]);
+  }, [
+    editorRef,
+    fetchPageDescription,
+    hasConnectionFailed,
+    updatePageDescription,
+    page.description_html,
+    page.name,
+    enabled,
+  ]);
 
   useEffect(() => {
     if (hasConnectionFailed) {

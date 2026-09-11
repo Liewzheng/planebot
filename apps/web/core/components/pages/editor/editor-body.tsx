@@ -62,6 +62,7 @@ type Props = {
   handleEditorReady: (status: boolean) => void;
   handleOpenNavigationPane: () => void;
   handlers: TEditorBodyHandlers;
+  isEditable: boolean;
   isNavigationPaneOpen: boolean;
   page: TPageInstance;
   webhookConnectionParams: TWebhookConnectionQueryParams;
@@ -81,6 +82,7 @@ export const PageEditorBody = observer(function PageEditorBody(props: Props) {
     handleEditorReady,
     handleOpenNavigationPane,
     handlers,
+    isEditable,
     isNavigationPaneOpen,
     page,
     storeType,
@@ -100,7 +102,6 @@ export const PageEditorBody = observer(function PageEditorBody(props: Props) {
   // derived values
   const {
     id: pageId,
-    isContentEditable,
     editor: { editorRef, updateAssetsList },
     setSyncingStatus,
   } = page;
@@ -269,11 +270,11 @@ export const PageEditorBody = observer(function PageEditorBody(props: Props) {
         <div>
           <div className="page-header-container group/page-header">
             <div className={blockWidthClassName}>
-              <PageEditorHeaderRoot page={page} projectId={projectId} />
+              <PageEditorHeaderRoot isEditable={isEditable} page={page} projectId={projectId} />
             </div>
           </div>
           <CollaborativeDocumentEditorWithRef
-            editable={isContentEditable}
+            editable={isEditable}
             id={pageId}
             fileHandler={config.fileHandler}
             handleEditorReady={handleEditorReady}
