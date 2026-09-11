@@ -276,7 +276,9 @@ export const WorkspaceCreateStep = observer(function WorkspaceCreateStep({
                       >
                         <TickCircleOutline className={cn("size-4 text-placeholder", isSelected && "text-secondary")} />
 
-                        <span className="font-medium">{size}</span>
+                        <span className="font-medium">
+                          {size === "Just myself" ? t("organization_size_just_myself") : size}
+                        </span>
                       </button>
                     );
                   })}

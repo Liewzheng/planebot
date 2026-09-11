@@ -244,7 +244,13 @@ export const CreateWorkspace = observer(function CreateWorkspace(props: Props) {
                   value={value}
                   onChange={onChange}
                   label={
-                    ORGANIZATION_SIZE.find((c) => c === value) ?? (
+                    ORGANIZATION_SIZE.find((c) => c === value) ? (
+                      value === "Just myself" ? (
+                        t("organization_size_just_myself")
+                      ) : (
+                        value
+                      )
+                    ) : (
                       <span className="text-placeholder">
                         {t("workspace_creation.form.organization_size.placeholder")}
                       </span>
@@ -255,7 +261,7 @@ export const CreateWorkspace = observer(function CreateWorkspace(props: Props) {
                 >
                   {ORGANIZATION_SIZE.map((item) => (
                     <CustomSelect.Option key={item} value={item}>
-                      {item}
+                      {item === "Just myself" ? t("organization_size_just_myself") : item}
                     </CustomSelect.Option>
                   ))}
                 </CustomSelect>

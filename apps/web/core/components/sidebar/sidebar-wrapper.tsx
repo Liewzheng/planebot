@@ -10,6 +10,7 @@ import { observer } from "mobx-react";
 import { useOutsideClickDetector } from "@plane/hooks";
 import { PreferencesOutline } from "@makeplane/propel/icons";
 import { ScrollArea } from "@plane/propel/scrollarea";
+import { useTranslation } from "@plane/i18n";
 // components
 import { CustomizeNavigationDialog } from "@/components/navigation/customize-navigation-dialog";
 // hooks
@@ -34,6 +35,8 @@ export const SidebarWrapper = observer(function SidebarWrapper(props: TSidebarWr
   const windowSize = useSize();
   // refs
   const ref = useRef<HTMLDivElement>(null);
+  // plane hooks
+  const { t } = useTranslation();
 
   useOutsideClickDetector(ref, () => {
     if (sidebarCollapsed === false && window.innerWidth < 768) {
@@ -54,7 +57,9 @@ export const SidebarWrapper = observer(function SidebarWrapper(props: TSidebarWr
           {/* Workspace switcher and settings */}
 
           <div className="flex items-center justify-between gap-2 px-2">
-            <span className="pt-1 text-16 font-medium text-primary">{title}</span>
+            <span className="pt-1 text-16 font-medium text-primary">
+              {title === "Projects" ? t("projects") : title}
+            </span>
             <div className="flex items-center gap-2">
               {title === "Projects" && (
                 <IconButton
