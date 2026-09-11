@@ -199,6 +199,16 @@ export const TwoFactorAuthSettings = observer(function TwoFactorAuthSettings() {
           description={t("auth.mfa.settings.setup.description")}
         />
         <div className="flex max-w-md flex-col gap-y-2">
+          {setupData.qr_svg && (
+            <>
+              <p className="text-13 text-tertiary">{t("auth.mfa.settings.setup.scan_qr")}</p>
+              <div
+                className="w-fit rounded-md bg-white p-3 [&>svg]:block"
+                // oxlint-disable-next-line react/no-danger
+                dangerouslySetInnerHTML={{ __html: setupData.qr_svg }}
+              />
+            </>
+          )}
           <p className="text-13 text-tertiary">{t("auth.mfa.settings.setup.manual_entry")}</p>
           <div className="flex items-center justify-between gap-2 rounded-md border border-subtle bg-surface-2 px-3 py-2">
             <code className="font-mono text-13 break-all">{setupData.secret}</code>
