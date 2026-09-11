@@ -13,7 +13,7 @@ import { Menu } from "@headlessui/react";
 import { EUserPermissions } from "@plane/constants";
 import { useTranslation } from "@plane/i18n";
 import type { IWorkspace } from "@plane/types";
-import { cn, getFileURL, getUserRole } from "@plane/utils";
+import { cn, getFileURL } from "@plane/utils";
 
 type TProps = {
   workspace: IWorkspace;
@@ -71,7 +71,13 @@ const SidebarDropdownItem = observer(function SidebarDropdownItem(props: TProps)
                 {workspace.name}
               </div>
               <div className="flex w-fit gap-2 text-13 text-tertiary capitalize">
-                <span>{getUserRole(workspace.role)?.toLowerCase() || "guest"}</span>
+                <span>
+                  {Number(workspace.role) === EUserPermissions.ADMIN
+                    ? t("role_admin")
+                    : Number(workspace.role) === EUserPermissions.MEMBER
+                      ? t("role_member")
+                      : t("role_guest")}
+                </span>
                 <div className="m-auto h-1 w-1 rounded-full bg-layer-1/50" />
                 <span className="capitalize">{t("member", { count: workspace.total_members || 0 })}</span>
               </div>
