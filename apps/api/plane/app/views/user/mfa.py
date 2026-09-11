@@ -103,8 +103,8 @@ class UserMFAEnableEndpoint(BaseAPIView):
         device.save()
 
         # Recovery codes are replaced on every enable and returned only now,
-        # in plaintext, exactly once
-        RecoveryCode.objects.filter(user=request.user).delete()
+        # in plaintext, exactly once (hard delete — see create_unconfirmed)
+        RecoveryCode.all_objects.filter(user=request.user).delete()
         recovery_codes = RecoveryCode.generate_for_user(request.user)
         return Response({"recovery_codes": recovery_codes}, status=status.HTTP_200_OK)
 
@@ -125,8 +125,8 @@ class UserMFADisableEndpoint(BaseAPIView):
         if device is None:
             return mfa_error_response("MFA_NOT_ENABLED", status.HTTP_400_BAD_REQUEST)
 
-        device.delete()
-        RecoveryCode.objects.filter(user=request.user).delete()
+        device.delete(soft=False)
+        RecoveryCode.all_objects.filter(user=request.user).delete()
         return Response({"message": "MFA disabled"}, status=status.HTTP_200_OK)
 
 
@@ -146,6 +146,6 @@ class UserMFARecoveryCodesRegenerateEndpoint(BaseAPIView):
         if device is None:
             return mfa_error_response("MFA_NOT_ENABLED", status.HTTP_400_BAD_REQUEST)
 
-        RecoveryCode.objects.filter(user=request.user).delete()
+        RecoveryCode.all_objects.filter(user=request.user).delete()
         recovery_codes = RecoveryCode.generate_for_user(request.user)
         return Response({"recovery_codes": recovery_codes}, status=status.HTTP_200_OK)
