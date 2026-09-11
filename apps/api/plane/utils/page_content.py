@@ -63,6 +63,36 @@ def convert_page_html_to_formats(description_html: str) -> dict:
     return {}
 
 
+def invalidate_live_document(page_id: str) -> None:
+    """Drop a page's collaborative document from the live server's memory.
+
+    Called after `description_binary` was replaced in the database (overwrite
+    semantics for API/CLI uploads). Without this, the live server keeps
+    serving and re-persisting its stale in-memory copy, and connected clients
+    merge the old content back in (yjs union semantics) — the page balloons
+    on every re-upload.
+
+    Best-effort: any failure is logged and swallowed, the API write itself
+    has already succeeded at this point.
+    """
+    live_url = settings.LIVE_URL
+    if not live_url:
+        return
+
+    try:
+        url = normalize_url_path(f"{live_url}/invalidate-document/")
+        headers = {}
+        if settings.LIVE_INTERNAL_API_KEY:
+            headers["X-Internal-Api-Key"] = settings.LIVE_INTERNAL_API_KEY
+        response = requests.post(url, json={"docId": str(page_id)}, headers=headers, timeout=10)
+        if response.status_code != 200:
+            log_exception(
+                Exception(f"invalidate-document returned {response.status_code}: {response.text[:200]}")
+            )
+    except requests.RequestException as e:
+        log_exception(e)
+
+
 def sync_page_description_formats(page, force: bool = False) -> bool:
     """Backfill `description_binary` / `description_json` for a page written as
     HTML only.
@@ -91,4 +121,9 @@ def sync_page_description_formats(page, force: bool = False) -> bool:
     if converted.get("description_json"):
         page.description_json = converted["description_json"]
     page.save(update_fields=["description_binary", "description_json"])
+
+    # The binary in the database has been replaced: drop the live server's
+    # in-memory copy (and connected clients' stale local state) so the new
+    # content is what gets served and synced from now on.
+    invalidate_live_document(page.id)
     return True

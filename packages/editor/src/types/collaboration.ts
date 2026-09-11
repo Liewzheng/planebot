@@ -8,7 +8,8 @@ export type CollaborationError =
   | { type: "auth-failed"; message: string }
   | { type: "network-error"; message: string }
   | { type: "forced-close"; code: number; message: string }
-  | { type: "max-retries"; message: string };
+  | { type: "max-retries"; message: string }
+  | { type: "content-replaced"; message: string };
 
 /**
  * Single-stage state machine for collaboration lifecycle.
