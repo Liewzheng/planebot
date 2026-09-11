@@ -50,6 +50,7 @@ beautifulsoup4==4.12.3
 cryptography==50.0.0
 # TOTP (MFA)
 pyotp==2.9.0
+qrcode==7.4.2
 # html validator
 lxml==6.1.0
 # s3

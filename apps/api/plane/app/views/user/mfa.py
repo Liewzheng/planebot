@@ -2,7 +2,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See the LICENSE file for details.
 
+# Python imports
+import io
+
 # Third party imports
+import qrcode
+import qrcode.image.svg
 from rest_framework import status
 from rest_framework.response import Response
 
@@ -41,6 +46,14 @@ def check_current_password(request) -> Response | None:
     return None
 
 
+def qr_svg(data: str) -> str:
+    """Render an otpauth URI as a standalone SVG (pure-python, no PIL)."""
+    img = qrcode.make(data, image_factory=qrcode.image.svg.SvgPathImage, box_size=8, border=2)
+    buffer = io.BytesIO()
+    img.save(buffer)
+    return buffer.getvalue().decode("utf-8")
+
+
 class UserMFASetupEndpoint(BaseAPIView):
     # Rate-limit setup attempts the same way the auth endpoints are throttled
     throttle_classes = [AuthenticationThrottle]
@@ -55,10 +68,12 @@ class UserMFASetupEndpoint(BaseAPIView):
             return mfa_error_response("MFA_ALREADY_ENABLED", status.HTTP_400_BAD_REQUEST)
 
         device = TOTPDevice.create_unconfirmed(user=request.user)
+        otpauth_uri = device.provision_uri(request.user)
         return Response(
             {
                 "secret": device.get_secret(),
-                "otpauth_uri": device.provision_uri(request.user),
+                "otpauth_uri": otpauth_uri,
+                "qr_svg": qr_svg(otpauth_uri),
             },
             status=status.HTTP_200_OK,
         )

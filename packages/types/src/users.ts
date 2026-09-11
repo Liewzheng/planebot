@@ -57,6 +57,7 @@ export interface IUser extends IUserLite {
 export type TOTPSetupResponse = {
   secret: string;
   otpauth_uri: string;
+  qr_svg?: string;
 };
 
 export type TRecoveryCodesResponse = {
