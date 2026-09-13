@@ -27,7 +27,7 @@ export function ApiTokenListItem(props: Props) {
   // hooks
   const { isMobile } = usePlatformOS();
 
-  const { t } = useTranslation();
+  const { t, currentLocale } = useTranslation();
 
   return (
     <>
@@ -63,11 +63,11 @@ export function ApiTokenListItem(props: Props) {
                     time: renderFormattedTime(token.expired_at),
                   })
                 : t("never_expires")
-              : t("token_expired_ago", { time: calculateTimeAgo(token.expired_at) })}
+              : t("token_expired_ago", { time: calculateTimeAgo(token.expired_at, currentLocale) })}
           </p>
           <p className="mb-1 text-11 leading-6 text-placeholder">
             {token.last_used
-              ? t("token_last_used", { time: calculateTimeAgo(token.last_used) })
+              ? t("token_last_used", { time: calculateTimeAgo(token.last_used, currentLocale) })
               : t("token_never_used")}
           </p>
         </div>
