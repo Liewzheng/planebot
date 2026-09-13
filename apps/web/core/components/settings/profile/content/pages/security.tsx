@@ -281,7 +281,7 @@ export const SecurityProfileSettings = observer(function SecurityProfileSettings
           </div>
         </div>
       </form>
-      <div className="mt-10 border-t border-subtle pt-8">
+      <div className="mt-10 border-t border-subtle pt-8 pb-8">
         <TwoFactorAuthSettings />
       </div>
     </div>
