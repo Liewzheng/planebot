@@ -969,6 +969,8 @@
   "never_expires": "Never expires",
   "token_expires_at": "Expires {date} at {time}",
   "token_expired_ago": "Expired {time}",
+  "token_last_used": "Last used {time}",
+  "token_never_used": "Never used",
   "organization_size_just_myself": "Just myself",
   "full_width": "Full width",
   "group_by": "Group By",

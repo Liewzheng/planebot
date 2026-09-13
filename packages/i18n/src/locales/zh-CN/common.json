@@ -969,6 +969,8 @@
   "never_expires": "永不过期",
   "token_expires_at": "将于 {date} {time} 过期",
   "token_expired_ago": "已于 {time}过期",
+  "token_last_used": "最近使用 {time}",
+  "token_never_used": "从未使用",
   "organization_size_just_myself": "仅自己",
   "full_width": "全宽",
   "group_by": "分组方式",

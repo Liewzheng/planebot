@@ -65,6 +65,11 @@ export function ApiTokenListItem(props: Props) {
                 : t("never_expires")
               : t("token_expired_ago", { time: calculateTimeAgo(token.expired_at) })}
           </p>
+          <p className="mb-1 text-11 leading-6 text-placeholder">
+            {token.last_used
+              ? t("token_last_used", { time: calculateTimeAgo(token.last_used) })
+              : t("token_never_used")}
+          </p>
         </div>
       </div>
     </>

@@ -49,6 +49,7 @@ export type TAIAccount = {
   owner: string;
   bot_user: TAIAccountBotUser;
   scope_policies: TAIScopePolicy[];
+  token_last_used: string | null;
   created_at: string;
   updated_at: string;
 };
