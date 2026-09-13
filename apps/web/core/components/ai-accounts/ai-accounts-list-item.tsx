@@ -14,7 +14,7 @@ import { Button } from "@plane/propel/button";
 import { Switch } from "@makeplane/propel/components/switch";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import type { TAIAccount } from "@plane/types";
-import { getFileURL, renderFormattedDate } from "@plane/utils";
+import { getFileURL, renderFormattedDate, calculateTimeAgo } from "@plane/utils";
 // hooks
 import { aiAccountService } from "@/services/ai-account.service";
 // local imports
@@ -98,6 +98,11 @@ export function AIAccountsListItem(props: Props) {
             {account.description && <p className="truncate text-11 text-placeholder">{account.description}</p>}
             <p className="text-11 text-placeholder">
               {t("workspace_settings.settings.ai_accounts.list.created_on")} {renderFormattedDate(account.created_at)}
+            </p>
+            <p className="text-11 text-placeholder">
+              {account.token_last_used
+                ? t("token_last_used", { time: calculateTimeAgo(account.token_last_used) })
+                : t("token_never_used")}
             </p>
           </div>
         </div>

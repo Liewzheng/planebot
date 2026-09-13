@@ -4,7 +4,7 @@
 
 from rest_framework import serializers
 
-from plane.db.models import User
+from plane.db.models import APIToken, User
 
 from .constants import ACTION_CHOICES, RESOURCE_CHOICES
 from .models import AIAccount, AIScopePolicy
@@ -27,6 +27,7 @@ class AIScopePolicySerializer(serializers.ModelSerializer):
 class AIAccountSerializer(serializers.ModelSerializer):
     bot_user = BotUserLiteSerializer(read_only=True)
     scope_policies = AIScopePolicySerializer(many=True, read_only=True)
+    token_last_used = serializers.SerializerMethodField()
 
     class Meta:
         model = AIAccount
@@ -39,10 +40,20 @@ class AIAccountSerializer(serializers.ModelSerializer):
             "owner",
             "bot_user",
             "scope_policies",
+            "token_last_used",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["id", "workspace", "owner", "bot_user", "created_at", "updated_at"]
+
+    def get_token_last_used(self, obj):
+        token = (
+            APIToken.objects.filter(user_id=obj.bot_user_id, is_service=True, last_used__isnull=False)
+            .order_by("-last_used")
+            .values_list("last_used", flat=True)
+            .first()
+        )
+        return token
 
 
 class AIAccountCreateSerializer(serializers.Serializer):

@@ -7,6 +7,7 @@
 from uuid import uuid4
 
 import pytest
+from django.utils import timezone
 from rest_framework import status
 
 from plane.ai_accounts.constants import BOT_TYPE_AI_AGENT
@@ -145,6 +146,26 @@ class TestAIAccountManagement:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["name"] == "bot-1"
         assert "token" not in response.data
+
+    def test_token_last_used_exposed(self, session_client, workspace):
+        create = session_client.post(
+            accounts_url(workspace.slug), {"name": "bot-last-used", "role": 15}, format="json"
+        )
+        account_id = create.data["id"]
+
+        # never used -> null
+        response = session_client.get(accounts_url(workspace.slug))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data[0]["token_last_used"] is None
+
+        # after the service token is used, the timestamp shows up
+        account = AIAccount.objects.get(pk=account_id)
+        used_at = timezone.now()
+        APIToken.objects.filter(user=account.bot_user, is_service=True).update(last_used=used_at)
+
+        response = session_client.get(f"{accounts_url(workspace.slug)}{account_id}/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["token_last_used"] is not None
 
     def test_patch_deactivate_disables_token(self, session_client, workspace):
         create = session_client.post(
