@@ -217,10 +217,6 @@ export const TwoFactorAuthSettings = observer(function TwoFactorAuthSettings() {
               {t("auth.mfa.settings.setup.copy_secret")}
             </Button>
           </div>
-          <p className="text-13 text-tertiary">{t("auth.mfa.settings.setup.uri_hint")}</p>
-          <code className="font-mono rounded-md border border-subtle bg-surface-2 px-3 py-2 text-11 break-all">
-            {setupData.otpauth_uri}
-          </code>
         </div>
         <div className="flex max-w-md flex-col gap-y-2">
           <h4 className="text-13">{t("auth.mfa.settings.setup.verify_label")}</h4>
