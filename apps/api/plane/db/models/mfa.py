@@ -64,7 +64,7 @@ class TOTPDevice(BaseModel):
         return self.decrypt_secret(self.secret)
 
     def provision_uri(self, user) -> str:
-        return pyotp.TOTP(self.get_secret()).provisioning_uri(name=user.email, issuer_name="Plane")
+        return pyotp.TOTP(self.get_secret()).provisioning_uri(name=user.email, issuer_name="pbot")
 
     def verify(self, code: str) -> bool:
         # Tolerate one time-step drift in either direction
