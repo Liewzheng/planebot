@@ -17,7 +17,7 @@ from plane.authentication.adapter.error import (
     AuthenticationException,
     AUTHENTICATION_ERROR_CODES,
 )
-from plane.authentication.rate_limit import AuthenticationThrottle
+from plane.authentication.rate_limit import StepUpThrottle
 from plane.authentication.utils.mfa import is_mfa_enabled
 from plane.db.models import RecoveryCode, TOTPDevice
 
@@ -74,7 +74,7 @@ def qr_svg(data: str) -> str:
 
 class UserMFASetupEndpoint(BaseAPIView):
     # Rate-limit setup attempts the same way the auth endpoints are throttled
-    throttle_classes = [AuthenticationThrottle]
+    throttle_classes = [StepUpThrottle]
 
     def post(self, request):
         disabled = check_mfa_enabled()
@@ -98,7 +98,7 @@ class UserMFASetupEndpoint(BaseAPIView):
 
 
 class UserMFAEnableEndpoint(BaseAPIView):
-    throttle_classes = [AuthenticationThrottle]
+    throttle_classes = [StepUpThrottle]
 
     def post(self, request):
         disabled = check_mfa_enabled()
@@ -128,7 +128,7 @@ class UserMFAEnableEndpoint(BaseAPIView):
 
 
 class UserMFADisableEndpoint(BaseAPIView):
-    throttle_classes = [AuthenticationThrottle]
+    throttle_classes = [StepUpThrottle]
 
     def post(self, request):
         disabled = check_mfa_enabled()
@@ -149,7 +149,7 @@ class UserMFADisableEndpoint(BaseAPIView):
 
 
 class UserMFARecoveryCodesRegenerateEndpoint(BaseAPIView):
-    throttle_classes = [AuthenticationThrottle]
+    throttle_classes = [StepUpThrottle]
 
     def post(self, request):
         disabled = check_mfa_enabled()
