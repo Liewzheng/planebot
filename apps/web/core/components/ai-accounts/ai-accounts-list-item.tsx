@@ -38,7 +38,7 @@ export function AIAccountsListItem(props: Props) {
   const [showRotateTokenModal, setShowRotateTokenModal] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
   // hooks
-  const { t } = useTranslation();
+  const { t, currentLocale } = useTranslation();
 
   const handleToggle = async () => {
     if (isToggling) return;
@@ -101,7 +101,7 @@ export function AIAccountsListItem(props: Props) {
             </p>
             <p className="text-11 text-placeholder">
               {account.token_last_used
-                ? t("token_last_used", { time: calculateTimeAgo(account.token_last_used) })
+                ? t("token_last_used", { time: calculateTimeAgo(account.token_last_used, currentLocale) })
                 : t("token_never_used")}
             </p>
           </div>

@@ -5,7 +5,14 @@
  */
 
 import { differenceInDays, format, formatDistanceToNow, isAfter, isEqual, isValid, parseISO } from "date-fns";
+import { zhCN, zhTW } from "date-fns/locale";
+import type { Locale } from "date-fns";
 import { isNumber } from "lodash-es";
+
+const DATE_FNS_LOCALE_MAP: Record<string, Locale> = {
+  "zh-CN": zhCN,
+  "zh-TW": zhTW,
+};
 
 // Format Date Helpers
 /**
@@ -166,16 +173,21 @@ export const findHowManyDaysLeft = (
  * @returns {string} formatted date in the form of amount of time passed since the event happened
  * @description Returns time passed since the event happened
  * @param {string | Date} time
+ * @param {string} lang (optional) UI language code (e.g. "zh-CN"); defaults to English
  * @example calculateTimeAgo("2023-01-01") // 1 year ago
+ * @example calculateTimeAgo("2023-01-01", "zh-CN") // 1年前
  */
-export const calculateTimeAgo = (time: string | number | Date | null): string => {
+export const calculateTimeAgo = (time: string | number | Date | null, lang?: string): string => {
   if (!time) return "";
   // Parse the time to check if it is valid
   const parsedTime = typeof time === "string" || typeof time === "number" ? parseISO(String(time)) : time;
   // return if undefined
   if (!parsedTime) return ""; // Return empty string for invalid dates
   // Format the time in the form of amount of time passed since the event happened
-  const distance = formatDistanceToNow(parsedTime, { addSuffix: true });
+  const distance = formatDistanceToNow(parsedTime, {
+    addSuffix: true,
+    locale: lang ? DATE_FNS_LOCALE_MAP[lang] : undefined,
+  });
   return distance;
 };
 
