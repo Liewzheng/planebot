@@ -46,6 +46,24 @@ def check_current_password(request) -> Response | None:
     return None
 
 
+def check_step_up_totp(request) -> Response | None:
+    """Step-up verification for sensitive operations.
+
+    Returns an error response when the user has a confirmed TOTP device and
+    the submitted `totp_code` is missing or invalid. Users without 2FA are
+    let through — step-up is only enforced for accounts that opted in.
+    """
+    device = TOTPDevice.objects.filter(user=request.user, confirmed=True).first()
+    if device is None:
+        return None
+    code = str(request.data.get("totp_code", "")).strip()
+    if not code:
+        return mfa_error_response("MFA_CODE_REQUIRED", status.HTTP_400_BAD_REQUEST)
+    if not device.verify(code):
+        return mfa_error_response("MFA_INVALID_CODE", status.HTTP_400_BAD_REQUEST)
+    return None
+
+
 def qr_svg(data: str) -> str:
     """Render an otpauth URI as a standalone SVG (pure-python, no PIL)."""
     img = qrcode.make(data, image_factory=qrcode.image.svg.SvgPathImage, box_size=8, border=2)

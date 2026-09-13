@@ -12,10 +12,14 @@ import type { TAIAccount } from "@plane/types";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 // ui
 import { AlertModalCore, EModalPosition, EModalWidth, ModalCore } from "@plane/ui";
+// hooks
+import { useUser } from "@/hooks/store/user";
+// services
 import { aiAccountService } from "@/services/ai-account.service";
 // local imports
-import { AI_ACCOUNTS_LIST } from "./constants";
+import { AI_ACCOUNTS_LIST, getMfaStepUpError } from "./constants";
 import { GeneratedTokenDetails } from "./generated-token-details";
+import { MfaCodeField } from "./mfa-code-field";
 
 type TRotatedAIAccount = TAIAccount & { token: string };
 
@@ -31,21 +35,37 @@ export function RotateAIAccountTokenModal(props: Props) {
   // states
   const [isRotating, setIsRotating] = useState(false);
   const [rotatedAccount, setRotatedAccount] = useState<TRotatedAIAccount | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+  const [totpError, setTotpError] = useState<string | undefined>(undefined);
   // hooks
   const { t } = useTranslation();
+  const { data: currentUser } = useUser();
+  // Step-up verification applies only to users who opted into 2FA
+  const isMFAEnabled = currentUser?.is_mfa_enabled ?? false;
 
   const handleClose = () => {
     onClose();
     setTimeout(() => {
       setIsRotating(false);
       setRotatedAccount(null);
+      setTotpCode("");
+      setTotpError(undefined);
     }, 350);
   };
 
   const handleRotate = async () => {
+    if (isMFAEnabled && !totpCode.trim()) {
+      setTotpError(t("workspace_settings.settings.ai_accounts.step_up.code_required"));
+      return;
+    }
     setIsRotating(true);
+    setTotpError(undefined);
     try {
-      const res = await aiAccountService.rotateAIAccountToken(workspaceSlug, account.id);
+      const res = await aiAccountService.rotateAIAccountToken(
+        workspaceSlug,
+        account.id,
+        isMFAEnabled ? totpCode.trim() : undefined
+      );
       setRotatedAccount(res);
       setToast({
         type: TOAST_TYPE.SUCCESS,
@@ -54,12 +74,18 @@ export function RotateAIAccountTokenModal(props: Props) {
       });
       mutate<TAIAccount[]>(AI_ACCOUNTS_LIST(workspaceSlug));
     } catch (err) {
-      setToast({
-        type: TOAST_TYPE.ERROR,
-        title: t("workspace_settings.settings.ai_accounts.rotate.error.title"),
-        message:
-          (err as { message?: string })?.message ?? t("workspace_settings.settings.ai_accounts.rotate.error.message"),
-      });
+      const mfaError = getMfaStepUpError(err, t);
+      if (mfaError) {
+        // Step-up failure stays inline next to the code input
+        setTotpError(mfaError);
+      } else {
+        setToast({
+          type: TOAST_TYPE.ERROR,
+          title: t("workspace_settings.settings.ai_accounts.rotate.error.title"),
+          message:
+            (err as { message?: string })?.message ?? t("workspace_settings.settings.ai_accounts.rotate.error.message"),
+        });
+      }
       setIsRotating(false);
     }
   };
@@ -88,7 +114,17 @@ export function RotateAIAccountTokenModal(props: Props) {
         default: t("workspace_settings.settings.ai_accounts.rotate.confirm"),
       }}
       title={t("workspace_settings.settings.ai_accounts.rotate.title")}
-      content={<>{t("workspace_settings.settings.ai_accounts.rotate.description")}</>}
+      content={
+        <div className="space-y-3">
+          <p>{t("workspace_settings.settings.ai_accounts.rotate.description")}</p>
+          {isMFAEnabled && (
+            <>
+              <p className="text-11 text-tertiary">{t("workspace_settings.settings.ai_accounts.step_up.hint")}</p>
+              <MfaCodeField value={totpCode} onChange={setTotpCode} error={totpError} />
+            </>
+          )}
+        </div>
+      }
     />
   );
 }

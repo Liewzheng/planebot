@@ -58,6 +58,7 @@ export type TAIAccountCreatePayload = {
   name: string;
   description?: string;
   role?: 15 | 5;
+  totp_code?: string;
 };
 
 export type TAIAccountUpdatePayload = {

@@ -160,6 +160,11 @@
         "title": "AI 账户",
         "description": "创建和管理机器人账户，让 AI 代理以限定范围的权限访问您的工作空间。",
         "add_account": "添加 AI 账户",
+        "step_up": {
+          "hint": "此操作涉及令牌安全，需要输入身份验证器的 6 位验证码。",
+          "code_required": "请输入 6 位验证码",
+          "code_invalid": "验证码错误或已过期，请重试"
+        },
         "modal": {
           "create_title": "创建 AI 账户",
           "edit_title": "编辑 AI 账户",
