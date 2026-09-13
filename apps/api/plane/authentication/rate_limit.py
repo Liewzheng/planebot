@@ -107,3 +107,14 @@ class EmailVerificationThrottle(UserRateThrottle):
             )
         except AuthenticationException as e:
             return Response(e.get_error_dict(), status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+
+class StepUpThrottle(UserRateThrottle):
+    """
+    Throttle for step-up (TOTP) verification on sensitive operations.
+    Keyed by the authenticated user — unlike AuthenticationThrottle, which
+    extends AnonRateThrottle and therefore never fires for logged-in users.
+    """
+
+    rate = os.environ.get("STEP_UP_RATE_LIMIT", "10/minute")
+    scope = "step_up"

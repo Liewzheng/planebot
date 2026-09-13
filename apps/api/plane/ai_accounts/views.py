@@ -14,6 +14,8 @@ from rest_framework.response import Response
 
 from plane.app.permissions import ROLE, allow_permission
 from plane.app.views.base import BaseAPIView
+from plane.app.views.user.mfa import check_step_up_totp
+from plane.authentication.rate_limit import StepUpThrottle
 from plane.db.models import APIToken, FileAsset, ProjectMember, User, Workspace, WorkspaceMember
 
 from .constants import BOT_TYPE_AI_AGENT
@@ -28,6 +30,12 @@ from .utils import is_sole_project_admin
 
 
 class AIAccountListCreateAPIEndpoint(BaseAPIView):
+    def get_throttles(self):
+        # Only account creation is step-up verified; listing stays unthrottled
+        if self.request.method == "POST":
+            return [StepUpThrottle()]
+        return super().get_throttles()
+
     @allow_permission([ROLE.ADMIN], level="WORKSPACE")
     def get(self, request, slug):
         accounts = AIAccount.objects.filter(workspace__slug=slug).select_related(
@@ -38,6 +46,11 @@ class AIAccountListCreateAPIEndpoint(BaseAPIView):
 
     @allow_permission([ROLE.ADMIN], level="WORKSPACE")
     def post(self, request, slug):
+        # Step-up: creating an account issues a live token — require TOTP
+        mfa_error = check_step_up_totp(request)
+        if mfa_error:
+            return mfa_error
+
         serializer = AIAccountCreateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -109,6 +122,12 @@ class AIAccountListCreateAPIEndpoint(BaseAPIView):
 
 
 class AIAccountDetailAPIEndpoint(BaseAPIView):
+    def get_throttles(self):
+        # Only deletion is step-up verified; read/update stay unthrottled
+        if self.request.method == "DELETE":
+            return [StepUpThrottle()]
+        return super().get_throttles()
+
     def get_account(self, slug, pk):
         return AIAccount.objects.select_related("bot_user", "owner").prefetch_related(
             "scope_policies"
@@ -190,6 +209,11 @@ class AIAccountDetailAPIEndpoint(BaseAPIView):
 
     @allow_permission([ROLE.ADMIN], level="WORKSPACE")
     def delete(self, request, slug, pk):
+        # Step-up: deleting the account kills its tokens and memberships
+        mfa_error = check_step_up_totp(request)
+        if mfa_error:
+            return mfa_error
+
         account = self.get_account(slug, pk)
         # Deleting the account removes the bot from every project; refuse when
         # the bot is the only active admin of one (same protection as removing
@@ -213,9 +237,16 @@ class AIAccountDetailAPIEndpoint(BaseAPIView):
 
 
 class AIAccountRotateTokenAPIEndpoint(BaseAPIView):
+    throttle_classes = [StepUpThrottle]
+
     @allow_permission([ROLE.ADMIN], level="WORKSPACE")
     def post(self, request, slug, pk):
         """Revoke every existing service token and issue a fresh one."""
+        # Step-up: rotation revokes the old token and issues a new secret
+        mfa_error = check_step_up_totp(request)
+        if mfa_error:
+            return mfa_error
+
         account = AIAccount.objects.select_related("bot_user", "owner").get(
             pk=pk, workspace__slug=slug
         )

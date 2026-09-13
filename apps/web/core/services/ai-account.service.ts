@@ -44,16 +44,26 @@ export class AIAccountService extends APIService {
       });
   }
 
-  async deleteAIAccount(workspaceSlug: string, accountId: string): Promise<void> {
-    return this.delete(`/api/workspaces/${workspaceSlug}/ai-accounts/${accountId}/`)
+  async deleteAIAccount(workspaceSlug: string, accountId: string, totpCode?: string): Promise<void> {
+    return this.delete(
+      `/api/workspaces/${workspaceSlug}/ai-accounts/${accountId}/`,
+      totpCode ? { totp_code: totpCode } : undefined
+    )
       .then((response) => response?.data)
       .catch((error) => {
         throw error?.response?.data;
       });
   }
 
-  async rotateAIAccountToken(workspaceSlug: string, accountId: string): Promise<TAIAccount & { token: string }> {
-    return this.post(`/api/workspaces/${workspaceSlug}/ai-accounts/${accountId}/rotate-token/`)
+  async rotateAIAccountToken(
+    workspaceSlug: string,
+    accountId: string,
+    totpCode?: string
+  ): Promise<TAIAccount & { token: string }> {
+    return this.post(
+      `/api/workspaces/${workspaceSlug}/ai-accounts/${accountId}/rotate-token/`,
+      totpCode ? { totp_code: totpCode } : {}
+    )
       .then((response) => response?.data)
       .catch((error) => {
         throw error?.response?.data;

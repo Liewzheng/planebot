@@ -11,10 +11,13 @@ import { useTranslation } from "@plane/i18n";
 import type { TAIAccount } from "@plane/types";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import { EModalPosition, EModalWidth, ModalCore } from "@plane/ui";
+// hooks
+import { useUser } from "@/hooks/store/user";
+// services
 import { aiAccountService } from "@/services/ai-account.service";
 // local imports
 import { AIAccountForm, type TAIAccountFormValues } from "./account-form";
-import { AI_ACCOUNTS_LIST } from "./constants";
+import { AI_ACCOUNTS_LIST, getMfaStepUpError } from "./constants";
 import { GeneratedTokenDetails } from "./generated-token-details";
 
 type TCreatedAIAccount = TAIAccount & { token: string };
@@ -30,8 +33,13 @@ export function CreateAIAccountModal(props: Props) {
   // states
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdAccount, setCreatedAccount] = useState<TCreatedAIAccount | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+  const [totpError, setTotpError] = useState<string | undefined>(undefined);
   // hooks
   const { t } = useTranslation();
+  const { data: currentUser } = useUser();
+  // Step-up verification applies only to users who opted into 2FA
+  const isMFAEnabled = currentUser?.is_mfa_enabled ?? false;
   // refs
   // Bumped on close so a create response that lands after the modal was
   // closed cannot resurrect the stale token screen on the next open
@@ -47,6 +55,8 @@ export function CreateAIAccountModal(props: Props) {
       resetTimerRef.current = null;
       setIsSubmitting(false);
       setCreatedAccount(null);
+      setTotpCode("");
+      setTotpError(undefined);
     }
   }, [isOpen]);
 
@@ -63,17 +73,25 @@ export function CreateAIAccountModal(props: Props) {
     resetTimerRef.current = setTimeout(() => {
       setIsSubmitting(false);
       setCreatedAccount(null);
+      setTotpCode("");
+      setTotpError(undefined);
       resetTimerRef.current = null;
     }, 350);
   };
 
   const handleCreateAccount = async (data: TAIAccountFormValues) => {
+    if (isMFAEnabled && !totpCode.trim()) {
+      setTotpError(t("workspace_settings.settings.ai_accounts.step_up.code_required"));
+      return;
+    }
     const generation = ++requestGenerationRef.current;
     setIsSubmitting(true);
+    setTotpError(undefined);
     try {
       const res = await aiAccountService.createAIAccount(workspaceSlug, {
         name: data.name,
         description: data.description,
+        ...(isMFAEnabled && { totp_code: totpCode.trim() }),
       });
       // The account is created either way, but only show the token screen
       // when the modal is still on this same request
@@ -87,13 +105,19 @@ export function CreateAIAccountModal(props: Props) {
       });
       mutate<TAIAccount[]>(AI_ACCOUNTS_LIST(workspaceSlug));
     } catch (err) {
-      setToast({
-        type: TOAST_TYPE.ERROR,
-        title: t("workspace_settings.settings.ai_accounts.toasts.not_created.title"),
-        message:
-          (err as { message?: string })?.message ??
-          t("workspace_settings.settings.ai_accounts.toasts.not_created.message"),
-      });
+      const mfaError = getMfaStepUpError(err, t);
+      if (mfaError) {
+        // Step-up failure stays inline next to the code input
+        setTotpError(mfaError);
+      } else {
+        setToast({
+          type: TOAST_TYPE.ERROR,
+          title: t("workspace_settings.settings.ai_accounts.toasts.not_created.title"),
+          message:
+            (err as { message?: string })?.message ??
+            t("workspace_settings.settings.ai_accounts.toasts.not_created.message"),
+        });
+      }
     } finally {
       // A stale request must not unlock the submitting state of a newer one
       if (generation === requestGenerationRef.current) {
@@ -115,6 +139,7 @@ export function CreateAIAccountModal(props: Props) {
           submitLabel={t("workspace_settings.settings.ai_accounts.modal.create")}
           title={t("workspace_settings.settings.ai_accounts.modal.create_title")}
           onSubmit={handleCreateAccount}
+          totp={isMFAEnabled ? { value: totpCode, onChange: setTotpCode, error: totpError } : undefined}
         />
       )}
     </ModalCore>

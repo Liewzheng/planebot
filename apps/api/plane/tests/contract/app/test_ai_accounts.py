@@ -7,12 +7,13 @@
 from uuid import uuid4
 
 import pytest
+import pyotp
 from django.utils import timezone
 from rest_framework import status
 
 from plane.ai_accounts.constants import BOT_TYPE_AI_AGENT
 from plane.ai_accounts.models import AIAccount, AIScopePolicy
-from plane.db.models import APIToken, FileAsset, Project, ProjectMember, User, WorkspaceMember
+from plane.db.models import APIToken, FileAsset, Project, ProjectMember, TOTPDevice, User, WorkspaceMember
 
 
 @pytest.fixture
@@ -467,3 +468,83 @@ class TestAIAccountPolicyCache:
         assert get_ai_account(request) is None
         with django_assert_num_queries(0):
             assert get_ai_account(request) is None
+
+
+@pytest.mark.contract
+class TestAIAccountStepUp:
+    """Step-up TOTP verification on create / rotate / delete.
+
+    Enforced only when the acting admin has a confirmed TOTP device;
+    accounts without 2FA pass through (covered by the tests above, which
+    never submit a code).
+    """
+
+    @pytest.fixture
+    def mfa_secret(self, create_user):
+        secret = pyotp.random_base32()
+        TOTPDevice.objects.create(
+            user=create_user,
+            secret=TOTPDevice.encrypt_secret(secret),
+            confirmed=True,
+        )
+        return secret
+
+    def code(self, secret):
+        return pyotp.TOTP(secret).now()
+
+    def test_create_requires_totp(self, session_client, workspace, mfa_secret):
+        # Missing code -> rejected
+        response = session_client.post(
+            accounts_url(workspace.slug), {"name": "bot-stepup", "role": 15}, format="json"
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["error_code"] == 5200  # MFA_CODE_REQUIRED
+
+        # Wrong code -> rejected
+        response = session_client.post(
+            accounts_url(workspace.slug),
+            {"name": "bot-stepup", "role": 15, "totp_code": "000000"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["error_code"] == 5205  # MFA_INVALID_CODE
+
+        # Valid code -> created
+        response = session_client.post(
+            accounts_url(workspace.slug),
+            {"name": "bot-stepup", "role": 15, "totp_code": self.code(mfa_secret)},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_rotate_requires_totp(self, session_client, workspace, mfa_secret):
+        create = session_client.post(
+            accounts_url(workspace.slug),
+            {"name": "bot-rotate-stepup", "role": 15, "totp_code": self.code(mfa_secret)},
+            format="json",
+        )
+        account_id = create.data["id"]
+        url = f"{accounts_url(workspace.slug)}{account_id}/rotate-token/"
+
+        response = session_client.post(url, {}, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["error_code"] == 5200
+
+        response = session_client.post(url, {"totp_code": self.code(mfa_secret)}, format="json")
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_delete_requires_totp(self, session_client, workspace, mfa_secret):
+        create = session_client.post(
+            accounts_url(workspace.slug),
+            {"name": "bot-delete-stepup", "role": 15, "totp_code": self.code(mfa_secret)},
+            format="json",
+        )
+        account_id = create.data["id"]
+        url = f"{accounts_url(workspace.slug)}{account_id}/"
+
+        response = session_client.delete(url)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["error_code"] == 5200
+
+        response = session_client.delete(url, {"totp_code": self.code(mfa_secret)}, format="json")
+        assert response.status_code == status.HTTP_204_NO_CONTENT

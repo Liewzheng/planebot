@@ -12,6 +12,8 @@ import { useTranslation } from "@plane/i18n";
 import { Button } from "@plane/propel/button";
 // ui
 import { TextArea } from "@plane/ui";
+// local imports
+import { MfaCodeField } from "./mfa-code-field";
 
 export type TAIAccountFormValues = {
   name: string;
@@ -26,10 +28,16 @@ type Props = {
   submitLabel: string;
   title: string;
   onSubmit: (data: TAIAccountFormValues) => Promise<void>;
+  // Step-up TOTP input, rendered only when the acting user has 2FA enabled
+  totp?: {
+    value: string;
+    onChange: (value: string) => void;
+    error?: string;
+  };
 };
 
 export function AIAccountForm(props: Props) {
-  const { defaultValues, handleClose, isSubmitting, loadingLabel, submitLabel, title, onSubmit } = props;
+  const { defaultValues, handleClose, isSubmitting, loadingLabel, submitLabel, title, onSubmit, totp } = props;
   // form
   const {
     control,
@@ -83,6 +91,12 @@ export function AIAccountForm(props: Props) {
               />
             )}
           />
+          {totp && (
+            <div className="pt-2">
+              <p className="pb-2 text-11 text-tertiary">{t("workspace_settings.settings.ai_accounts.step_up.hint")}</p>
+              <MfaCodeField value={totp.value} onChange={totp.onChange} error={totp.error} />
+            </div>
+          )}
         </div>
       </div>
       <div className="flex items-center justify-end gap-2 border-t-[0.5px] border-subtle px-5 py-4">

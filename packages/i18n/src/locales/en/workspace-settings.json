@@ -160,6 +160,11 @@
         "title": "AI accounts",
         "description": "Create and manage bot accounts that let AI agents access your workspace with scoped permissions.",
         "add_account": "Add AI account",
+        "step_up": {
+          "hint": "This operation affects token security. Enter the 6-digit code from your authenticator app.",
+          "code_required": "Enter the 6-digit code",
+          "code_invalid": "The code is invalid or expired. Try again."
+        },
         "modal": {
           "create_title": "Create AI account",
           "edit_title": "Edit AI account",
