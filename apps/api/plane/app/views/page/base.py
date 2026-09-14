@@ -8,6 +8,7 @@ from datetime import datetime
 from django.core.serializers.json import DjangoJSONEncoder
 
 # Django imports
+from django.conf import settings
 from django.db import connection
 from django.db.models import (
     Exists,
@@ -47,7 +48,7 @@ from plane.db.models import (
 )
 from plane.utils.error_codes import ERROR_CODES
 from plane.utils.order_queryset import PAGE_ORDER_BY_ALLOWLIST, sanitize_order_by
-from plane.utils.page_content import sync_page_description_formats
+from plane.utils.page_content import invalidate_live_document, sync_page_description_formats
 
 # Local imports
 from ..base import BaseAPIView, BaseViewSet
@@ -578,6 +579,24 @@ class PagesDescriptionViewSet(BaseViewSet):
         serializer = PageBinaryUpdateSerializer(page, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+
+            # Content written from outside the live server (the web editor's
+            # offline fallback, any API client) makes the live server's
+            # in-memory document stale: it would keep serving - and re-persist -
+            # the previous content, and connected clients would union-merge the
+            # old content back in. Drop it so the next load reads the database.
+            # The live server identifies itself with a shared secret header.
+            is_live_writer = (
+                bool(settings.LIVE_INTERNAL_API_KEY)
+                and request.headers.get("x-live-internal-key") == settings.LIVE_INTERNAL_API_KEY
+            )
+            if not is_live_writer:
+                if not request.data.get("description_binary"):
+                    # html-only write: rebuild the binary/json from it so the two
+                    # formats cannot diverge (this also invalidates the document)
+                    sync_page_description_formats(page, force=True)
+                else:
+                    invalidate_live_document(str(page.id))
 
             # Capture the page transaction
             if request.data.get("description_html"):

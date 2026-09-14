@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { env } from "@/env";
 import { AppError } from "@/lib/errors";
 import { PageService } from "./extended.service";
 
@@ -25,6 +26,13 @@ export class ProjectPageService extends PageService {
     if (!params.cookie) throw new AppError("Cookie is required.");
     // set cookie
     this.setHeader("Cookie", params.cookie);
+    // Identify this client to the API: a page write coming from the live server
+    // must not invalidate the in-memory document it just stored. The value is
+    // shared with the API through the deployment env, so browsers cannot spoof
+    // it and skip the invalidation.
+    if (env.LIVE_INTERNAL_API_KEY) {
+      this.setHeader("x-live-internal-key", env.LIVE_INTERNAL_API_KEY);
+    }
     // set base path
     this.basePath = `/api/workspaces/${workspaceSlug}/projects/${projectId}`;
   }
