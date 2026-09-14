@@ -78,13 +78,21 @@ def foreign_page(db, create_user):
     )
 
 
+def storage_stub(request=None):
+    """Stand-in for ``S3Storage`` that accepts only ``request``.
+
+    Keeping the real signature means a stale keyword argument fails here the way
+    it fails in production, instead of being silently swallowed by a mock.
+    """
+    storage = mock.MagicMock()
+    storage.generate_presigned_post.return_value = {"url": "https://signed.example/upload", "fields": {}}
+    storage.generate_presigned_url.return_value = "https://signed.example/get"
+    return storage
+
+
 def post_asset(client, slug, payload):
     """POST the register request with S3 stubbed out (no presign round-trip)."""
-    with mock.patch("plane.api.views.asset.S3Storage") as mock_storage:
-        mock_storage.return_value.generate_presigned_post.return_value = {
-            "url": "https://signed.example/upload",
-            "fields": {},
-        }
+    with mock.patch("plane.api.views.asset.S3Storage", side_effect=storage_stub):
         return client.post(assets_url(slug), payload, format="json")
 
 
@@ -309,8 +317,7 @@ class TestGenericAssetPageBinding:
         )
         assert confirmed.status_code == status.HTTP_204_NO_CONTENT, confirmed.data
 
-        with mock.patch("plane.api.views.asset.S3Storage") as mock_storage:
-            mock_storage.return_value.generate_presigned_url.return_value = "https://signed.example/get"
+        with mock.patch("plane.api.views.asset.S3Storage", side_effect=storage_stub):
             fetched = api_key_client.get(f"{assets_url(workspace.slug)}{asset_id}/")
 
         assert fetched.status_code == status.HTTP_200_OK, fetched.data
