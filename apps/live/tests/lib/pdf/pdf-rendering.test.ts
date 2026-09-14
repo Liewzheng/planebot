@@ -190,6 +190,61 @@ describe("PDF Rendering Integration", () => {
       expect(text).toMatch(/2\./);
     });
 
+    it("should respect the start attribute of an ordered list", async () => {
+      const doc: TipTapDocument = {
+        type: "doc",
+        content: [
+          {
+            type: "orderedList",
+            attrs: { start: 10 },
+            content: [
+              {
+                type: "listItem",
+                content: [{ type: "paragraph", content: [{ type: "text", text: "Tenth" }] }],
+              },
+              {
+                type: "listItem",
+                content: [{ type: "paragraph", content: [{ type: "text", text: "Eleventh" }] }],
+              },
+            ],
+          },
+        ],
+      };
+
+      const buffer = await renderPlaneDocToPdfBuffer(doc);
+      const text = await extractPdfText(buffer);
+
+      expect(text).toContain("Tenth");
+      expect(text).toContain("Eleventh");
+      // numbering continues from `start` instead of restarting at 1
+      expect(text).toMatch(/10\./);
+      expect(text).toMatch(/11\./);
+      expect(text).not.toMatch(/1\.\s*Tenth/);
+    });
+
+    it("should fall back to 1 for an invalid start attribute", async () => {
+      const doc: TipTapDocument = {
+        type: "doc",
+        content: [
+          {
+            type: "orderedList",
+            attrs: { start: 0 },
+            content: [
+              {
+                type: "listItem",
+                content: [{ type: "paragraph", content: [{ type: "text", text: "Only" }] }],
+              },
+            ],
+          },
+        ],
+      };
+
+      const buffer = await renderPlaneDocToPdfBuffer(doc);
+      const text = await extractPdfText(buffer);
+
+      expect(text).toMatch(/1\./);
+    });
+
     it("should render task list with task text", async () => {
       const doc: TipTapDocument = {
         type: "doc",
