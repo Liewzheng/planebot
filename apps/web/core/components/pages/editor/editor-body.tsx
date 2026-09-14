@@ -25,6 +25,8 @@ import { ERowVariant, Row } from "@plane/ui";
 import { cn, generateRandomColor, hslToHex } from "@plane/utils";
 // components
 import { EditorMentionsRoot } from "@/components/editor/embeds/mentions";
+// helpers
+import { getIssueReferenceConfig } from "@/helpers/issue-reference.helper";
 // hooks
 import { useEditorMention } from "@/hooks/editor";
 import { useMember } from "@/hooks/store/use-member";
@@ -106,6 +108,8 @@ export const PageEditorBody = observer(function PageEditorBody(props: Props) {
     setSyncingStatus,
   } = page;
   const workspaceId = getWorkspaceBySlug(workspaceSlug)?.id ?? "";
+  // work item references typed or pasted into the page become links
+  const issueReference = useMemo(() => getIssueReferenceConfig(workspaceSlug), [workspaceSlug]);
   // use editor mention
   const { fetchMentions } = useEditorMention({
     enableAdvancedMentions: true,
@@ -303,6 +307,7 @@ export const PageEditorBody = observer(function PageEditorBody(props: Props) {
               menu: getAIMenu,
             }}
             onAssetChange={updateAssetsList}
+            issueReference={issueReference}
             extendedEditorProps={extendedEditorProps}
             isFetchingFallbackBinary={isFetchingFallbackBinary}
           />
