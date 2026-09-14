@@ -124,10 +124,18 @@ export function ExportPageModal(props: Props) {
   const selectedPageFormat = watch("page_format");
   const selectedContentVariety = watch("content_variety");
   const isPDFSelected = selectedExportFormat === "pdf";
-  const fileName = pageTitle
+  // Keep non-ASCII characters (Chinese, etc.) in the file name. The previous
+  // sanitizer replaced everything outside [a-z0-9-_], so a Chinese title came
+  // out as a run of dashes — `cmos--a4.pdf`, `-2026-09-14--a4.pdf`. Only strip
+  // what a file system actually rejects, and keep a usable fallback name.
+  const sanitizedTitle = pageTitle
     ?.toLowerCase()
-    ?.replace(/[^a-z0-9-_]/g, "-")
-    .replace(/-+/g, "-");
+    // invalid on Windows (and troublesome elsewhere): \ / : * ? " < > | plus control chars
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "");
+  const fileName = sanitizedTitle || "page";
   // handle modal close
   const handleClose = () => {
     onClose();
@@ -180,6 +188,11 @@ export function ExportPageModal(props: Props) {
   // handle export
   const handleExport = async () => {
     setIsExporting(true);
+    // Generating the PDF below runs on the main thread and blocks it — tens of
+    // seconds on a CJK-heavy page — so the browser never gets to paint the
+    // button's busy state and the dialog just looks frozen. Yield one frame
+    // first so the user sees "exporting" instead of a dead button.
+    await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
     try {
       if (selectedExportFormat === "pdf") {
         await handleExportAsPDF();
