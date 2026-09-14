@@ -60,6 +60,67 @@ describe("PDF Rendering Integration", () => {
       expect(text).toContain("Test Document");
     });
 
+    it("should render CJK text without losing it to a missing font", async () => {
+      const doc: TipTapDocument = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "CMOS 曝光/增益生效延迟：为什么会丢帧" }],
+          },
+        ],
+      };
+
+      const buffer = await renderPlaneDocToPdfBuffer(doc);
+      expect(buffer.toString("ascii", 0, 5)).toBe(PDF_HEADER);
+
+      const text = await extractPdfText(buffer);
+      // A font without CJK glyphs renders tofu and extracts as mojibake
+      expect(text).toContain("曝光");
+      expect(text).toContain("丢帧");
+    });
+
+    it("should render CJK inside a code block", async () => {
+      const doc: TipTapDocument = {
+        type: "doc",
+        content: [
+          {
+            type: "codeBlock",
+            content: [{ type: "text", text: "const 帧数 = 3; // 中文注释" }],
+          },
+        ],
+      };
+
+      const buffer = await renderPlaneDocToPdfBuffer(doc);
+      const text = await extractPdfText(buffer);
+
+      expect(text).toContain("帧数");
+      expect(text).toContain("中文注释");
+    });
+
+    it("should subset the CJK fallback instead of embedding it whole", async () => {
+      // Regression guard: pdfkit only prunes fonts it can re-encode, and a WOFF2
+      // source silently disabled that, pushing a one-page export into the
+      // multi-megabyte range. A subset of these few glyphs is a couple of KB.
+      const doc: TipTapDocument = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "丢帧曝光增益生效延迟" }],
+          },
+          {
+            type: "codeBlock",
+            content: [{ type: "text", text: "const 帧数 = 3" }],
+          },
+        ],
+      };
+
+      const buffer = await renderPlaneDocToPdfBuffer(doc);
+
+      expect(buffer.length).toBeLessThan(60_000);
+    });
+
     it("should render heading nodes and verify text", async () => {
       const doc: TipTapDocument = {
         type: "doc",
