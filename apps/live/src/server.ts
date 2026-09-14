@@ -61,9 +61,10 @@ export class Server {
     this.app.use(compression({ level: env.COMPRESSION_LEVEL, threshold: env.COMPRESSION_THRESHOLD }));
     // Logging middleware
     this.app.use(loggerMiddleware);
-    // Body parsing middleware
-    this.app.use(express.json());
-    this.app.use(express.urlencoded({ extended: true }));
+    // Body parsing middleware — large page documents are converted through
+    // /convert-document/ (pages can be well over express's 100kb default)
+    this.app.use(express.json({ limit: "25mb" }));
+    this.app.use(express.urlencoded({ extended: true, limit: "25mb" }));
     // cors middleware
     this.setupCors();
   }
