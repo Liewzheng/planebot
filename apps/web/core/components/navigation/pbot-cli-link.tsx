@@ -1,0 +1,103 @@
+/**
+ * Copyright (c) 2023-present Plane Software, Inc. and contributors
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * See the LICENSE file for details.
+ */
+
+import { useEffect, useState } from "react";
+import { CopyOutline, DownloadOutline } from "@makeplane/propel/icons";
+import { SquareTerminal } from "lucide-react";
+// plane imports
+import { useTranslation } from "@plane/i18n";
+
+// Promo/download page for the pbot CLI (placeholder until the dedicated site is ready)
+const PBOT_CLI_URL = "https://github.com/Liewzheng/planebotcli";
+
+const PBOT_CLI_INSTALL_COMMAND = [
+  "git clone https://github.com/Liewzheng/planebotcli.git",
+  "cd planebotcli",
+  "cargo install --path crates/planebotcli-cli --locked",
+].join("\n");
+
+type TDetectedOS = "macos" | "windows" | "linux";
+
+const detectOS = (): TDetectedOS => {
+  const ua = navigator.userAgent;
+  if (/mac os x/i.test(ua)) return "macos";
+  if (/windows/i.test(ua)) return "windows";
+  return "linux";
+};
+
+/**
+ * Top-navigation entry for the pbot CLI: clicking opens the promo page,
+ * hovering shows OS-aware install instructions plus verify/configure hints.
+ * Browsers cannot probe the local PATH, so "is it installed" is answered
+ * with `pbot whoami` instead of detection.
+ */
+export function PbotCliLink() {
+  // plane hooks
+  const { t } = useTranslation();
+  // states — resolved post-hydration to keep SSR and first client render equal
+  const [os, setOs] = useState<TDetectedOS>("linux");
+  const [isCopied, setIsCopied] = useState(false);
+
+  useEffect(() => {
+    setOs(detectOS());
+  }, []);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(PBOT_CLI_INSTALL_COMMAND);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch {
+      // clipboard unavailable (non-secure context) — the command stays visible for manual copy
+    }
+  };
+
+  const rustHintKey = `home.pbot_cli.rust_hint_${os}`;
+
+  return (
+    <div className="group relative flex-shrink-0">
+      <a
+        aria-label={t("home.pbot_cli.title")}
+        className="flex size-8 items-center justify-center rounded-md text-secondary hover:bg-layer-1-hover"
+        href={PBOT_CLI_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <SquareTerminal className="size-4" />
+      </a>
+      <div className="invisible absolute top-full right-0 z-30 mt-1 w-84 rounded-md border border-subtle bg-surface-1 p-4 opacity-0 shadow-raised-200 transition-opacity group-hover:visible group-hover:opacity-100">
+        <div className="flex flex-col gap-y-2">
+          <div>
+            <h5 className="text-13 font-medium">{t("home.pbot_cli.title")}</h5>
+            <p className="text-11 text-tertiary">{t("home.pbot_cli.description")}</p>
+          </div>
+          <div className="flex flex-col gap-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-11 text-tertiary">{t("home.pbot_cli.install_title")}</span>
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="flex items-center gap-1 rounded-xs px-1.5 py-0.5 text-11 text-tertiary hover:bg-layer-1-hover"
+              >
+                {isCopied ? <DownloadOutline className="size-3" /> : <CopyOutline className="size-3" />}
+                {isCopied ? t("home.pbot_cli.copied") : t("home.pbot_cli.copy_install")}
+              </button>
+            </div>
+            <pre className="font-mono overflow-x-auto rounded-md border border-subtle bg-surface-2 px-3 py-2 text-11 break-all whitespace-pre-wrap">
+              {PBOT_CLI_INSTALL_COMMAND}
+            </pre>
+            <p className="text-11 text-placeholder">{t(rustHintKey)}</p>
+          </div>
+          <div className="flex flex-col gap-y-0.5 border-t border-subtle pt-2">
+            <p className="text-11 text-tertiary">{t("home.pbot_cli.verify_hint")}</p>
+            <p className="text-11 text-tertiary">{t("home.pbot_cli.configure_hint")}</p>
+            <p className="text-11 text-placeholder">{t("home.pbot_cli.visit_hint")}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
