@@ -6,9 +6,35 @@
 
 import { useEffect, useState } from "react";
 import { CopyOutline, DownloadOutline } from "@makeplane/propel/icons";
-import { SquareTerminal } from "lucide-react";
 // plane imports
 import { useTranslation } from "@plane/i18n";
+
+// propel-style terminal icon (16x16, fill="currentColor") — lucide's
+// stroke-based SquareTerminal does not match the neighboring propel icons
+function PbotCliIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 16 16"
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      className={className}
+    >
+      <path
+        fill="currentColor"
+        fillRule="evenodd"
+        d="M3.625 2.625h8.75c1.104 0 2 .896 2 2v6.75c0 1.104-.896 2-2 2h-8.75c-1.104 0-2-.896-2-2V4.625c0-1.104.896-2 2-2zm0 1.25c-.414 0-.75.336-.75.75v6.75c0 .414.336.75.75.75h8.75c.414 0 .75-.336.75-.75v-6.75c0-.414-.336-.75-.75-.75h-8.75z"
+      />
+      <path
+        fill="currentColor"
+        d="M4.32 5.87a.55.55 0 0 1 .78-.03l2.5 2.3a.55.55 0 0 1 0 .8l-2.5 2.3a.55.55 0 1 1-.75-.83l2.1-1.885-2.1-1.885a.55.55 0 0 1-.03-.78z"
+      />
+      <path fill="currentColor" d="M8.4 10.4h3a.55.55 0 1 1 0 1.1h-3a.55.55 0 1 1 0-1.1z" />
+    </svg>
+  );
+}
 
 // Promo/download page for the pbot CLI (placeholder until the dedicated site is ready)
 const PBOT_CLI_URL = "https://github.com/Liewzheng/planebotcli";
@@ -68,7 +94,7 @@ export function PbotCliLink() {
         target="_blank"
         rel="noopener noreferrer"
       >
-        <SquareTerminal className="size-4" />
+        <PbotCliIcon className="size-5" />
       </a>
       <div className="invisible absolute top-full right-0 z-30 mt-1 w-84 rounded-md border border-subtle bg-surface-1 p-4 opacity-0 shadow-raised-200 transition-opacity group-hover:visible group-hover:opacity-100">
         <div className="flex flex-col gap-y-2">
