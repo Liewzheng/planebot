@@ -65,6 +65,19 @@
     "manage_widgets": "管理小部件",
     "title": "首页",
     "star_us_on_github": "在GitHub上为我们加星",
+    "pbot_cli": {
+      "title": "pbot CLI",
+      "description": "在终端中管理任务、评论和项目。",
+      "install_title": "安装（需要 Rust 工具链）：",
+      "rust_hint_macos": "尚未安装 Rust？运行 brew install rustup && rustup-init",
+      "rust_hint_windows": "尚未安装 Rust？从 rustup.rs 下载 rustup-init.exe 安装",
+      "rust_hint_linux": "尚未安装 Rust？参考 rustup.rs 一键脚本安装",
+      "verify_hint": "验证安装：pbot whoami",
+      "configure_hint": "连接本实例：pbot configure（base_url 填本站地址）",
+      "copy_install": "复制",
+      "copied": "已复制",
+      "visit_hint": "点击图标访问项目首页"
+    },
     "business_trial_banner": {
       "title": "您的14天Business计划试用已开始！",
       "description": "探索所有Business功能。准备好后，选择订阅。不会自动收费。",

@@ -65,6 +65,19 @@
     "manage_widgets": "Manage widgets",
     "title": "Home",
     "star_us_on_github": "Star us on GitHub",
+    "pbot_cli": {
+      "title": "pbot CLI",
+      "description": "Manage work items, comments and projects from your terminal.",
+      "install_title": "Install (requires the Rust toolchain):",
+      "rust_hint_macos": "No Rust yet? Run brew install rustup && rustup-init",
+      "rust_hint_windows": "No Rust yet? Install rustup-init.exe from rustup.rs",
+      "rust_hint_linux": "No Rust yet? Use the one-liner from rustup.rs",
+      "verify_hint": "Verify the install: pbot whoami",
+      "configure_hint": "Connect to this instance: pbot configure (set base_url to this site)",
+      "copy_install": "Copy",
+      "copied": "Copied",
+      "visit_hint": "Click the icon to visit the project homepage"
+    },
     "business_trial_banner": {
       "title": "Your 14-day Business plan trial is live!",
       "description": "Explore all Business features. When you're ready, choose to subscribe. You'll not be billed automatically.",
