@@ -9,7 +9,7 @@ import { NodeViewWrapper, NodeViewContent } from "@tiptap/react";
 import ts from "highlight.js/lib/languages/typescript";
 import { common, createLowlight } from "lowlight";
 import { CopyOutline, TickOutline } from "@makeplane/propel/icons";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 // ui
 import { Tooltip } from "@plane/propel/tooltip";
@@ -96,6 +96,9 @@ export function CodeBlockComponent(props: NodeViewProps) {
   const [imageDownloadSrc, setImageDownloadSrc] = useState<string | undefined>(undefined);
   const [cachedSvg, setCachedSvg] = useState<string | undefined>(undefined);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  // SVG the live renderer drew, captured on click to feed the full-screen preview
+  const [liveSvg, setLiveSvg] = useState<string | undefined>(undefined);
+  const liveDiagramRef = useRef<HTMLDivElement>(null);
   // The language picker and mermaid toggle are only mounted while the block is
   // hovered: a page with many code blocks would otherwise hold one <select>
   // with ~40 <option> nodes per block, which is a large DOM/layout cost.
@@ -347,7 +350,34 @@ export function CodeBlockComponent(props: NodeViewProps) {
         </pre>
       )}
 
-      {showLive && renderMermaid && <MermaidDiagram source={node.textContent} />}
+      {showLive && renderMermaid && (
+        // Reading mode: the live renderer drew the diagram into this subtree, so a
+        // click can hand that very SVG to the full-screen preview. Without this the
+        // enlarge action existed only for blocks carrying a cached image asset —
+        // which most mermaid blocks do not have, leaving the diagram unclickable.
+        <div
+          ref={liveDiagramRef}
+          role="button"
+          tabIndex={0}
+          aria-label={`${t("codeBlock.view_diagram_aria")}: ${altText}`}
+          className="mermaid-diagram-preview"
+          onClick={() => {
+            const svg = liveDiagramRef.current?.querySelector("svg")?.outerHTML;
+            if (!svg) return;
+            setLiveSvg(svg);
+            setIsPreviewOpen(true);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            const svg = liveDiagramRef.current?.querySelector("svg")?.outerHTML;
+            if (!svg) return;
+            setLiveSvg(svg);
+            setIsPreviewOpen(true);
+          }}
+        >
+          <MermaidDiagram source={node.textContent} />
+        </div>
+      )}
 
       {showImage && (cachedSvg || imageSrc) && (
         <div className="my-2 flex justify-center rounded-lg border border-subtle bg-layer-3 p-4">
@@ -379,9 +409,9 @@ export function CodeBlockComponent(props: NodeViewProps) {
         </div>
       )}
 
-      {isPreviewOpen && cachedSvg && (
+      {isPreviewOpen && (cachedSvg ?? liveSvg) && (
         <ImageFullScreenModal
-          src={svgToDataUri(cachedSvg)}
+          src={svgToDataUri(cachedSvg ?? liveSvg ?? "")}
           downloadSrc={imageDownloadSrc ?? imageSrc ?? ""}
           isFullScreenEnabled={isPreviewOpen}
           toggleFullScreenMode={setIsPreviewOpen}
