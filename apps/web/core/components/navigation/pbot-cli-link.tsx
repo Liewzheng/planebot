@@ -205,7 +205,7 @@ export function PbotCliLink() {
               </button>
             </div>
           )}
-          <div className="flex flex-col gap-y-0.5 border-t border-subtle pt-2">
+          <div className="flex flex-col gap-y-1.5 border-t border-subtle pt-2">
             <p className="text-11 text-tertiary">
               {t("home.pbot_cli.verify_hint")}{" "}
               <code className="font-mono rounded-xs border border-subtle bg-surface-2 px-1 py-0.5">pbot whoami</code>
