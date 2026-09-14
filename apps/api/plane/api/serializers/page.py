@@ -14,6 +14,7 @@ from plane.db.models import (
     Project,
     ProjectPage,
 )
+from plane.utils.page_duplication import CannotDeduplicate, assert_not_duplicated
 from plane.utils.page_frontmatter import (
     normalize_tags,
     split_frontmatter,
@@ -102,6 +103,11 @@ class PageCreateSerializer(BaseSerializer):
         """
         body, metadata = split_frontmatter(value)
         self._frontmatter_tags = normalize_tags(metadata.get("tags"))
+        if body:
+            try:
+                assert_not_duplicated(body)
+            except CannotDeduplicate as error:
+                raise serializers.ValidationError(str(error))
         return body
 
     def validate_name(self, value):

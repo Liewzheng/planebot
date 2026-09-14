@@ -12,6 +12,7 @@ from plane.utils.content_validator import (
     validate_binary_data,
     validate_html_content,
 )
+from plane.utils.page_duplication import CannotDeduplicate, assert_not_duplicated
 from plane.utils.page_frontmatter import (
     normalize_tags,
     split_frontmatter,
@@ -78,6 +79,11 @@ class PageSerializer(BaseSerializer):
         # map its tags to project labels below
         description_html, metadata = split_frontmatter(self.context["description_html"])
         frontmatter_tags = normalize_tags(metadata.get("tags"))
+        # a union-merged body must never be persisted
+        try:
+            assert_not_duplicated(description_html)
+        except CannotDeduplicate as error:
+            raise serializers.ValidationError({"description_html": str(error)})
 
         # Get the workspace id from the project
         project = Project.objects.get(pk=project_id)
@@ -145,9 +151,17 @@ class PageSerializer(BaseSerializer):
         return page
 
     def validate_description_html(self, value):
-        """Pull a leading YAML frontmatter block out of the body (update path)."""
+        """Pull a leading YAML frontmatter block out of the body (update path).
+
+        Also rejects a body that looks like a union-merged (duplicated) page.
+        """
         body, metadata = split_frontmatter(value)
         self._frontmatter_tags = normalize_tags(metadata.get("tags"))
+        if body:
+            try:
+                assert_not_duplicated(body)
+            except CannotDeduplicate as error:
+                raise serializers.ValidationError(str(error))
         return body
 
     def _project_id_for(self, page):
@@ -241,6 +255,12 @@ class PageBinaryUpdateSerializer(serializers.Serializer):
         is_valid, error_message, sanitized_html = validate_html_content(value)
         if not is_valid:
             raise serializers.ValidationError(error_message)
+
+        # A stale client merge duplicates the whole body; never persist that
+        try:
+            assert_not_duplicated(value)
+        except CannotDeduplicate as error:
+            raise serializers.ValidationError(str(error))
 
         # Return sanitized HTML if available, otherwise return original
         return sanitized_html if sanitized_html is not None else value

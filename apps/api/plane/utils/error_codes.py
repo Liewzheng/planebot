@@ -11,4 +11,5 @@ ERROR_CODES = {
     # pages
     "PAGE_LOCKED": 4701,
     "PAGE_ARCHIVED": 4702,
+    "PAGE_CONTENT_DUPLICATED": 4703,
 }
