@@ -21,6 +21,7 @@ import { getPageService } from "@/services/page/handler";
 import type { FetchPayloadWithContext, StorePayloadWithContext } from "@/types";
 import { ForceCloseReason, CloseCode } from "@/types/admin-commands";
 import { broadcastError } from "@/utils/broadcast-error";
+import { detectDocumentDuplication } from "@/utils/document-duplication";
 // force close utility
 import { forceCloseDocumentAcrossServers } from "./force-close-handler";
 
@@ -93,6 +94,25 @@ const storeDocument = async ({
       pageBinaryData,
       true
     );
+
+    // Guard: a reconnect from a stale client makes Yjs union a second copy of
+    // the whole page into the document. Persisting that would keep the page
+    // ballooning, so refuse the write and tell the client to reload.
+    const duplication = detectDocumentDuplication(contentHTML);
+    if (duplication.duplicated) {
+      logger.warn("DOCUMENT_STORE_GUARD: refusing to persist a duplicated document", {
+        pageId,
+        totalLines: duplication.totalLines,
+        uniqueLines: duplication.uniqueLines,
+      });
+      // Force every connected client to drop its stale local copy and reload
+      // from the database - a reloaded client cannot merge the old document
+      // back in. Mirrors the content_too_large path: unload and return without
+      // throwing, since the document is gone by then.
+      await forceCloseDocumentAcrossServers(instance, pageId, ForceCloseReason.CONTENT_REPLACED);
+      return;
+    }
+
     // create payload
     const payload: TDocumentPayload = {
       description_binary: contentBinaryEncoded,
