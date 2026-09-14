@@ -2,11 +2,15 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See the LICENSE file for details.
 
+# Python imports
+import json
+
 # Django imports
 from django.contrib.postgres.aggregates import ArrayAgg
 from django.contrib.postgres.fields import ArrayField
 from django.db.models import Q, UUIDField, Value
 from django.db.models.functions import Coalesce
+from django.core.serializers.json import DjangoJSONEncoder
 
 # Third party imports
 from rest_framework import status
@@ -29,6 +33,7 @@ from plane.db.models import (
 )
 
 from .base import BaseAPIView
+from plane.bgtasks.page_version_task import track_page_version
 from plane.utils.order_queryset import PAGE_ORDER_BY_ALLOWLIST, sanitize_order_by
 from plane.utils.page_content import sync_page_description_formats
 from plane.utils.openapi import (
@@ -331,6 +336,8 @@ class PageDetailAPIEndpoint(BaseAPIView):
                     },
                     status=status.HTTP_409_CONFLICT,
                 )
+            old_description_html = page.description_html
+            existing_instance = json.dumps({"description_html": old_description_html}, cls=DjangoJSONEncoder)
             serializer.save()
             # Backfill the Yjs binary when content was written as HTML only
             # (e.g. by the CLI) so the web editor can load the page. When the
@@ -338,6 +345,13 @@ class PageDetailAPIEndpoint(BaseAPIView):
             # this endpoint does not carry the binary, so a stale one would keep
             # the previous document in the editor.
             sync_page_description_formats(page, force="description_html" in request.data)
+            # A content change through the API belongs in the page history too
+            if request.data.get("description_html"):
+                track_page_version.delay(
+                    page_id=str(page.id),
+                    existing_instance=existing_instance,
+                    user_id=str(request.user.id),
+                )
             page = self.get_queryset().get(pk=pk)
             serializer = PageSerializer(page)
             return Response(serializer.data, status=status.HTTP_200_OK)
