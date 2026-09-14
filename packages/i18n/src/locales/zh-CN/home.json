@@ -68,13 +68,10 @@
     "pbot_cli": {
       "title": "pbot CLI",
       "description": "在终端中管理任务、评论和项目。",
-      "install_title": "安装（自动识别平台与架构）：",
-      "manual_download": "手动下载：在 Releases 页选择对应平台的压缩包",
       "verify_hint": "验证安装：pbot whoami",
       "configure_hint": "连接本实例：pbot configure（base_url 填本站地址）",
       "copy_install": "复制",
-      "copied": "已复制",
-      "visit_hint": "点击图标访问项目首页"
+      "copied": "已复制"
     },
     "business_trial_banner": {
       "title": "您的14天Business计划试用已开始！",

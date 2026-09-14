@@ -25,7 +25,7 @@ function PbotCliIcon({ className }: { className?: string }) {
       <path
         fill="currentColor"
         fillRule="evenodd"
-        d="M3.625 2.625h8.75c1.104 0 2 .896 2 2v6.75c0 1.104-.896 2-2 2h-8.75c-1.104 0-2-.896-2-2V4.625c0-1.104.896-2 2-2zm0 1.25c-.414 0-.75.336-.75.75v6.75c0 .414.336.75.75.75h8.75c.414 0 .75-.336.75-.75v-6.75c0-.414-.336-.75-.75-.75h-8.75z"
+        d="M3.5 2.5h9c1.104 0 2 .896 2 2v7c0 1.104-.896 2-2 2h-9c-1.104 0-2-.896-2-2v-7c0-1.104.896-2 2-2zm0 1.25c-.414 0-.75.336-.75.75v7c0 .414.336.75.75.75h9c.414 0 .75-.336.75-.75v-7c0-.414-.336-.75-.75-.75h-9z"
       />
       <path
         fill="currentColor"
@@ -89,7 +89,7 @@ export function PbotCliLink() {
     <div className="group relative flex-shrink-0">
       <a
         aria-label={t("home.pbot_cli.title")}
-        className="flex size-8 items-center justify-center rounded-md text-secondary hover:bg-layer-1-hover"
+        className="flex size-8 items-center justify-center rounded-md text-icon-tertiary hover:bg-layer-transparent-hover hover:text-icon-secondary"
         href={PBOT_CLI_URL}
         target="_blank"
         rel="noopener noreferrer"
@@ -102,36 +102,22 @@ export function PbotCliLink() {
             <h5 className="text-13 font-medium">{t("home.pbot_cli.title")}</h5>
             <p className="text-11 text-tertiary">{t("home.pbot_cli.description")}</p>
           </div>
-          <div className="flex flex-col gap-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-11 text-tertiary">{t("home.pbot_cli.install_title")}</span>
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="flex items-center gap-1 rounded-xs px-1.5 py-0.5 text-11 text-tertiary hover:bg-layer-1-hover"
-              >
-                {isCopied ? <DownloadOutline className="size-3" /> : <CopyOutline className="size-3" />}
-                {isCopied ? t("home.pbot_cli.copied") : t("home.pbot_cli.copy_install")}
-              </button>
-            </div>
-            <pre className="font-mono overflow-x-auto rounded-md border border-subtle bg-surface-2 px-3 py-2 text-11 break-all whitespace-pre-wrap">
+          <div className="relative">
+            <pre className="font-mono overflow-x-auto rounded-md border border-subtle bg-surface-2 px-3 pt-2 pb-8 text-11 break-all whitespace-pre-wrap">
               {installCommand}
             </pre>
-            <p className="text-11 text-placeholder">
-              <a
-                href={PBOT_CLI_RELEASES_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline underline-offset-2 hover:text-tertiary"
-              >
-                {t("home.pbot_cli.manual_download")}
-              </a>
-            </p>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="absolute right-1.5 bottom-1.5 flex items-center gap-1 rounded-xs border border-subtle bg-surface-1 px-1.5 py-0.5 text-11 text-tertiary hover:bg-layer-1-hover"
+            >
+              {isCopied ? <DownloadOutline className="size-3" /> : <CopyOutline className="size-3" />}
+              {isCopied ? t("home.pbot_cli.copied") : t("home.pbot_cli.copy_install")}
+            </button>
           </div>
           <div className="flex flex-col gap-y-0.5 border-t border-subtle pt-2">
             <p className="text-11 text-tertiary">{t("home.pbot_cli.verify_hint")}</p>
             <p className="text-11 text-tertiary">{t("home.pbot_cli.configure_hint")}</p>
-            <p className="text-11 text-placeholder">{t("home.pbot_cli.visit_hint")}</p>
           </div>
         </div>
       </div>
