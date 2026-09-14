@@ -16,6 +16,7 @@ from plane.utils.content_validator import (
     validate_html_content,
 )
 from plane.utils.page_duplication import CannotDeduplicate, assert_not_duplicated, repair_duplicated_html
+from plane.utils.page_markdown_links import normalize_markdown_links
 from plane.utils.page_frontmatter import (
     json_safe_metadata,
     normalize_tags,
@@ -87,6 +88,11 @@ class PageSerializer(BaseSerializer):
         # map its tags to project labels below
         description_html, metadata = split_frontmatter(self.context["description_html"])
         frontmatter_tags = normalize_tags(metadata.get("tags"))
+        # clients that convert markdown themselves can leave a half-converted
+        # `[text](url)` behind — fold it back into a proper anchor
+        description_html, repaired_links = normalize_markdown_links(description_html)
+        if repaired_links:
+            logger.warning("repaired %d half-converted markdown link(s) on create", repaired_links)
         # a union-merged body must never be persisted as-is: fold it back to a
         # single copy when that can be done losslessly, otherwise refuse
         try:
@@ -180,6 +186,9 @@ class PageSerializer(BaseSerializer):
         self._frontmatter_tags = normalize_tags(metadata.get("tags"))
         self._frontmatter_metadata = metadata
         if body:
+            body, repaired_links = normalize_markdown_links(body)
+            if repaired_links:
+                logger.warning("repaired %d half-converted markdown link(s) on update", repaired_links)
             try:
                 body, repaired = repair_duplicated_html(body)
             except CannotDeduplicate as error:

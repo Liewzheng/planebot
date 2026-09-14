@@ -19,6 +19,7 @@ from plane.db.models import (
 )
 
 from plane.utils.page_duplication import CannotDeduplicate, repair_duplicated_html
+from plane.utils.page_markdown_links import normalize_markdown_links
 from plane.utils.page_frontmatter import (
     json_safe_metadata,
     normalize_tags,
@@ -114,6 +115,9 @@ class PageCreateSerializer(BaseSerializer):
         self._frontmatter_tags = normalize_tags(metadata.get("tags"))
         self._frontmatter_metadata = metadata
         if body:
+            body, repaired_links = normalize_markdown_links(body)
+            if repaired_links:
+                logger.warning("repaired %d half-converted markdown link(s)", repaired_links)
             try:
                 body, repaired = repair_duplicated_html(body)
             except CannotDeduplicate as error:
