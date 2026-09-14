@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See the LICENSE file for details.
 
+# Python imports
+import logging
+
 # Third party imports
 from rest_framework import serializers
 
@@ -14,13 +17,16 @@ from plane.db.models import (
     Project,
     ProjectPage,
 )
-from plane.utils.page_duplication import CannotDeduplicate, assert_not_duplicated
+
+from plane.utils.page_duplication import CannotDeduplicate, repair_duplicated_html
 from plane.utils.page_frontmatter import (
     normalize_tags,
     split_frontmatter,
     sync_tags_to_page_labels,
 )
 from plane.utils.text_repetition import collapse_repeated_text
+
+logger = logging.getLogger(__name__)
 
 
 class PageCreateSerializer(BaseSerializer):
@@ -105,9 +111,11 @@ class PageCreateSerializer(BaseSerializer):
         self._frontmatter_tags = normalize_tags(metadata.get("tags"))
         if body:
             try:
-                assert_not_duplicated(body)
+                body, repaired = repair_duplicated_html(body)
             except CannotDeduplicate as error:
                 raise serializers.ValidationError(str(error))
+            if repaired:
+                logger.warning("page body repaired: %s", repaired)
         return body
 
     def validate_name(self, value):
