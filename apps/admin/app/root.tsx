@@ -23,7 +23,7 @@ import "@fontsource/ibm-plex-mono";
 // editor math blocks render with KaTeX (fonts are bundled from this css)
 import "katex/dist/katex.min.css";
 
-const APP_TITLE = "Plane | Simple, extensible, open-source project management tool.";
+const APP_TITLE = "pbot | Simple, extensible, open-source project management tool.";
 const APP_DESCRIPTION =
   "Open-source project management tool to manage work items, sprints, and product roadmaps with peace of mind.";
 
@@ -65,13 +65,12 @@ export const meta: Route.MetaFunction = () => [
   { name: "description", content: APP_DESCRIPTION },
   { property: "og:title", content: APP_TITLE },
   { property: "og:description", content: APP_DESCRIPTION },
-  { property: "og:url", content: "https://plane.so/" },
+  { property: "og:url", content: "https://github.com/Liewzheng/planebot" },
   {
     name: "keywords",
     content:
       "software development, customer feedback, software, accelerate, code management, release management, project management, work items tracking, agile, scrum, kanban, collaboration",
   },
-  { name: "twitter:site", content: "@planepowers" },
 ];
 
 export default function Root() {

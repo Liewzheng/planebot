@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { observer } from "mobx-react";
 import { useSearchParams } from "next/navigation";
 // plane imports
+import { useTranslation } from "@plane/i18n";
 import { OAuthOptions } from "@plane/ui";
 // helpers
 import type { TAuthErrorInfo } from "@/helpers/authentication.helper";
@@ -34,6 +35,8 @@ type TAuthRoot = {
 export const AuthRoot = observer(function AuthRoot(props: TAuthRoot) {
   //router
   const searchParams = useSearchParams();
+  // plane hooks
+  const { t } = useTranslation();
   // query params
   const emailParam = searchParams.get("email");
   const invitation_id = searchParams.get("invitation_id");
@@ -49,7 +52,7 @@ export const AuthRoot = observer(function AuthRoot(props: TAuthRoot) {
   // store hooks
   const { config } = useInstance();
   // derived values
-  const oAuthActionText = authMode === EAuthModes.SIGN_UP ? "Sign up" : "Sign in";
+  const oAuthActionText = authMode === EAuthModes.SIGN_UP ? t("auth.common.sign_up") : t("auth.common.sign_in");
   const { isOAuthEnabled, oAuthOptions } = useOAuthConfig(oAuthActionText);
   const isEmailBasedAuthEnabled = config?.is_email_password_enabled || config?.is_magic_login_enabled;
   const noAuthMethodsAvailable = !isOAuthEnabled && !isEmailBasedAuthEnabled;
@@ -106,8 +109,8 @@ export const AuthRoot = observer(function AuthRoot(props: TAuthRoot) {
     return (
       <AuthContainer>
         <AuthHeaderBase
-          header="No authentication methods available"
-          subHeader="Please contact your administrator to enable authentication for your instance."
+          header={t("auth.common.no_auth_methods_available")}
+          subHeader={t("auth.common.no_auth_methods_available_description")}
         />
       </AuthContainer>
     );
