@@ -80,6 +80,28 @@ describe("PDF Rendering Integration", () => {
       expect(text).toContain("丢帧");
     });
 
+    it.each([
+      ["Simplified Chinese", "曝光/增益生效延迟"],
+      ["Traditional Chinese", "繁體中文與軟體資訊"],
+      ["Japanese kana", "あいうえおカタカナ"],
+      ["Japanese-only kanji", "亀と仏閣"],
+      ["Korean", "안녕하세요 한글"],
+      ["Thai", "สวัสดี"],
+      ["Vietnamese", "Tiếng Việt"],
+    ])("should render %s text", async (_label, text) => {
+      const doc: TipTapDocument = {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+      };
+
+      const buffer = await renderPlaneDocToPdfBuffer(doc);
+      const extracted = await extractPdfText(buffer);
+
+      // Every character must survive as itself — a missing glyph extracts as
+      // mojibake or disappears entirely.
+      expect(extracted).toContain(text);
+    });
+
     it("should render CJK inside a code block", async () => {
       const doc: TipTapDocument = {
         type: "doc",

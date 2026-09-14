@@ -13,7 +13,7 @@ import {
   LINK_COLORS,
   resolveColorForPdf,
 } from "./colors";
-import { CJK_FONT_FAMILY, MONO_FONT_FAMILY } from "./styles";
+import { CODE_FONT_FAMILIES } from "./fonts";
 import type { MarkRendererRegistry, TipTapMark } from "./types";
 
 export const markRenderers: MarkRendererRegistry = {
@@ -39,7 +39,7 @@ export const markRenderers: MarkRendererRegistry = {
 
   code: (_mark: TipTapMark, style: Style): Style => ({
     ...style,
-    fontFamily: [MONO_FONT_FAMILY, CJK_FONT_FAMILY],
+    fontFamily: CODE_FONT_FAMILIES,
     fontSize: 10,
     backgroundColor: BACKGROUND_COLORS.layer1,
     color: CODE_COLORS.text,

@@ -8,7 +8,8 @@ import { createRequire } from "module";
 import path from "path";
 import { Document, Font, Page, pdf, Text } from "@react-pdf/renderer";
 import { createKeyGenerator, renderNode } from "./node-renderers";
-import { CJK_FONT_FAMILY, LATIN_FONT_FAMILY, pdfStyles } from "./styles";
+import { LATIN_EXT_FONT_FAMILY, LATIN_FONT_FAMILY, NOTO_FONT_SUBSETS, VIETNAMESE_FONT_FAMILY } from "./fonts";
+import { pdfStyles } from "./styles";
 import type { PDFExportOptions, TipTapDocument } from "./types";
 
 // Use createRequire for ESM compatibility to resolve font file paths
@@ -17,11 +18,11 @@ const require = createRequire(import.meta.url);
 // Resolve local font file paths from @fontsource/inter package
 const interFontDir = path.dirname(require.resolve("@fontsource/inter/package.json"));
 
-// The vendored CJK subset lives in the package's `assets/`, so resolve it from
-// the package root — the same path works from src/ under vitest and from the
-// bundled dist/ in the container.
+// The vendored subsets live in the package's `assets/`, so resolve them from the
+// package root — the same path works from src/ under vitest and from the bundled
+// dist/ in the container.
 const livePackageRoot = path.dirname(require.resolve("live/package.json"));
-const cjkFontDir = path.join(livePackageRoot, "assets/fonts/noto-sans-sc");
+const fontAssetDir = path.join(livePackageRoot, "assets/fonts");
 
 Font.register({
   family: LATIN_FONT_FAMILY,
@@ -56,33 +57,49 @@ Font.register({
   ],
 });
 
-// Simplified-Chinese subset of Noto Sans SC (SIL OFL 1.1 — see
-// assets/fonts/noto-sans-sc/LICENSE), registered as the fallback in styles.ts
-// so CJK code points have a glyph to draw.
+/**
+ * Register a fallback family: one source per weight, with the italic slots
+ * aliasing the upright file. React-pdf resolves a family per (weight, style)
+ * pair and throws when a requested style has no source at all, and these
+ * families only ever serve non-latin code points, which are drawn upright
+ * regardless.
+ */
+const registerFallbackFamily = (family: string, sources: Array<[number, string]>) => {
+  Font.register({
+    family,
+    fonts: sources.flatMap(([fontWeight, src]) => [
+      { src, fontWeight },
+      { src, fontWeight, fontStyle: "italic" },
+    ]),
+  });
+};
+
+// Latin extended + Vietnamese, straight from the @fontsource/inter package:
+// `latin-ext` carries the extra letters (ơ ư đ …) and `vietnamese` the tone
+// marks, and neither is complete on its own.
+registerFallbackFamily(LATIN_EXT_FONT_FAMILY, [
+  [400, path.join(interFontDir, "files/inter-latin-ext-400-normal.woff")],
+  [600, path.join(interFontDir, "files/inter-latin-ext-600-normal.woff")],
+  [700, path.join(interFontDir, "files/inter-latin-ext-700-normal.woff")],
+]);
+registerFallbackFamily(VIETNAMESE_FONT_FAMILY, [
+  [400, path.join(interFontDir, "files/inter-vietnamese-400-normal.woff")],
+  [600, path.join(interFontDir, "files/inter-vietnamese-600-normal.woff")],
+  [700, path.join(interFontDir, "files/inter-vietnamese-700-normal.woff")],
+]);
+
+// Vendored Noto Sans subsets (SIL OFL 1.1 — see assets/fonts/LICENSE-NotoSans-OFL.txt).
 //
-// The subset ships Regular and Bold only, so weight 600 reuses Bold (the PDF
-// styles ask for 400/600/700) and the italic slots alias the upright files:
-// react-pdf resolves a family per (weight, style) pair and throws when a
-// requested style has no source at all. Only CJK code points ever reach this
-// family, and there the slant would be cosmetic anyway.
-//
-// Keep these files as `.woff`. pdfkit embeds a subset of whatever is registered,
+// Keep these files as `.woff`. pdfkit embeds a subset of the registered font,
 // and fontkit's subsetter only prunes WOFF properly — a WOFF2 source silently
 // produced multi-megabyte subsets.
-const cjkRegular = path.join(cjkFontDir, "NotoSansSC-Regular.woff");
-const cjkBold = path.join(cjkFontDir, "NotoSansSC-Bold.woff");
-
-Font.register({
-  family: CJK_FONT_FAMILY,
-  fonts: [
-    { src: cjkRegular, fontWeight: 400 },
-    { src: cjkRegular, fontWeight: 400, fontStyle: "italic" },
-    { src: cjkBold, fontWeight: 600 },
-    { src: cjkBold, fontWeight: 600, fontStyle: "italic" },
-    { src: cjkBold, fontWeight: 700 },
-    { src: cjkBold, fontWeight: 700, fontStyle: "italic" },
-  ],
-});
+for (const subset of NOTO_FONT_SUBSETS) {
+  const dir = path.join(fontAssetDir, subset.dir);
+  registerFallbackFamily(subset.family, [
+    [400, path.join(dir, subset.regular)],
+    [700, path.join(dir, subset.bold)],
+  ]);
+}
 
 export const createPdfDocument = (doc: TipTapDocument, options: PDFExportOptions = {}) => {
   const { title, author, subject, pageSize = "A4", pageOrientation = "portrait", metadata, noAssets } = options;
