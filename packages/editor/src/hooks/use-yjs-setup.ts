@@ -17,8 +17,8 @@ import type { CollaborationState, CollabStage, CollaborationError } from "@/type
 // Helper to check if a close code indicates a forced close
 const isForcedCloseCode = (code: number | undefined): boolean => {
   if (!code) return false;
-  // All custom close codes (4000-4003) are treated as forced closes
-  return code >= 4000 && code <= 4003;
+  // All custom close codes (4000-4004) are treated as forced closes
+  return code >= 4000 && code <= 4004;
 };
 
 /**
@@ -27,8 +27,13 @@ const isForcedCloseCode = (code: number | undefined): boolean => {
  * IndexedDB cache are both stale; the session must be rebuilt from scratch
  * so the new server-side content wins instead of being union-merged with
  * the old local state.
+ *
+ * Safari does not expose the close reason on the WebSocket close event, so
+ * the server also sends the dedicated CONTENT_REPLACED close code (4004) and
+ * both signals are accepted.
  */
 const CONTENT_REPLACED_REASON = "content_replaced";
+const CONTENT_REPLACED_CODE = 4004;
 
 type UseYjsSetupArgs = {
   docId: string;
@@ -167,7 +172,7 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange }: UseY
         // copy and IndexedDB cache are stale: rebuilding the session (fresh
         // Y.Doc + cleared cache) makes the new server content authoritative
         // instead of union-merging the old content back on reconnect.
-        if (closeReason === CONTENT_REPLACED_REASON) {
+        if (closeReason === CONTENT_REPLACED_REASON || closeCode === CONTENT_REPLACED_CODE) {
           clearCacheOnNextSessionRef.current = true;
           const error: CollaborationError = {
             type: "content-replaced",
@@ -184,6 +189,9 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange }: UseY
           // sessionStorage so a repeated replacement cannot cause a reload
           // loop.
           void (async () => {
+            // let the session-rebuild effect run its cleanup first, so the
+            // previous persistence instance cannot write the stale state back
+            await new Promise((resolve) => setTimeout(resolve, 50));
             try {
               const cleaner = new IndexeddbPersistence(docId, new Y.Doc());
               await cleaner.clearData();
