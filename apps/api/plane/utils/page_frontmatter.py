@@ -20,6 +20,7 @@ and returned for future use.
 """
 
 # Python imports
+import datetime
 import html as html_module
 import re
 
@@ -91,6 +92,36 @@ def split_frontmatter(description_html: str) -> tuple[str, dict]:
 
     body = description_html[match.end() :]
     return (body or "<p></p>"), metadata
+
+
+def json_safe_metadata(metadata: dict) -> dict:
+    """Make parsed YAML storable in a JSONField.
+
+    `yaml.safe_load` turns unquoted dates into `datetime.date`; JSON does not
+    know them, so dates become ISO strings and any other exotic value falls back
+    to its string form.
+    """
+    def convert(value):
+        if isinstance(value, (datetime.date, datetime.datetime)):
+            return value.isoformat()
+        if isinstance(value, dict):
+            return {str(key): convert(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [convert(item) for item in value]
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return str(value)
+
+    return convert(metadata)
+
+
+def with_created_date(metadata: dict, created_at) -> dict:
+    """Fill `created` from the page's own creation date when it is missing."""
+    if not created_at:
+        return metadata
+    if metadata.get("created"):
+        return metadata
+    return {**metadata, "created": created_at.date().isoformat()}
 
 
 def normalize_tags(raw) -> list[str]:

@@ -127,3 +127,96 @@ class TestPageFrontmatterAPI:
 def page_label_ids(page) -> set[str]:
     """Label ids attached to the page through PageLabel"""
     return {str(label_id) for label_id in page.page_labels.values_list("label_id", flat=True)}
+
+
+@pytest.mark.contract
+class TestPageFrontmatterMetadata:
+    """Parsed frontmatter is stored on the page and returned by the API"""
+
+    def get_page_url(self, workspace_slug, project_id):
+        return f"/api/v1/workspaces/{workspace_slug}/projects/{project_id}/pages/"
+
+    @pytest.mark.django_db
+    def test_metadata_is_persisted_and_returned(self, api_key_client, workspace, project):
+        html = (
+            yaml_block('title: "Doc"\nstatus: "verified"\ntags: ["fm"]')
+            + "<h1>Doc</h1><p>body</p>"
+        )
+        url = self.get_page_url(workspace.slug, project.id)
+
+        response = api_key_client.post(url, {"name": "Doc", "description_html": html}, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+        page = Page.objects.get(id=response.data["id"])
+        assert page.frontmatter["title"] == "Doc"
+        assert page.frontmatter["status"] == "verified"
+        assert page.frontmatter["tags"] == ["fm"]
+        # created is filled from the page's own creation date
+        assert page.frontmatter["created"] == page.created_at.date().isoformat()
+        assert response.data["frontmatter"] == page.frontmatter
+
+    @pytest.mark.django_db
+    def test_an_explicit_created_date_is_kept(self, api_key_client, workspace, project):
+        html = yaml_block("created: 2020-01-02") + "<p>body</p>"
+        url = self.get_page_url(workspace.slug, project.id)
+
+        response = api_key_client.post(url, {"name": "Dated", "description_html": html}, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert Page.objects.get(id=response.data["id"]).frontmatter["created"] == "2020-01-02"
+
+    @pytest.mark.django_db
+    def test_update_without_frontmatter_keeps_the_stored_metadata(
+        self, api_key_client, workspace, project, create_user
+    ):
+        page = Page.objects.create(
+            name="Kept",
+            description_html="<p>old</p>",
+            frontmatter={"status": "wip", "tags": ["keep"]},
+            workspace=workspace,
+            owned_by=create_user,
+        )
+        ProjectPage.objects.create(
+            project=project,
+            workspace=workspace,
+            page=page,
+            created_by=create_user,
+            updated_by=create_user,
+        )
+        url = f"{self.get_page_url(workspace.slug, project.id)}{page.id}/"
+
+        response = api_key_client.patch(url, {"description_html": "<p>new</p>"}, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        page.refresh_from_db()
+        assert page.frontmatter["status"] == "wip"
+
+    @pytest.mark.django_db
+    def test_update_with_frontmatter_replaces_the_metadata(
+        self, api_key_client, workspace, project, create_user
+    ):
+        page = Page.objects.create(
+            name="Replaced",
+            description_html="<p>old</p>",
+            frontmatter={"status": "wip"},
+            workspace=workspace,
+            owned_by=create_user,
+        )
+        ProjectPage.objects.create(
+            project=project,
+            workspace=workspace,
+            page=page,
+            created_by=create_user,
+            updated_by=create_user,
+        )
+        url = f"{self.get_page_url(workspace.slug, project.id)}{page.id}/"
+
+        response = api_key_client.patch(
+            url,
+            {"description_html": yaml_block("status: verified") + "<p>new</p>"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        page.refresh_from_db()
+        assert page.frontmatter["status"] == "verified"

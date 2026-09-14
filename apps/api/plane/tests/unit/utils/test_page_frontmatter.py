@@ -84,3 +84,34 @@ class TestNormalizeTags:
 
     def test_names_are_truncated_to_the_label_column_length(self):
         assert normalize_tags(["y" * 300]) == ["y" * 255]
+
+
+@pytest.mark.unit
+class TestJsonSafeMetadata:
+    def test_dates_become_iso_strings(self):
+        import datetime
+
+        from plane.utils.page_frontmatter import json_safe_metadata
+
+        metadata = {
+            "created": datetime.date(2026, 9, 14),
+            "verified": datetime.datetime(2026, 9, 14, 5, 30),
+            "tags": ["a", {"nested": datetime.date(2026, 1, 2)}],
+            "count": 3,
+        }
+        assert json_safe_metadata(metadata) == {
+            "created": "2026-09-14",
+            "verified": "2026-09-14T05:30:00",
+            "tags": ["a", {"nested": "2026-01-02"}],
+            "count": 3,
+        }
+
+    def test_created_is_filled_from_the_page_when_missing(self):
+        import datetime
+
+        from plane.utils.page_frontmatter import with_created_date
+
+        created_at = datetime.datetime(2026, 9, 1, 12, 0)
+        assert with_created_date({"tags": ["a"]}, created_at) == {"tags": ["a"], "created": "2026-09-01"}
+        assert with_created_date({"created": "2020-01-01"}, created_at) == {"created": "2020-01-01"}
+        assert with_created_date({"tags": []}, None) == {"tags": []}

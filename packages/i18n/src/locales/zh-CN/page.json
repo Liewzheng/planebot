@@ -24,6 +24,11 @@
           "label": "版本历史",
           "current_version": "当前版本",
           "highlight_changes": "高亮显示更改"
+        },
+        "document_metadata": {
+          "status": "状态",
+          "created": "文档创建",
+          "verified": "最近验证"
         }
       },
       "assets": {

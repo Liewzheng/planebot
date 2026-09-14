@@ -17,9 +17,11 @@ from plane.utils.content_validator import (
 )
 from plane.utils.page_duplication import CannotDeduplicate, assert_not_duplicated, repair_duplicated_html
 from plane.utils.page_frontmatter import (
+    json_safe_metadata,
     normalize_tags,
     split_frontmatter,
     sync_tags_to_page_labels,
+    with_created_date,
 )
 from plane.utils.text_repetition import collapse_repeated_text
 from plane.db.models import (
@@ -67,6 +69,7 @@ class PageSerializer(BaseSerializer):
             "logo_props",
             "label_ids",
             "project_ids",
+            "frontmatter",
         ]
         read_only_fields = ["workspace", "owned_by"]
 
@@ -133,6 +136,11 @@ class PageSerializer(BaseSerializer):
 
         # frontmatter tags become project labels on top of the explicit ones
         sync_tags_to_page_labels(page, frontmatter_tags, project_id)
+
+        frontmatter = with_created_date(json_safe_metadata(metadata), page.created_at)
+        if frontmatter:
+            page.frontmatter = frontmatter
+            page.save(update_fields=["frontmatter"])
         return page
 
     def update(self, instance, validated_data):
@@ -156,6 +164,11 @@ class PageSerializer(BaseSerializer):
         page = super().update(instance, validated_data)
         # frontmatter tags become project labels on top of the explicit ones
         sync_tags_to_page_labels(page, getattr(self, "_frontmatter_tags", []), self._project_id_for(page))
+
+        metadata = getattr(self, "_frontmatter_metadata", None)
+        if metadata:
+            page.frontmatter = with_created_date(json_safe_metadata(metadata), page.created_at)
+            page.save(update_fields=["frontmatter"])
         return page
 
     def validate_description_html(self, value):
@@ -165,6 +178,7 @@ class PageSerializer(BaseSerializer):
         """
         body, metadata = split_frontmatter(value)
         self._frontmatter_tags = normalize_tags(metadata.get("tags"))
+        self._frontmatter_metadata = metadata
         if body:
             try:
                 body, repaired = repair_duplicated_html(body)

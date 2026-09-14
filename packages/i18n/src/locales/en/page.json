@@ -24,6 +24,11 @@
           "label": "Version history",
           "current_version": "Current version",
           "highlight_changes": "Highlight changes"
+        },
+        "document_metadata": {
+          "status": "Status",
+          "created": "Document created",
+          "verified": "Last verified"
         }
       },
       "assets": {

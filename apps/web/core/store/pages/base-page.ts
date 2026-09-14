@@ -90,6 +90,7 @@ export class BasePage extends ExtendedBasePage implements TBasePage {
   description_html: string | undefined;
   color: string | undefined;
   label_ids: string[] | undefined;
+  frontmatter: Record<string, unknown> | undefined;
   owned_by: string | undefined;
   access: EPageAccess | undefined;
   is_favorite: boolean;
@@ -127,6 +128,7 @@ export class BasePage extends ExtendedBasePage implements TBasePage {
     this.description_html = page?.description_html || undefined;
     this.color = page?.color || undefined;
     this.label_ids = page?.label_ids || undefined;
+    this.frontmatter = page?.frontmatter || undefined;
     this.owned_by = page?.owned_by || undefined;
     this.access = page?.access || EPageAccess.PUBLIC;
     this.is_favorite = page?.is_favorite || false;
@@ -152,6 +154,7 @@ export class BasePage extends ExtendedBasePage implements TBasePage {
       description_html: observable.ref,
       color: observable.ref,
       label_ids: observable,
+      frontmatter: observable.ref,
       owned_by: observable.ref,
       access: observable.ref,
       is_favorite: observable.ref,
@@ -227,6 +230,7 @@ export class BasePage extends ExtendedBasePage implements TBasePage {
       description_html: this.description_html,
       color: this.color,
       label_ids: this.label_ids,
+      frontmatter: this.frontmatter,
       owned_by: this.owned_by,
       access: this.access,
       logo_props: this.logo_props,

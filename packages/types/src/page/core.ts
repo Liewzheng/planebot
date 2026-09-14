@@ -27,6 +27,8 @@ export type TPage = {
   updated_by: string | undefined;
   workspace: string | undefined;
   logo_props: TLogoProps | undefined;
+  /** YAML frontmatter parsed off a markdown upload (status/created/verified/…) */
+  frontmatter?: Record<string, unknown> | null;
   deleted_at: Date | undefined;
 } & TPageExtended;
 
