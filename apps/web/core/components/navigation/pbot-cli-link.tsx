@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { CopyOutline, DownloadOutline } from "@makeplane/propel/icons";
+import { CopyOutline, DownloadOutline, TickOutline } from "@makeplane/propel/icons";
 // plane imports
 import { useTranslation } from "@plane/i18n";
 
@@ -39,15 +39,23 @@ function PbotCliIcon({ className }: { className?: string }) {
 // Promo/download page for the pbot CLI (placeholder until the dedicated site is ready)
 const PBOT_CLI_URL = "https://github.com/Liewzheng/planebotcli";
 const PBOT_CLI_RELEASES_URL = `${PBOT_CLI_URL}/releases`;
+const GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/Liewzheng/planebotcli/releases/latest";
 
 // cargo-dist installers from the latest release; the scripts auto-detect the
-// platform AND architecture, so the card only needs the visitor's OS
+// platform AND architecture, so they are the fallback when no binary matches
 const PBOT_CLI_INSTALLER = {
   shell: `curl --proto '=https' --tlsv1.2 -LsSf ${PBOT_CLI_RELEASES_URL}/latest/download/planebotcli-cli-installer.sh | sh`,
   powershell: `irm ${PBOT_CLI_RELEASES_URL}/latest/download/planebotcli-cli-installer.ps1 | iex`,
 } as const;
 
 type TDetectedOS = "macos" | "windows" | "linux";
+type TDetectedArch = "x86_64" | "aarch64";
+
+const OS_TARGET_TRIPLE: Record<TDetectedOS, string> = {
+  macos: "apple-darwin",
+  windows: "pc-windows-msvc",
+  linux: "unknown-linux-gnu",
+};
 
 const detectOS = (): TDetectedOS => {
   const ua = navigator.userAgent;
@@ -56,11 +64,68 @@ const detectOS = (): TDetectedOS => {
   return "linux";
 };
 
+// Chromium exposes the real CPU architecture through high-entropy hints;
+// elsewhere fall back to UA substrings, then x86_64 (an x86_64 binary still
+// runs under Rosetta on Apple Silicon, the reverse is not true)
+const detectArch = async (): Promise<TDetectedArch> => {
+  const uaData = (
+    navigator as Navigator & {
+      userAgentData?: {
+        getHighEntropyValues?: (hints: string[]) => Promise<{ architecture?: string; bitness?: string }>;
+      };
+    }
+  ).userAgentData;
+  if (uaData?.getHighEntropyValues) {
+    try {
+      const { architecture, bitness } = await uaData.getHighEntropyValues(["architecture", "bitness"]);
+      if (architecture === "arm" && bitness === "64") return "aarch64";
+      if (architecture === "x86") return "x86_64";
+    } catch {
+      // fall through to UA sniffing
+    }
+  }
+  if (/arm64|aarch64/i.test(navigator.userAgent)) return "aarch64";
+  return "x86_64";
+};
+
+// Find the direct-download URL of the binary archive matching the visitor's
+// platform; null when the API or the asset is unavailable (caller then keeps
+// the installer one-liner as the fallback)
+const fetchBinaryDownloadUrl = async (os: TDetectedOS, arch: TDetectedArch): Promise<string | null> => {
+  const triple = `${arch}-${OS_TARGET_TRIPLE[os]}`;
+  const response = await fetch(GITHUB_LATEST_RELEASE_API);
+  if (!response.ok) return null;
+  const data: { assets?: { name?: string; browser_download_url?: string }[] } = await response.json();
+  const asset = data.assets?.find(
+    ({ name }) => name === `planebotcli-cli-${triple}.tar.xz` || name === `planebotcli-cli-${triple}.zip`
+  );
+  return asset?.browser_download_url ?? null;
+};
+
+// navigator.clipboard requires a secure context; on plain-HTTP deployments
+// fall back to the legacy textarea + execCommand path
+const copyToClipboard = async (text: string): Promise<boolean> => {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const succeeded = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return succeeded;
+  }
+};
+
 /**
  * Top-navigation entry for the pbot CLI: clicking opens the promo page,
- * hovering shows the OS-matched binary installer one-liner plus
- * verify/configure hints. Browsers cannot probe the local PATH, so
- * "is it installed" is answered with `pbot whoami` instead of detection.
+ * hovering shows a platform-matched binary download (falling back to the
+ * installer one-liner) plus verify/configure hints. Browsers cannot probe
+ * the local PATH, so "is it installed" is answered with `pbot whoami`.
  */
 export function PbotCliLink() {
   // plane hooks
@@ -68,22 +133,35 @@ export function PbotCliLink() {
   // states — resolved post-hydration to keep SSR and first client render equal
   const [os, setOs] = useState<TDetectedOS>("linux");
   const [origin, setOrigin] = useState("");
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
 
   useEffect(() => {
-    setOs(detectOS());
+    const detectedOS = detectOS();
+    setOs(detectedOS);
     setOrigin(window.location.origin);
+
+    let isCancelled = false;
+    const resolveDownloadUrl = async () => {
+      try {
+        const url = await fetchBinaryDownloadUrl(detectedOS, await detectArch());
+        if (!isCancelled && url) setDownloadUrl(url);
+      } catch {
+        // network/API unavailable — keep the installer one-liner
+      }
+    };
+    resolveDownloadUrl();
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
   const installCommand = os === "windows" ? PBOT_CLI_INSTALLER.powershell : PBOT_CLI_INSTALLER.shell;
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(installCommand);
+    if (await copyToClipboard(installCommand)) {
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
-    } catch {
-      // clipboard unavailable (non-secure context) — the command stays visible for manual copy
     }
   };
 
@@ -104,23 +182,45 @@ export function PbotCliLink() {
             <h5 className="text-13 font-medium">{t("home.pbot_cli.title")}</h5>
             <p className="text-11 text-tertiary">{t("home.pbot_cli.description")}</p>
           </div>
-          <div className="relative">
-            <pre className="font-mono overflow-x-auto rounded-md border border-subtle bg-surface-2 px-3 pt-2 pb-8 text-11 break-all whitespace-pre-wrap">
-              {installCommand}
-            </pre>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="absolute right-1.5 bottom-1.5 flex items-center gap-1 rounded-xs border border-subtle bg-surface-1 px-1.5 py-0.5 text-11 text-tertiary hover:bg-layer-1-hover"
+          {downloadUrl ? (
+            <a
+              href={downloadUrl}
+              className="flex items-center justify-center gap-1.5 rounded-md bg-accent-primary px-3 py-1.5 text-11 font-medium text-on-color"
             >
-              {isCopied ? <DownloadOutline className="size-3" /> : <CopyOutline className="size-3" />}
-              {isCopied ? t("home.pbot_cli.copied") : t("home.pbot_cli.copy_install")}
-            </button>
-          </div>
+              <DownloadOutline className="size-3.5" />
+              {t("home.pbot_cli.download_now")}
+            </a>
+          ) : (
+            <div className="flex items-stretch gap-1.5">
+              <pre className="font-mono min-w-0 flex-1 overflow-x-auto rounded-md border border-subtle bg-surface-2 px-3 py-2 text-11 whitespace-nowrap">
+                {installCommand}
+              </pre>
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="flex shrink-0 items-center gap-1 rounded-md border border-subtle bg-surface-2 px-2 text-11 text-tertiary hover:bg-layer-1-hover"
+              >
+                {isCopied ? <TickOutline className="size-3" /> : <CopyOutline className="size-3" />}
+                {isCopied ? t("home.pbot_cli.copied") : t("home.pbot_cli.copy_install")}
+              </button>
+            </div>
+          )}
           <div className="flex flex-col gap-y-0.5 border-t border-subtle pt-2">
-            <p className="text-11 text-tertiary">{t("home.pbot_cli.verify_hint")}</p>
             <p className="text-11 text-tertiary">
-              {t("home.pbot_cli.configure_hint", { url: origin || t("home.pbot_cli.this_site") })}
+              {t("home.pbot_cli.verify_hint")}{" "}
+              <code className="font-mono rounded-xs border border-subtle bg-surface-2 px-1 py-0.5">pbot whoami</code>
+            </p>
+            <p className="text-11 text-tertiary">
+              {origin ? (
+                <>
+                  {t("home.pbot_cli.configure_hint")}{" "}
+                  <code className="font-mono rounded-xs border border-subtle bg-surface-2 px-1 py-0.5">
+                    pbot configure {origin}
+                  </code>
+                </>
+              ) : (
+                t("home.pbot_cli.configure_hint_fallback")
+              )}
             </p>
           </div>
         </div>
