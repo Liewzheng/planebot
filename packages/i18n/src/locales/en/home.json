@@ -68,13 +68,10 @@
     "pbot_cli": {
       "title": "pbot CLI",
       "description": "Manage work items, comments and projects from your terminal.",
-      "install_title": "Install (auto-detects your platform and architecture):",
-      "manual_download": "Manual download: pick the archive for your platform on the Releases page",
       "verify_hint": "Verify the install: pbot whoami",
       "configure_hint": "Connect to this instance: pbot configure (set base_url to this site)",
       "copy_install": "Copy",
-      "copied": "Copied",
-      "visit_hint": "Click the icon to visit the project homepage"
+      "copied": "Copied"
     },
     "business_trial_banner": {
       "title": "Your 14-day Business plan trial is live!",
