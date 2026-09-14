@@ -58,6 +58,7 @@ def convert_page_html_to_formats(description_html: str) -> dict:
         )
         if response.status_code == 200:
             return response.json()
+        log_exception(Exception(f"convert-document returned {response.status_code}: {response.text[:200]}"))
     except requests.RequestException as e:
         log_exception(e)
     return {}
