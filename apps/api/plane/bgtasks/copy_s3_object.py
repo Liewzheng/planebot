@@ -14,6 +14,7 @@ from django.conf import settings
 # Module imports
 from plane.db.models import FileAsset, Page, Issue
 from plane.utils.exception_logger import log_exception
+from plane.utils.page_content import invalidate_live_document
 from plane.settings.storage import S3Storage
 from celery import shared_task
 from plane.utils.url import normalize_url_path
@@ -148,6 +149,10 @@ def copy_s3_objects_of_description_and_assets(entity_name, entity_identifier, pr
             entity.description_json = external_data.get("description_json")
             entity.description_binary = base64.b64decode(external_data.get("description_binary"))
             entity.save()
+            # A page whose content was rewritten here must not keep serving the
+            # live server's previous in-memory document.
+            if isinstance(entity, Page):
+                invalidate_live_document(str(entity.id))
 
         return
     except Exception as e:
