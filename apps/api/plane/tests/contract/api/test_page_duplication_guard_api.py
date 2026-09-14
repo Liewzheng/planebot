@@ -60,7 +60,31 @@ class TestPageDuplicationGuardAPI:
         return f"/api/workspaces/{workspace_slug}/projects/{project_id}/pages/{page_id}/description/"
 
     @pytest.mark.django_db
-    def test_v1_update_rejects_a_duplicated_body(self, api_key_client, workspace, project, page):
+    def test_v1_update_repairs_a_duplicated_body(self, api_key_client, workspace, project, page):
+        """A duplicated body is folded back to a single copy instead of stored"""
+        response = api_key_client.patch(
+            self.v1_url(workspace.slug, project.id, page.id),
+            {"description_html": DUPLICATED_BODY},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        page.refresh_from_db()
+        assert page.description_html == CLEAN_BODY
+
+    @pytest.mark.django_db
+    def test_update_is_rejected_when_the_body_cannot_be_repaired(
+        self, api_key_client, workspace, project, page, monkeypatch
+    ):
+        """When the duplication cannot be rebuilt losslessly, refuse the write"""
+        from plane.utils.page_duplication import CannotDeduplicate
+
+        def raise_cannot_deduplicate(_html):
+            raise CannotDeduplicate("PAGE_CONTENT_DUPLICATED: forced for the test")
+
+        monkeypatch.setattr(
+            "plane.api.serializers.page.repair_duplicated_html", raise_cannot_deduplicate
+        )
         response = api_key_client.patch(
             self.v1_url(workspace.slug, project.id, page.id),
             {"description_html": DUPLICATED_BODY},

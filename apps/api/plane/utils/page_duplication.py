@@ -113,6 +113,19 @@ def is_document_duplicated(
     return stats["unique_ratio"] < min_unique_ratio
 
 
+def repair_duplicated_html(html: str) -> tuple[str, dict | None]:
+    """Fold a duplicated body back to a single copy.
+
+    Returns `(html, report)`: the original html with `None` when the document
+    looks clean, or the repaired html plus the repair report. Raises
+    `CannotDeduplicate` when the body is duplicated but cannot be rebuilt
+    safely — callers then reject the write instead of storing corruption.
+    """
+    if not is_document_duplicated(html):
+        return html, None
+    return deduplicate_page_html(html)
+
+
 def assert_not_duplicated(html: str) -> None:
     """Raise when incoming content looks like a union-merged document.
 

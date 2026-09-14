@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See the LICENSE file for details.
 
+# Python imports
+import logging
+
 # Third party imports
 from rest_framework import serializers
 import base64
@@ -12,7 +15,7 @@ from plane.utils.content_validator import (
     validate_binary_data,
     validate_html_content,
 )
-from plane.utils.page_duplication import CannotDeduplicate, assert_not_duplicated
+from plane.utils.page_duplication import CannotDeduplicate, assert_not_duplicated, repair_duplicated_html
 from plane.utils.page_frontmatter import (
     normalize_tags,
     split_frontmatter,
@@ -27,6 +30,8 @@ from plane.db.models import (
     Project,
     PageVersion,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PageSerializer(BaseSerializer):
@@ -79,11 +84,14 @@ class PageSerializer(BaseSerializer):
         # map its tags to project labels below
         description_html, metadata = split_frontmatter(self.context["description_html"])
         frontmatter_tags = normalize_tags(metadata.get("tags"))
-        # a union-merged body must never be persisted
+        # a union-merged body must never be persisted as-is: fold it back to a
+        # single copy when that can be done losslessly, otherwise refuse
         try:
-            assert_not_duplicated(description_html)
+            description_html, repaired = repair_duplicated_html(description_html)
         except CannotDeduplicate as error:
             raise serializers.ValidationError({"description_html": str(error)})
+        if repaired:
+            logger.warning("page body repaired on create: %s", repaired)
 
         # Get the workspace id from the project
         project = Project.objects.get(pk=project_id)
@@ -159,9 +167,11 @@ class PageSerializer(BaseSerializer):
         self._frontmatter_tags = normalize_tags(metadata.get("tags"))
         if body:
             try:
-                assert_not_duplicated(body)
+                body, repaired = repair_duplicated_html(body)
             except CannotDeduplicate as error:
                 raise serializers.ValidationError(str(error))
+            if repaired:
+                logger.warning("page body repaired on update: %s", repaired)
         return body
 
     def _project_id_for(self, page):
@@ -256,7 +266,9 @@ class PageBinaryUpdateSerializer(serializers.Serializer):
         if not is_valid:
             raise serializers.ValidationError(error_message)
 
-        # A stale client merge duplicates the whole body; never persist that
+        # This path stores the client's binary alongside the html, so a repair
+        # here would leave the two formats inconsistent: refuse instead (the
+        # live store guard already blocks the case upstream).
         try:
             assert_not_duplicated(value)
         except CannotDeduplicate as error:
