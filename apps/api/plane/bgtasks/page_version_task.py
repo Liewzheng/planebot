@@ -4,6 +4,7 @@
 
 # Python imports
 import json
+import logging
 
 
 # Third party imports
@@ -16,7 +17,10 @@ from django.utils import timezone
 from plane.db.models import Page, PageVersion
 from plane.utils.exception_logger import log_exception
 
+logger = logging.getLogger(__name__)
+
 PAGE_VERSION_TASK_TIMEOUT = 600
+
 
 @shared_task
 def track_page_version(page_id, existing_instance, user_id):
@@ -24,10 +28,16 @@ def track_page_version(page_id, existing_instance, user_id):
         # Get the page
         page = Page.objects.get(id=page_id)
 
+        # A version must be attributable; fall back to whoever last touched the
+        # page when the caller could not provide an actor (e.g. internal calls)
+        user_id = user_id or page.updated_by_id or page.owned_by_id
+        if not user_id:
+            logger.warning("Skipping page version for %s: no user to attribute it to", page_id)
+            return
+
         # Get the current instance
         current_instance = json.loads(existing_instance) if existing_instance is not None else {}
         sub_pages = {}
-
 
         # Create a version if description_html is updated
         if current_instance.get("description_html") != page.description_html:
@@ -42,7 +52,7 @@ def track_page_version(page_id, existing_instance, user_id):
             ):
                 page_version.description_html = page.description_html
                 page_version.description_binary = page.description_binary
-                page_version.description_json = page.description
+                page_version.description_json = page.description_json
                 page_version.description_stripped = page.description_stripped
                 page_version.sub_pages_data = sub_pages
                 page_version.save(
@@ -52,7 +62,7 @@ def track_page_version(page_id, existing_instance, user_id):
                         "description_json",
                         "description_stripped",
                         "sub_pages_data",
-                        "updated_at"
+                        "updated_at",
                     ]
                 )
             else:
@@ -60,7 +70,7 @@ def track_page_version(page_id, existing_instance, user_id):
                 PageVersion.objects.create(
                     page_id=page_id,
                     workspace_id=page.workspace_id,
-                    description_json=page.description,
+                    description_json=page.description_json,
                     description_html=page.description_html,
                     description_binary=page.description_binary,
                     description_stripped=page.description_stripped,
