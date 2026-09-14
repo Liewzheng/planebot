@@ -6,16 +6,16 @@
 
 // assets — vendored Noto Sans subsets (SIL OFL 1.1, license alongside). These are
 // fetched by the browser when a PDF is generated, not on page load.
-import notoSansJPBold from "@/app/assets/fonts/noto/NotoSansJP-Bold.woff?url";
-import notoSansJPRegular from "@/app/assets/fonts/noto/NotoSansJP-Regular.woff?url";
-import notoSansKRBold from "@/app/assets/fonts/noto/NotoSansKR-Bold.woff?url";
-import notoSansKRRegular from "@/app/assets/fonts/noto/NotoSansKR-Regular.woff?url";
-import notoSansSCBold from "@/app/assets/fonts/noto/NotoSansSC-Bold.woff?url";
-import notoSansSCRegular from "@/app/assets/fonts/noto/NotoSansSC-Regular.woff?url";
-import notoSansTCBold from "@/app/assets/fonts/noto/NotoSansTC-Bold.woff?url";
-import notoSansTCRegular from "@/app/assets/fonts/noto/NotoSansTC-Regular.woff?url";
-import notoSansThaiBold from "@/app/assets/fonts/noto/NotoSansThai-Bold.woff?url";
-import notoSansThaiRegular from "@/app/assets/fonts/noto/NotoSansThai-Regular.woff?url";
+import notoSansJPBold from "@/app/assets/fonts/noto/NotoSansJP-Bold.ttf?url";
+import notoSansJPRegular from "@/app/assets/fonts/noto/NotoSansJP-Regular.ttf?url";
+import notoSansKRBold from "@/app/assets/fonts/noto/NotoSansKR-Bold.ttf?url";
+import notoSansKRRegular from "@/app/assets/fonts/noto/NotoSansKR-Regular.ttf?url";
+import notoSansSCBold from "@/app/assets/fonts/noto/NotoSansSC-Bold.ttf?url";
+import notoSansSCRegular from "@/app/assets/fonts/noto/NotoSansSC-Regular.ttf?url";
+import notoSansTCBold from "@/app/assets/fonts/noto/NotoSansTC-Bold.ttf?url";
+import notoSansTCRegular from "@/app/assets/fonts/noto/NotoSansTC-Regular.ttf?url";
+import notoSansThaiBold from "@/app/assets/fonts/noto/NotoSansThai-Bold.ttf?url";
+import notoSansThaiRegular from "@/app/assets/fonts/noto/NotoSansThai-Regular.ttf?url";
 
 /**
  * Font families used by the in-browser PDF export, and the fallback chains built

@@ -30,15 +30,15 @@ export const VIETNAMESE_FONT_FAMILY = "Inter Vietnamese";
  * shared across locales renders with its Simplified form.
  */
 export const NOTO_FONT_SUBSETS = [
-  { family: "Noto Sans SC", dir: "noto-sans-sc", regular: "NotoSansSC-Regular.woff", bold: "NotoSansSC-Bold.woff" },
-  { family: "Noto Sans TC", dir: "noto-sans-tc", regular: "NotoSansTC-Regular.woff", bold: "NotoSansTC-Bold.woff" },
-  { family: "Noto Sans JP", dir: "noto-sans-jp", regular: "NotoSansJP-Regular.woff", bold: "NotoSansJP-Bold.woff" },
-  { family: "Noto Sans KR", dir: "noto-sans-kr", regular: "NotoSansKR-Regular.woff", bold: "NotoSansKR-Bold.woff" },
+  { family: "Noto Sans SC", dir: "noto-sans-sc", regular: "NotoSansSC-Regular.ttf", bold: "NotoSansSC-Bold.ttf" },
+  { family: "Noto Sans TC", dir: "noto-sans-tc", regular: "NotoSansTC-Regular.ttf", bold: "NotoSansTC-Bold.ttf" },
+  { family: "Noto Sans JP", dir: "noto-sans-jp", regular: "NotoSansJP-Regular.ttf", bold: "NotoSansJP-Bold.ttf" },
+  { family: "Noto Sans KR", dir: "noto-sans-kr", regular: "NotoSansKR-Regular.ttf", bold: "NotoSansKR-Bold.ttf" },
   {
     family: "Noto Sans Thai",
     dir: "noto-sans-thai",
-    regular: "NotoSansThai-Regular.woff",
-    bold: "NotoSansThai-Bold.woff",
+    regular: "NotoSansThai-Regular.ttf",
+    bold: "NotoSansThai-Bold.ttf",
   },
 ];
 
