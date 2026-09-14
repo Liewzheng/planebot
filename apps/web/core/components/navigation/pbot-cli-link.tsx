@@ -12,12 +12,14 @@ import { useTranslation } from "@plane/i18n";
 
 // Promo/download page for the pbot CLI (placeholder until the dedicated site is ready)
 const PBOT_CLI_URL = "https://github.com/Liewzheng/planebotcli";
+const PBOT_CLI_RELEASES_URL = `${PBOT_CLI_URL}/releases`;
 
-const PBOT_CLI_INSTALL_COMMAND = [
-  "git clone https://github.com/Liewzheng/planebotcli.git",
-  "cd planebotcli",
-  "cargo install --path crates/planebotcli-cli --locked",
-].join("\n");
+// cargo-dist installers from the latest release; the scripts auto-detect the
+// platform AND architecture, so the card only needs the visitor's OS
+const PBOT_CLI_INSTALLER = {
+  shell: `curl --proto '=https' --tlsv1.2 -LsSf ${PBOT_CLI_RELEASES_URL}/latest/download/planebotcli-cli-installer.sh | sh`,
+  powershell: `irm ${PBOT_CLI_RELEASES_URL}/latest/download/planebotcli-cli-installer.ps1 | iex`,
+} as const;
 
 type TDetectedOS = "macos" | "windows" | "linux";
 
@@ -30,9 +32,9 @@ const detectOS = (): TDetectedOS => {
 
 /**
  * Top-navigation entry for the pbot CLI: clicking opens the promo page,
- * hovering shows OS-aware install instructions plus verify/configure hints.
- * Browsers cannot probe the local PATH, so "is it installed" is answered
- * with `pbot whoami` instead of detection.
+ * hovering shows the OS-matched binary installer one-liner plus
+ * verify/configure hints. Browsers cannot probe the local PATH, so
+ * "is it installed" is answered with `pbot whoami` instead of detection.
  */
 export function PbotCliLink() {
   // plane hooks
@@ -45,17 +47,17 @@ export function PbotCliLink() {
     setOs(detectOS());
   }, []);
 
+  const installCommand = os === "windows" ? PBOT_CLI_INSTALLER.powershell : PBOT_CLI_INSTALLER.shell;
+
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(PBOT_CLI_INSTALL_COMMAND);
+      await navigator.clipboard.writeText(installCommand);
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     } catch {
       // clipboard unavailable (non-secure context) — the command stays visible for manual copy
     }
   };
-
-  const rustHintKey = `home.pbot_cli.rust_hint_${os}`;
 
   return (
     <div className="group relative flex-shrink-0">
@@ -87,9 +89,18 @@ export function PbotCliLink() {
               </button>
             </div>
             <pre className="font-mono overflow-x-auto rounded-md border border-subtle bg-surface-2 px-3 py-2 text-11 break-all whitespace-pre-wrap">
-              {PBOT_CLI_INSTALL_COMMAND}
+              {installCommand}
             </pre>
-            <p className="text-11 text-placeholder">{t(rustHintKey)}</p>
+            <p className="text-11 text-placeholder">
+              <a
+                href={PBOT_CLI_RELEASES_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-tertiary"
+              >
+                {t("home.pbot_cli.manual_download")}
+              </a>
+            </p>
           </div>
           <div className="flex flex-col gap-y-0.5 border-t border-subtle pt-2">
             <p className="text-11 text-tertiary">{t("home.pbot_cli.verify_hint")}</p>
