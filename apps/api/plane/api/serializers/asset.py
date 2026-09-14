@@ -77,6 +77,14 @@ class GenericAssetUploadSerializer(serializers.Serializer):
     external_source = serializers.CharField(
         required=False, help_text="External source system (for integration tracking)"
     )
+    entity_type = serializers.CharField(
+        required=False,
+        help_text="Entity the asset binds to. Only PAGE_DESCRIPTION is supported (inline page images).",
+    )
+    entity_identifier = serializers.CharField(
+        required=False,
+        help_text="Identifier of the bound entity — the page id for PAGE_DESCRIPTION.",
+    )
 
 
 class GenericAssetUpdateSerializer(serializers.Serializer):
