@@ -20,9 +20,11 @@ from plane.db.models import (
 
 from plane.utils.page_duplication import CannotDeduplicate, repair_duplicated_html
 from plane.utils.page_frontmatter import (
+    json_safe_metadata,
     normalize_tags,
     split_frontmatter,
     sync_tags_to_page_labels,
+    with_created_date,
 )
 from plane.utils.text_repetition import collapse_repeated_text
 
@@ -67,6 +69,7 @@ class PageCreateSerializer(BaseSerializer):
             "logo_props",
             "external_id",
             "external_source",
+            "frontmatter",
         ]
         read_only_fields = [
             "id",
@@ -109,6 +112,7 @@ class PageCreateSerializer(BaseSerializer):
         """
         body, metadata = split_frontmatter(value)
         self._frontmatter_tags = normalize_tags(metadata.get("tags"))
+        self._frontmatter_metadata = metadata
         if body:
             try:
                 body, repaired = repair_duplicated_html(body)
@@ -169,6 +173,11 @@ class PageCreateSerializer(BaseSerializer):
 
         # frontmatter tags become project labels on top of the explicit ones
         self._sync_frontmatter_tags(page, project_id)
+
+        metadata = getattr(self, "_frontmatter_metadata", None)
+        if metadata:
+            page.frontmatter = with_created_date(json_safe_metadata(metadata), page.created_at)
+            page.save(update_fields=["frontmatter"])
         return page
 
 
@@ -225,6 +234,11 @@ class PageUpdateSerializer(PageCreateSerializer):
         page = super().update(instance, validated_data)
         # frontmatter tags become project labels on top of the explicit ones
         self._sync_frontmatter_tags(page, self.context.get("project_id"))
+
+        metadata = getattr(self, "_frontmatter_metadata", None)
+        if metadata:
+            page.frontmatter = with_created_date(json_safe_metadata(metadata), page.created_at)
+            page.save(update_fields=["frontmatter"])
         return page
 
 
@@ -248,6 +262,7 @@ class PageSerializer(BaseSerializer):
             "description_html",
             "description_json",
             "description_stripped",
+            "frontmatter",
             "owned_by",
             "access",
             "color",
