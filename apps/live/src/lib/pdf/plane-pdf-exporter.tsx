@@ -97,9 +97,12 @@ registerFallbackFamily(VIETNAMESE_FONT_FAMILY, [
 
 // Vendored Noto Sans subsets (SIL OFL 1.1 — see assets/fonts/LICENSE-NotoSans-OFL.txt).
 //
-// Keep these files as `.woff`. pdfkit embeds a subset of the registered font,
-// and fontkit's subsetter only prunes WOFF properly — a WOFF2 source silently
-// produced multi-megabyte subsets.
+// Keep these files as uncompressed `.ttf`. fontkit decompresses a WOFF table on
+// every glyph access, which made a CJK page render at roughly 30ms per distinct
+// character — a 1300-character page took 38s, against 0.3s with the same font
+// uncompressed. WOFF2 is worse still: pdfkit silently stops pruning the subset
+// and the PDF balloons. TTF costs ~1.8x the file size and is the only format
+// that both embeds a subset and renders at a sane speed.
 for (const subset of NOTO_FONT_SUBSETS) {
   const dir = path.join(fontAssetDir, subset.dir);
   registerFallbackFamily(subset.family, [
