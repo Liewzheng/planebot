@@ -15,10 +15,22 @@ import {
   TEXT_COLORS,
 } from "./colors";
 
+/**
+ * Font families used across the PDF.
+ *
+ * Inter only ships latin subsets, so each family is paired with a CJK fallback:
+ * react-pdf resolves a `fontFamily` array per code point and picks the first
+ * family that actually has the glyph. Without the fallback, Chinese text has no
+ * glyph to draw and comes out as tofu.
+ */
+export const LATIN_FONT_FAMILY = "Inter";
+export const MONO_FONT_FAMILY = "Courier";
+export const CJK_FONT_FAMILY = "Noto Sans SC";
+
 export const pdfStyles = StyleSheet.create({
   page: {
     padding: 40,
-    fontFamily: "Inter",
+    fontFamily: [LATIN_FONT_FAMILY, CJK_FONT_FAMILY],
     fontSize: 11,
     lineHeight: 1.6,
     color: TEXT_COLORS.primary,
@@ -92,7 +104,7 @@ export const pdfStyles = StyleSheet.create({
     backgroundColor: BACKGROUND_COLORS.layer1, // bg-layer-1 equivalent
     padding: 12,
     borderRadius: 4,
-    fontFamily: "Courier",
+    fontFamily: [MONO_FONT_FAMILY, CJK_FONT_FAMILY],
     fontSize: 10,
     marginVertical: 8,
     color: TEXT_COLORS.primary,
@@ -103,7 +115,7 @@ export const pdfStyles = StyleSheet.create({
     padding: 2,
     paddingHorizontal: 4,
     borderRadius: 2,
-    fontFamily: "Courier",
+    fontFamily: [MONO_FONT_FAMILY, CJK_FONT_FAMILY],
     fontSize: 10,
     color: CODE_COLORS.text, // Red for inline code
   },
