@@ -68,10 +68,8 @@
     "pbot_cli": {
       "title": "pbot CLI",
       "description": "在终端中管理任务、评论和项目。",
-      "install_title": "安装（需要 Rust 工具链）：",
-      "rust_hint_macos": "尚未安装 Rust？运行 brew install rustup && rustup-init",
-      "rust_hint_windows": "尚未安装 Rust？从 rustup.rs 下载 rustup-init.exe 安装",
-      "rust_hint_linux": "尚未安装 Rust？参考 rustup.rs 一键脚本安装",
+      "install_title": "安装（自动识别平台与架构）：",
+      "manual_download": "手动下载：在 Releases 页选择对应平台的压缩包",
       "verify_hint": "验证安装：pbot whoami",
       "configure_hint": "连接本实例：pbot configure（base_url 填本站地址）",
       "copy_install": "复制",
