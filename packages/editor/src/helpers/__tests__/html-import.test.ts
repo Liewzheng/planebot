@@ -75,6 +75,19 @@ describe("simplified HTML import (API/CLI page content)", () => {
     expect(types).toContain("horizontalRule");
   });
 
+  it("preserves the start attribute of an ordered list", () => {
+    // `<ol start="10">` happens when a list continues a previous one; the PDF
+    // exporter reads this attribute to number items (PLANE-38)
+    const payload = convertHTMLDocumentToAllFormats({
+      document_html: '<ol start="10"><li>第十项</li><li>第十一项</li></ol>',
+      variant: "document",
+    });
+    const json = payload.description_json as TJSONNode;
+    const orderedList = (json.content ?? []).find((node) => node.type === "orderedList");
+    expect(orderedList?.attrs?.start).toBe(10);
+    expect(payload.description_html).toContain('start="10"');
+  });
+
   it("preserves heading levels", () => {
     const { nodes } = convert();
     const levels = nodes.filter((node) => node.type === "heading").map((node) => node.attrs?.level);
@@ -127,7 +140,17 @@ describe("simplified HTML import (API/CLI page content)", () => {
 
   it("round-trips back to HTML and produces a Yjs binary", () => {
     const { html, binary } = convert();
-    for (const marker of ["<h1", "<h2", "<h6", "<ul", "<ol", "<blockquote", "<pre", "<table", 'data-type="horizontalRule"']) {
+    for (const marker of [
+      "<h1",
+      "<h2",
+      "<h6",
+      "<ul",
+      "<ol",
+      "<blockquote",
+      "<pre",
+      "<table",
+      'data-type="horizontalRule"',
+    ]) {
       expect(html).toContain(marker);
     }
     expect(html).toContain("echo hello");

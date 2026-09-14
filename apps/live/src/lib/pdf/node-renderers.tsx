@@ -88,6 +88,12 @@ const getFlexAlignStyle = (textAlign: string | null | undefined): Style => {
   return {};
 };
 
+/** First number of an ordered list; anything invalid falls back to 1. */
+const parseListStart = (value: unknown): number => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : 1;
+};
+
 export const nodeRenderers: NodeRendererRegistry = {
   doc: (_node: TipTapNode, children: ReactElement[], ctx: PDFRenderContext): ReactElement => (
     <View key={ctx.getKey()}>{children}</View>
@@ -395,7 +401,11 @@ const renderNodeWithContext = (node: TipTapNode, context: InternalRenderContext)
     childNestingLevel = nestingLevel + 1;
   }
 
-  let currentListItemIndex = 0;
+  // Ordered lists carry their first number in attrs.start (e.g. `<ol start="10">`
+  // when the list continues a previous one) — without it every ordered list was
+  // renumbered from 1. Bullet lists have no numbering.
+  const orderedListStart = node.type === CORE_EXTENSIONS.ORDERED_LIST ? parseListStart(node.attrs?.start) : 1;
+  let currentListItemIndex = orderedListStart - 1;
   const children: ReactElement[] =
     node.content?.map((child) => {
       const childContext: InternalRenderContext = {
