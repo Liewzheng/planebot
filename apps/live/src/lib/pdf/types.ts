@@ -29,6 +29,11 @@ export type KeyGenerator = () => string;
 export type PDFRenderContext = {
   getKey: KeyGenerator;
   metadata?: PDFExportMetadata;
+  /**
+   * Subset order resolved for this document (see `resolvePdfFontFamilies`), so
+   * code blocks can match the body text's glyph forms.
+   */
+  fontFamilies?: string[];
 };
 
 export type PDFNodeRenderer = (

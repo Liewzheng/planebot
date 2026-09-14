@@ -8,9 +8,16 @@ import { createRequire } from "module";
 import path from "path";
 import { Document, Font, Page, pdf, Text } from "@react-pdf/renderer";
 import { createKeyGenerator, renderNode } from "./node-renderers";
-import { LATIN_EXT_FONT_FAMILY, LATIN_FONT_FAMILY, NOTO_FONT_SUBSETS, VIETNAMESE_FONT_FAMILY } from "./fonts";
+import {
+  LATIN_EXT_FONT_FAMILY,
+  LATIN_FONT_FAMILY,
+  NOTO_FONT_SUBSETS,
+  VIETNAMESE_FONT_FAMILY,
+  textFontFamiliesFor,
+} from "./fonts";
 import { pdfStyles } from "./styles";
-import type { PDFExportOptions, TipTapDocument } from "./types";
+import { resolvePdfFontFamilies } from "@plane/utils";
+import type { PDFExportOptions, TipTapDocument, TipTapNode } from "./types";
 
 // Use createRequire for ESM compatibility to resolve font file paths
 const require = createRequire(import.meta.url);
@@ -101,19 +108,47 @@ for (const subset of NOTO_FONT_SUBSETS) {
   ]);
 }
 
+/**
+ * Concatenated text of a document, used to detect which locale's glyph forms it
+ * wants. Capped: a sample is plenty and this walks the whole tree.
+ */
+const docText = (doc: TipTapDocument, limit = 20000): string => {
+  const parts: string[] = [];
+  let length = 0;
+
+  const walk = (node: TipTapNode) => {
+    if (length >= limit) return;
+    if (node.text) {
+      parts.push(node.text);
+      length += node.text.length;
+    }
+    node.content?.forEach(walk);
+  };
+
+  doc.content?.forEach(walk);
+  return parts.join("");
+};
+
 export const createPdfDocument = (doc: TipTapDocument, options: PDFExportOptions = {}) => {
   const { title, author, subject, pageSize = "A4", pageOrientation = "portrait", metadata, noAssets } = options;
 
   // Merge noAssets into metadata for use in node renderers
   const mergedMetadata = { ...metadata, noAssets };
 
+  // Han unification: the subset that comes first decides the glyph form for
+  // ideographs the locales share, so order the chain by the document's language.
+  const notoFamilies = resolvePdfFontFamilies(docText(doc));
+  const textFamilies = textFontFamiliesFor(notoFamilies);
+
   const content = doc.content || [];
   const getKey = createKeyGenerator();
-  const renderedContent = content.map((node, index) => renderNode(node, "doc", index, mergedMetadata, getKey));
+  const renderedContent = content.map((node, index) =>
+    renderNode(node, "doc", index, mergedMetadata, getKey, notoFamilies)
+  );
 
   return (
     <Document title={title} author={author} subject={subject}>
-      <Page size={pageSize} orientation={pageOrientation} style={pdfStyles.page}>
+      <Page size={pageSize} orientation={pageOrientation} style={[pdfStyles.page, { fontFamily: textFamilies }]}>
         {title && <Text style={pdfStyles.title}>{title}</Text>}
         {renderedContent}
       </Page>

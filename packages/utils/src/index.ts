@@ -25,6 +25,7 @@ export * from "./math";
 export * from "./module";
 export * from "./notification";
 export * from "./page";
+export * from "./pdf-fonts";
 export * from "./permission";
 export * from "./project-views";
 export * from "./project";
