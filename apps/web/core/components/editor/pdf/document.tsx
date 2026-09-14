@@ -19,11 +19,13 @@ import interUltraBold from "@/app/assets/fonts/inter/ultrabold.ttf?url";
 import interUltraLight from "@/app/assets/fonts/inter/ultralight.ttf?url";
 // plane imports
 import { convertRemToPixel } from "@plane/utils";
+// local imports
+import { NOTO_FONT_SUBSETS, PDF_CODE_BOLD_FONT_FAMILIES, PDF_CODE_FONT_FAMILIES, PDF_TEXT_FONT_FAMILIES } from "./fonts";
 
 const EDITOR_PDF_FONT_FAMILY_STYLES: Styles = {
-  "*:not(.courier, .courier-bold)": { fontFamily: "Inter" },
-  ".courier": { fontFamily: "Courier" },
-  ".courier-bold": { fontFamily: "Courier-Bold" },
+  "*:not(.courier, .courier-bold)": { fontFamily: PDF_TEXT_FONT_FAMILIES },
+  ".courier": { fontFamily: PDF_CODE_FONT_FAMILIES },
+  ".courier-bold": { fontFamily: PDF_CODE_BOLD_FONT_FAMILIES },
 };
 
 const EDITOR_PDF_TYPOGRAPHY_STYLES: Styles = {
@@ -212,6 +214,27 @@ Font.register({
     { src: interHeavy, fontWeight: "heavy", fontStyle: "italic" },
   ],
 });
+
+/**
+ * Register each vendored subset as a fallback family: one source per weight, with
+ * the italic slots aliasing the upright file. React-pdf resolves a family per
+ * (weight, style) pair and throws when a requested style has no source at all,
+ * and these families only ever serve non-latin code points, which are drawn
+ * upright regardless.
+ */
+for (const subset of NOTO_FONT_SUBSETS) {
+  Font.register({
+    family: subset.family,
+    fonts: [
+      { src: subset.regular, fontWeight: "normal" },
+      { src: subset.regular, fontWeight: "normal", fontStyle: "italic" },
+      { src: subset.bold, fontWeight: "semibold" },
+      { src: subset.bold, fontWeight: "semibold", fontStyle: "italic" },
+      { src: subset.bold, fontWeight: "bold" },
+      { src: subset.bold, fontWeight: "bold", fontStyle: "italic" },
+    ],
+  });
+}
 
 type Props = {
   content: string;
