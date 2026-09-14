@@ -113,6 +113,20 @@ def is_document_duplicated(
     return stats["unique_ratio"] < min_unique_ratio
 
 
+def assert_not_duplicated(html: str) -> None:
+    """Raise when incoming content looks like a union-merged document.
+
+    Used by the write paths so a duplicated body can never be persisted; the
+    caller maps it to a `PAGE_CONTENT_DUPLICATED` response.
+    """
+    if is_document_duplicated(html):
+        stats = line_stats(html)
+        raise CannotDeduplicate(
+            "PAGE_CONTENT_DUPLICATED: %d long lines but only %d unique (ratio %.2f)"
+            % (stats["total_lines"], stats["unique_lines"], stats["unique_ratio"])
+        )
+
+
 def _top_level_blocks(html: str) -> list[tuple[int, int]]:
     """Source spans of the document's top-level elements."""
 
@@ -291,7 +305,7 @@ def deduplicate_page_html(html: str) -> tuple[str, dict]:
             # keep its original text (normalized when no raw match exists) as
             # its own paragraph so no text is dropped
             raw_line = _raw_line_for(line, html) or line
-            source = f'<p class="editor-paragraph-block">{html_module.escape(raw_line)}</p>' 
+            source = f'<p class="editor-paragraph-block">{html_module.escape(raw_line)}</p>'
         if source is None or source in appended:
             continue
         appended.append(source)
