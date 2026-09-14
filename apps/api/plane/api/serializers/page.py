@@ -14,6 +14,11 @@ from plane.db.models import (
     Project,
     ProjectPage,
 )
+from plane.utils.page_frontmatter import (
+    normalize_tags,
+    split_frontmatter,
+    sync_tags_to_page_labels,
+)
 
 
 class PageCreateSerializer(BaseSerializer):
@@ -76,14 +81,31 @@ class PageCreateSerializer(BaseSerializer):
 
         # Validate the parent page belongs to the same project
         parent = data.get("parent", None)
-        if parent is not None and not ProjectPage.objects.filter(
-            project_id=project_id,
-            page_id=parent.id,
-            deleted_at__isnull=True,
-        ).exists():
+        if (
+            parent is not None
+            and not ProjectPage.objects.filter(
+                project_id=project_id,
+                page_id=parent.id,
+                deleted_at__isnull=True,
+            ).exists()
+        ):
             raise serializers.ValidationError({"parent": "Parent page does not exist in this project"})
 
         return data
+
+    def validate_description_html(self, value):
+        """Pull a leading YAML frontmatter block out of the body.
+
+        The `tags` field is mapped onto project labels after the page is saved
+        (see `create` / `update`).
+        """
+        body, metadata = split_frontmatter(value)
+        self._frontmatter_tags = normalize_tags(metadata.get("tags"))
+        return body
+
+    def _sync_frontmatter_tags(self, page, project_id):
+        tags = getattr(self, "_frontmatter_tags", [])
+        return sync_tags_to_page_labels(page, tags, project_id)
 
     def create(self, validated_data):
         labels = validated_data.pop("labels", None)
@@ -125,6 +147,9 @@ class PageCreateSerializer(BaseSerializer):
                 ],
                 batch_size=10,
             )
+
+        # frontmatter tags become project labels on top of the explicit ones
+        self._sync_frontmatter_tags(page, project_id)
         return page
 
 
@@ -148,11 +173,14 @@ class PageUpdateSerializer(PageCreateSerializer):
 
         # Validate the parent page belongs to the same project
         parent = data.get("parent", None)
-        if parent is not None and not ProjectPage.objects.filter(
-            project_id=project_id,
-            page_id=parent.id,
-            deleted_at__isnull=True,
-        ).exists():
+        if (
+            parent is not None
+            and not ProjectPage.objects.filter(
+                project_id=project_id,
+                page_id=parent.id,
+                deleted_at__isnull=True,
+            ).exists()
+        ):
             raise serializers.ValidationError({"parent": "Parent page does not exist in this project"})
 
         return data
@@ -175,7 +203,10 @@ class PageUpdateSerializer(PageCreateSerializer):
                 batch_size=10,
             )
 
-        return super().update(instance, validated_data)
+        page = super().update(instance, validated_data)
+        # frontmatter tags become project labels on top of the explicit ones
+        self._sync_frontmatter_tags(page, self.context.get("project_id"))
+        return page
 
 
 class PageSerializer(BaseSerializer):
