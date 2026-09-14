@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See the LICENSE file for details.
 
-"""Half-converted markdown links are folded into anchors on write"""
+"""Half-converted markdown links and images are folded on write"""
 
 import pytest
 from rest_framework import status
@@ -12,6 +12,11 @@ from plane.db.models import Page, Project, ProjectMember, ProjectPage
 BROKEN_LINK = (
     '[官方文档](<a target="_blank" class="text-accent-secondary underline" '
     'href="https://example.com/doc" rel="noopener noreferrer">https://example.com/doc</a>)'
+)
+
+BROKEN_IMAGE = (
+    '![示意图](<a target="_blank" class="text-accent-secondary underline" '
+    'href="https://example.com/diagram.png" rel="noopener noreferrer">https://example.com/diagram.png</a>)'
 )
 
 
@@ -46,6 +51,19 @@ class TestMarkdownLinkNormalizationAPI:
         assert "](" not in stored
         assert 'href="https://example.com/doc"' in stored
         assert ">官方文档</a>" in stored
+
+    @pytest.mark.django_db
+    def test_create_folds_a_half_converted_image(self, api_key_client, workspace, project):
+        html = f"<p>参考 {BROKEN_IMAGE}</p>"
+
+        response = api_key_client.post(
+            page_url(workspace.slug, project.id), {"name": "Images", "description_html": html}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        stored = Page.objects.get(id=response.data["id"]).description_html
+        assert "](" not in stored
+        assert '<img src="https://example.com/diagram.png" alt="示意图">' in stored
 
     @pytest.mark.django_db
     def test_update_folds_a_half_converted_link(self, api_key_client, workspace, project, create_user):
