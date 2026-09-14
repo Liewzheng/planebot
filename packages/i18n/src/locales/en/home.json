@@ -69,7 +69,8 @@
       "title": "pbot CLI",
       "description": "Manage work items, comments and projects from your terminal.",
       "verify_hint": "Verify the install: pbot whoami",
-      "configure_hint": "Connect to this instance: pbot configure (set base_url to this site)",
+      "configure_hint": "Connect to this instance: pbot configure (set base_url to {url})",
+      "this_site": "this site's address",
       "copy_install": "Copy",
       "copied": "Copied"
     },

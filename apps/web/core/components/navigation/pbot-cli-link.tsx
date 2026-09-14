@@ -67,10 +67,12 @@ export function PbotCliLink() {
   const { t } = useTranslation();
   // states — resolved post-hydration to keep SSR and first client render equal
   const [os, setOs] = useState<TDetectedOS>("linux");
+  const [origin, setOrigin] = useState("");
   const [isCopied, setIsCopied] = useState(false);
 
   useEffect(() => {
     setOs(detectOS());
+    setOrigin(window.location.origin);
   }, []);
 
   const installCommand = os === "windows" ? PBOT_CLI_INSTALLER.powershell : PBOT_CLI_INSTALLER.shell;
@@ -117,7 +119,9 @@ export function PbotCliLink() {
           </div>
           <div className="flex flex-col gap-y-0.5 border-t border-subtle pt-2">
             <p className="text-11 text-tertiary">{t("home.pbot_cli.verify_hint")}</p>
-            <p className="text-11 text-tertiary">{t("home.pbot_cli.configure_hint")}</p>
+            <p className="text-11 text-tertiary">
+              {t("home.pbot_cli.configure_hint", { url: origin || t("home.pbot_cli.this_site") })}
+            </p>
           </div>
         </div>
       </div>
