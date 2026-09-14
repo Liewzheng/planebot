@@ -43,12 +43,12 @@ class Command(BaseCommand):
         parser.add_argument(
             "--scan-links",
             action="store_true",
-            help="List pages holding half-converted markdown links ([text](url))",
+            help="List pages holding half-converted markdown links/images ([text](url), ![alt](url))",
         )
         parser.add_argument(
             "--fix-links",
             metavar="PAGE_ID",
-            help="Fold half-converted markdown links on one page into proper anchors",
+            help="Fold half-converted markdown links/images on one page into proper markup",
         )
         parser.add_argument(
             "--dry-run", action="store_true", help="With --repair/--fix-links: show the plan, write nothing"

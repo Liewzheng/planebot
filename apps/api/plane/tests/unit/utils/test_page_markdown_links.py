@@ -29,14 +29,54 @@ class TestNormalizeMarkdownLinks:
         assert repaired.count(">A</a>") == 1
         assert repaired.count(">B</a>") == 1
 
+    def test_folds_a_half_converted_image(self):
+        html = f"![示意图]({ANCHOR})"
+        repaired, count = normalize_markdown_links(html)
+        assert count == 1
+        # an image keeps the target and moves the markdown text into alt
+        assert repaired == '<img src="https://example.com/doc" alt="示意图">'
+
+    def test_image_and_link_in_the_same_body(self):
+        html = f"![图]({ANCHOR}) 与 [文]({ANCHOR})"
+        repaired, count = normalize_markdown_links(html)
+        assert count == 2
+        assert '<img src="https://example.com/doc" alt="图">' in repaired
+        assert '>文</a>' in repaired
+
+    def test_image_alt_quote_is_neutralized(self):
+        html = f'![a "b"]({ANCHOR})'
+        repaired, count = normalize_markdown_links(html)
+        assert count == 1
+        assert 'alt="a &quot;b&quot;"' in repaired
+
+    def test_image_alt_keeps_entities_the_converter_escaped(self):
+        # the converter already escaped `&`; escaping again would double-encode
+        html = f"![A &amp; B]({ANCHOR})"
+        repaired, count = normalize_markdown_links(html)
+        assert count == 1
+        assert 'alt="A &amp; B"' in repaired
+        assert "&amp;amp;" not in repaired
+
     def test_keeps_plain_markdown_without_an_anchor(self):
         html = "<p>[文字](plain-text)</p>"
         repaired, count = normalize_markdown_links(html)
         assert count == 0
         assert repaired == html
 
+    def test_keeps_plain_image_without_an_anchor(self):
+        html = "<p>![文字](plain-image.png)</p>"
+        repaired, count = normalize_markdown_links(html)
+        assert count == 0
+        assert repaired == html
+
     def test_keeps_normal_links_untouched(self):
         html = '<p><a href="https://example.com">官方文档</a></p>'
+        repaired, count = normalize_markdown_links(html)
+        assert count == 0
+        assert repaired == html
+
+    def test_keeps_normal_images_untouched(self):
+        html = '<p><img src="https://example.com/diagram.png" alt="示意图"></p>'
         repaired, count = normalize_markdown_links(html)
         assert count == 0
         assert repaired == html
@@ -52,5 +92,6 @@ class TestNormalizeMarkdownLinks:
 
     def test_detection_helper(self):
         assert has_broken_markdown_links(f"[A]({ANCHOR})") is True
+        assert has_broken_markdown_links(f"![A]({ANCHOR})") is True
         assert has_broken_markdown_links("<p>plain</p>") is False
         assert has_broken_markdown_links("") is False
