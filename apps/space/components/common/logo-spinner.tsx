@@ -4,19 +4,31 @@
  * See the LICENSE file for details.
  */
 
-import { useTheme } from "next-themes";
-// assets
-import LogoSpinnerDark from "@/app/assets/images/logo-spinner-dark.gif?url";
-import LogoSpinnerLight from "@/app/assets/images/logo-spinner-light.gif?url";
-
+// pbot brand mark with a pulse animation, shown while pages load
 export function LogoSpinner() {
-  const { resolvedTheme } = useTheme();
-
-  const logoSrc = resolvedTheme === "dark" ? LogoSpinnerLight : LogoSpinnerDark;
-
   return (
     <div className="flex items-center justify-center">
-      <img src={logoSrc} alt="logo" className="h-6 w-auto sm:h-11" />
+      <svg
+        className="h-6 w-auto animate-pulse sm:h-11"
+        viewBox="0 0 64 64"
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-label="pbot logo"
+      >
+        <rect width="64" height="64" rx="14" fill="#3f76ff" />
+        <text
+          x="32"
+          y="33"
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontFamily="Arial, Helvetica, sans-serif"
+          fontSize="38"
+          fontWeight="700"
+          fill="#ffffff"
+        >
+          p
+        </text>
+      </svg>
     </div>
   );
 }

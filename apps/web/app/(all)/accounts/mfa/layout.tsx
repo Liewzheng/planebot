@@ -11,4 +11,4 @@ export default function MFALayout() {
   return <Outlet />;
 }
 
-export const meta: Route.MetaFunction = () => [{ title: "Two-factor authentication - Plane" }];
+export const meta: Route.MetaFunction = () => [{ title: "Two-factor authentication - pbot" }];
