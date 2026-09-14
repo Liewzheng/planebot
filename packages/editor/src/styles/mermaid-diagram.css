@@ -22,6 +22,25 @@
 }
 
 .mermaid-diagram-canvas svg {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Reading-mode diagrams are wrapped in a button so a click can open the
+   full-screen preview (PLANE-42). Same sizing rules as the live canvas. */
+.mermaid-diagram-preview {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  padding: 16px;
+  border-radius: 8px;
+  background-color: var(--background-color-layer-3, transparent);
+  cursor: zoom-in;
+}
+
+.mermaid-diagram-preview > svg {
+  width: 100%;
   max-width: 100%;
   height: auto;
 }
