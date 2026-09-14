@@ -15,7 +15,7 @@ import { logger } from "@plane/logger";
 import { env } from "@/env";
 // extensions
 import { forceCloseDocumentAcrossServers } from "@/extensions/force-close-handler";
-import { ForceCloseReason } from "@/types/admin-commands";
+import { CloseCode, ForceCloseReason } from "@/types/admin-commands";
 
 const invalidateDocumentSchema = z.object({
   docId: z.string().min(1, "docId is required"),
@@ -60,7 +60,12 @@ export class InvalidateDocumentController {
     logger.info(`[INVALIDATE_DOCUMENT] Invalidating document ${docId} after external content replacement`);
 
     try {
-      await forceCloseDocumentAcrossServers(this.hocuspocusServer, docId, ForceCloseReason.CONTENT_REPLACED);
+      await forceCloseDocumentAcrossServers(
+        this.hocuspocusServer,
+        docId,
+        ForceCloseReason.CONTENT_REPLACED,
+        CloseCode.CONTENT_REPLACED
+      );
       return res.status(200).json({
         message: "Document invalidated",
       });

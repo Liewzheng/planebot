@@ -62,6 +62,12 @@ export enum CloseCode {
   MEMORY_PRESSURE = 4002,
   /** Custom: Security violation */
   SECURITY_VIOLATION = 4003,
+  /**
+   * Custom: the document was replaced server-side (API re-upload or a
+   * duplication guard). Clients must drop their cached copy and reload.
+   * Carried as a close code because Safari does not expose the close reason.
+   */
+  CONTENT_REPLACED = 4004,
 }
 
 /**

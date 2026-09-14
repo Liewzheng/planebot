@@ -109,7 +109,12 @@ const storeDocument = async ({
       // from the database - a reloaded client cannot merge the old document
       // back in. Mirrors the content_too_large path: unload and return without
       // throwing, since the document is gone by then.
-      await forceCloseDocumentAcrossServers(instance, pageId, ForceCloseReason.CONTENT_REPLACED);
+      await forceCloseDocumentAcrossServers(
+        instance,
+        pageId,
+        ForceCloseReason.CONTENT_REPLACED,
+        CloseCode.CONTENT_REPLACED
+      );
       return;
     }
 
