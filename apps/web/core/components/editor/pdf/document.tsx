@@ -18,15 +18,12 @@ import interThin from "@/app/assets/fonts/inter/thin.ttf?url";
 import interUltraBold from "@/app/assets/fonts/inter/ultrabold.ttf?url";
 import interUltraLight from "@/app/assets/fonts/inter/ultralight.ttf?url";
 // plane imports
-import { convertRemToPixel } from "@plane/utils";
+import { convertRemToPixel, resolvePdfFontFamilies } from "@plane/utils";
 // local imports
-import { NOTO_FONT_SUBSETS, PDF_CODE_BOLD_FONT_FAMILIES, PDF_CODE_FONT_FAMILIES, PDF_TEXT_FONT_FAMILIES } from "./fonts";
+import { NOTO_FONT_SUBSETS, codeBoldFontFamiliesFor, codeFontFamiliesFor, textFontFamiliesFor } from "./fonts";
 
-const EDITOR_PDF_FONT_FAMILY_STYLES: Styles = {
-  "*:not(.courier, .courier-bold)": { fontFamily: PDF_TEXT_FONT_FAMILIES },
-  ".courier": { fontFamily: PDF_CODE_FONT_FAMILIES },
-  ".courier-bold": { fontFamily: PDF_CODE_BOLD_FONT_FAMILIES },
-};
+/** Plain text of the exported HTML, used to detect which script the page is in. */
+const htmlToText = (html: string): string => html.replace(/<[^>]*>/g, " ");
 
 const EDITOR_PDF_TYPOGRAPHY_STYLES: Styles = {
   // page title
@@ -146,7 +143,6 @@ const EDITOR_PDF_CODE_STYLES: Styles = {
 };
 
 const EDITOR_PDF_DOCUMENT_STYLESHEET = StyleSheet.create({
-  ...EDITOR_PDF_FONT_FAMILY_STYLES,
   ...EDITOR_PDF_TYPOGRAPHY_STYLES,
   ...EDITOR_PDF_LIST_STYLES,
   ...EDITOR_PDF_CODE_STYLES,
@@ -244,6 +240,16 @@ type Props = {
 export function PDFDocument(props: Props) {
   const { content, pageFormat } = props;
 
+  // Han unification: the subset that comes first decides the glyph form for
+  // ideographs the locales share, so order the chain by the document's language.
+  const notoFamilies = resolvePdfFontFamilies(htmlToText(content));
+  const stylesheet = {
+    ...EDITOR_PDF_DOCUMENT_STYLESHEET,
+    "*:not(.courier, .courier-bold)": { fontFamily: textFontFamiliesFor(notoFamilies) },
+    ".courier": { fontFamily: codeFontFamiliesFor(notoFamilies) },
+    ".courier-bold": { fontFamily: codeBoldFontFamiliesFor(notoFamilies) },
+  };
+
   return (
     <Document>
       <Page
@@ -253,7 +259,7 @@ export function PDFDocument(props: Props) {
           padding: 64,
         }}
       >
-        <Html stylesheet={EDITOR_PDF_DOCUMENT_STYLESHEET}>{content}</Html>
+        <Html stylesheet={stylesheet}>{content}</Html>
       </Page>
     </Document>
   );

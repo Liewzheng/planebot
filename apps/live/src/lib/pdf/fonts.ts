@@ -49,3 +49,22 @@ const FALLBACK_FONT_FAMILIES: string[] = [LATIN_EXT_FONT_FAMILY, VIETNAMESE_FONT
 
 export const TEXT_FONT_FAMILIES: string[] = [LATIN_FONT_FAMILY, ...FALLBACK_FONT_FAMILIES];
 export const CODE_FONT_FAMILIES: string[] = [MONO_FONT_FAMILY, ...FALLBACK_FONT_FAMILIES];
+
+/**
+ * The same chains, but with the subset order a particular document resolved to
+ * (see `resolvePdfFontFamilies` in @plane/utils). The latin/mono family and the
+ * extra Inter subsets stay ahead; only the Noto order changes.
+ */
+export const textFontFamiliesFor = (notoFamilies: string[]): string[] => [
+  LATIN_FONT_FAMILY,
+  LATIN_EXT_FONT_FAMILY,
+  VIETNAMESE_FONT_FAMILY,
+  ...notoFamilies,
+];
+
+export const codeFontFamiliesFor = (notoFamilies: string[]): string[] => [
+  MONO_FONT_FAMILY,
+  LATIN_EXT_FONT_FAMILY,
+  VIETNAMESE_FONT_FAMILY,
+  ...notoFamilies,
+];

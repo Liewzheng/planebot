@@ -55,3 +55,16 @@ export const NOTO_FONT_FAMILIES: string[] = NOTO_FONT_SUBSETS.map((subset) => su
 export const PDF_TEXT_FONT_FAMILIES: string[] = [PDF_FONT_FAMILY, ...NOTO_FONT_FAMILIES];
 export const PDF_CODE_FONT_FAMILIES: string[] = [PDF_MONO_FONT_FAMILY, ...NOTO_FONT_FAMILIES];
 export const PDF_CODE_BOLD_FONT_FAMILIES: string[] = [PDF_MONO_BOLD_FONT_FAMILY, ...NOTO_FONT_FAMILIES];
+
+/**
+ * The same chains, but with the subset order a particular document resolved to
+ * (see `resolvePdfFontFamilies` in @plane/utils). Only the Noto order changes.
+ */
+export const textFontFamiliesFor = (notoFamilies: string[]): string[] => [PDF_FONT_FAMILY, ...notoFamilies];
+
+export const codeFontFamiliesFor = (notoFamilies: string[]): string[] => [PDF_MONO_FONT_FAMILY, ...notoFamilies];
+
+export const codeBoldFontFamiliesFor = (notoFamilies: string[]): string[] => [
+  PDF_MONO_BOLD_FONT_FAMILY,
+  ...notoFamilies,
+];

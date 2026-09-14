@@ -11,6 +11,7 @@ import { CORE_EXTENSIONS } from "@plane/editor";
 import { BACKGROUND_COLORS, EDITOR_BACKGROUND_COLORS, resolveColorForPdf, TEXT_COLORS } from "./colors";
 import { CheckIcon, ClipboardIcon, DocumentIcon, GlobeIcon, LightbulbIcon, LinkIcon } from "./icons";
 import { applyMarks } from "./mark-renderers";
+import { codeFontFamiliesFor } from "./fonts";
 import { pdfStyles } from "./styles";
 import type { KeyGenerator, NodeRendererRegistry, PDFExportMetadata, PDFRenderContext, TipTapNode } from "./types";
 
@@ -54,8 +55,12 @@ export const createKeyGenerator = (): KeyGenerator => {
   return () => `node-${counter++}`;
 };
 
-const renderTextWithMarks = (node: TipTapNode, getKey: KeyGenerator): ReactElement => {
+const renderTextWithMarks = (node: TipTapNode, getKey: KeyGenerator, fontFamilies?: string[]): ReactElement => {
   const style = applyMarks(node.marks, {});
+  // the editor's code mark carries the static order; align it with the document's
+  if (fontFamilies && node.marks?.some((mark) => mark.type === "code")) {
+    style.fontFamily = codeFontFamiliesFor(fontFamilies);
+  }
   const hasLink = node.marks?.find((m) => m.type === "link");
 
   if (hasLink) {
@@ -100,7 +105,7 @@ export const nodeRenderers: NodeRendererRegistry = {
   ),
 
   text: (node: TipTapNode, _children: ReactElement[], ctx: PDFRenderContext): ReactElement =>
-    renderTextWithMarks(node, ctx.getKey),
+    renderTextWithMarks(node, ctx.getKey, ctx.fontFamilies),
 
   paragraph: (node: TipTapNode, children: ReactElement[], ctx: PDFRenderContext): ReactElement => {
     const textAlign = node.attrs?.textAlign as string | null;
@@ -141,8 +146,11 @@ export const nodeRenderers: NodeRendererRegistry = {
 
   codeBlock: (node: TipTapNode, _children: ReactElement[], ctx: PDFRenderContext): ReactElement => {
     const codeContent = node.content?.map((c) => c.text || "").join("") || "";
+    const style = ctx.fontFamilies
+      ? [pdfStyles.codeBlock, { fontFamily: codeFontFamiliesFor(ctx.fontFamilies) }]
+      : pdfStyles.codeBlock;
     return (
-      <View key={ctx.getKey()} style={pdfStyles.codeBlock} wrap={false}>
+      <View key={ctx.getKey()} style={style} wrap={false}>
         <Text>{codeContent}</Text>
       </View>
     );
@@ -441,7 +449,8 @@ export const renderNode = (
   parentType?: string,
   _index?: number,
   metadata?: PDFExportMetadata,
-  getKey?: KeyGenerator
+  getKey?: KeyGenerator,
+  fontFamilies?: string[]
 ): ReactElement => {
   const keyGen = getKey ?? createKeyGenerator();
 
@@ -449,6 +458,6 @@ export const renderNode = (
     parentType,
     nestingLevel: 0,
     listItemIndex: 0,
-    pdfContext: { getKey: keyGen, metadata },
+    pdfContext: { getKey: keyGen, metadata, fontFamilies },
   });
 };

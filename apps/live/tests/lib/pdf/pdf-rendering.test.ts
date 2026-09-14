@@ -102,6 +102,24 @@ describe("PDF Rendering Integration", () => {
       expect(extracted).toContain(text);
     });
 
+    it("should draw shared ideographs with the document's own glyph forms", async () => {
+      // Han unification: the ideographs below exist in every CJK subset, so the
+      // family order decides which form is drawn. Before the locale ordering
+      // these documents embedded no JP/TC font at all — the Simplified subset
+      // won for every shared code point.
+      const embedded = async (text: string) => {
+        const buffer = await renderPlaneDocToPdfBuffer({
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+        });
+        return [...new Set(buffer.toString("latin1").match(/\/BaseFont\s*\/([A-Za-z0-9+-]+)/g) ?? [])].join(",");
+      };
+
+      expect(await embedded("日本語の環境設定")).toContain("NotoSansJP");
+      expect(await embedded("繁體中文與軟體資訊")).toContain("NotoSansTC");
+      expect(await embedded("简体中文与环境设置")).toContain("NotoSansSC");
+    });
+
     it("should render CJK inside a code block", async () => {
       const doc: TipTapDocument = {
         type: "doc",
