@@ -177,6 +177,29 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange }: UseY
           stageRef.current = newStage;
           setStage(newStage);
           setSessionEpoch((epoch) => epoch + 1);
+          // Rebuilding the session is not enough on its own: the page can end
+          // up stuck on "syncing". Clear the stale IndexedDB copy here (the
+          // reload below would otherwise lose the pending clear) and reload
+          // the page so the server document is loaded from scratch. Guarded by
+          // sessionStorage so a repeated replacement cannot cause a reload
+          // loop.
+          void (async () => {
+            try {
+              const cleaner = new IndexeddbPersistence(docId, new Y.Doc());
+              await cleaner.clearData();
+              cleaner.destroy();
+            } catch (cleanError) {
+              console.error(`Error clearing stale IndexedDB cache for ${docId}:`, cleanError);
+            }
+            const reloadKey = `plane:content-replaced:${docId}`;
+            const lastReload = Number(window.sessionStorage.getItem(reloadKey) ?? 0);
+            if (Date.now() - lastReload > 30_000) {
+              window.sessionStorage.setItem(reloadKey, String(Date.now()));
+              window.location.reload();
+            } else {
+              console.warn(`Skipping reload for ${docId}: already reloaded in the last 30s`);
+            }
+          })();
           return;
         }
 
