@@ -19,6 +19,7 @@ from plane.utils.page_frontmatter import (
     split_frontmatter,
     sync_tags_to_page_labels,
 )
+from plane.utils.text_repetition import collapse_repeated_text
 
 
 class PageCreateSerializer(BaseSerializer):
@@ -102,6 +103,10 @@ class PageCreateSerializer(BaseSerializer):
         body, metadata = split_frontmatter(value)
         self._frontmatter_tags = normalize_tags(metadata.get("tags"))
         return body
+
+    def validate_name(self, value):
+        """Fold a self-repeating name back to one copy (stale-merge artifact)."""
+        return collapse_repeated_text(value)
 
     def _sync_frontmatter_tags(self, page, project_id):
         tags = getattr(self, "_frontmatter_tags", [])

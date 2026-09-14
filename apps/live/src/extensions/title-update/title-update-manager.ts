@@ -9,6 +9,7 @@ import { AppError } from "@/lib/errors";
 import { getPageService } from "@/services/page/handler";
 import type { HocusPocusServerContext } from "@/types";
 import { DebounceManager } from "./debounce";
+import { collapseRepeatedTitle } from "./title-utils";
 
 /**
  * Manages title update operations for a single document
@@ -55,9 +56,21 @@ export class TitleUpdateManager {
       return;
     }
 
+    // A stale client merge duplicates the title fragment; never persist that
+    const sanitizedTitle = collapseRepeatedTitle(title);
+    if (sanitizedTitle !== title.trim()) {
+      logger.warn(
+        `TitleManager[${this.documentName.substring(0, 8)}] collapsing duplicated title ` +
+          `(${title.length} -> ${sanitizedTitle.length} chars)`
+      );
+    }
+    if (!sanitizedTitle) {
+      return;
+    }
+
     try {
       await service.updatePageProperties(this.documentName, {
-        data: { name: title },
+        data: { name: sanitizedTitle },
         abortSignal: signal,
       });
 
