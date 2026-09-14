@@ -18,7 +18,7 @@ from drf_spectacular.utils import OpenApiExample, OpenApiRequest
 from plane.bgtasks.storage_metadata_task import get_asset_object_metadata
 from plane.settings.storage import S3Storage
 from plane.utils.path_validator import sanitize_filename
-from plane.db.models import FileAsset, User, Workspace
+from plane.db.models import FileAsset, Page, ProjectPage, User, Workspace
 from plane.app.permissions import WorkspaceUserPermission
 from plane.api.views.base import BaseAPIView
 from plane.api.serializers import (
@@ -512,8 +512,11 @@ class GenericAssetEndpoint(BaseAPIView):
     def post(self, request, slug):
         """Generate presigned URL for generic asset upload.
 
-        Create a presigned URL for uploading generic assets that can be bound to entities like work items.
-        Supports various file types and includes external source tracking for integrations.
+        Create a presigned URL for uploading generic assets that can be bound to
+        entities like work items — or, with ``entity_type``/``entity_identifier``,
+        to a page, so an API-token client can upload a page's inline images
+        without a browser session. Supports various file types and includes
+        external source tracking for integrations.
         """
         name = sanitize_filename(request.data.get("name"))
         type = request.data.get("type")
@@ -521,6 +524,8 @@ class GenericAssetEndpoint(BaseAPIView):
         project_id = request.data.get("project_id")
         external_id = request.data.get("external_id")
         external_source = request.data.get("external_source")
+        entity_type = request.data.get("entity_type")
+        entity_identifier = request.data.get("entity_identifier")
 
         # Check if the request is valid
         if not name or not size:
@@ -532,8 +537,17 @@ class GenericAssetEndpoint(BaseAPIView):
         # Check if the file size is within the limit
         size_limit = min(size, settings.FILE_SIZE_LIMIT)
 
+        # Page images carry the allow-list the web editor enforces (the assets
+        # v2 project endpoint); every other caller keeps the broader list.
+        is_page_image = entity_type == FileAsset.EntityTypeContext.PAGE_DESCRIPTION
+        allowed_types = (
+            ["image/jpeg", "image/png", "image/webp", "image/jpg", "image/gif"]
+            if is_page_image
+            else list(settings.ATTACHMENT_MIME_TYPES)
+        )
+
         # Check if the file type is allowed
-        if not type or type not in settings.ATTACHMENT_MIME_TYPES:
+        if not type or type not in allowed_types:
             return Response(
                 {"error": "Invalid file type.", "status": False},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -541,6 +555,49 @@ class GenericAssetEndpoint(BaseAPIView):
 
         # Get the workspace
         workspace = Workspace.objects.get(slug=slug)
+
+        # Optional entity binding — only PAGE_DESCRIPTION is open for now.
+        binding = {}
+        if entity_type:
+            if not is_page_image:
+                return Response(
+                    {"error": f"Unsupported entity type '{entity_type}'."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            try:
+                page_id = uuid.UUID(str(entity_identifier))
+            except (ValueError, TypeError, AttributeError):
+                return Response(
+                    {"error": "entity_identifier must be the id of an existing page."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            page = Page.objects.filter(id=page_id, workspace_id=workspace.id, deleted_at__isnull=True).first()
+            if not page:
+                return Response(
+                    {"error": "Page not found in this workspace."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            # A project page pins the asset to that project: the web editor
+            # resolves a page image through the project-scoped v2 URL. A
+            # workspace-level page has no project, so project_id must stay empty.
+            project_page = (
+                ProjectPage.objects.filter(page_id=page.id, workspace_id=workspace.id, deleted_at__isnull=True)
+                .only("project_id")
+                .first()
+            )
+            if project_page:
+                if project_id and str(project_id) != str(project_page.project_id):
+                    return Response(
+                        {"error": "project_id does not match the project this page belongs to."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                project_id = project_page.project_id
+            elif project_id:
+                return Response(
+                    {"error": "project_id must be omitted for a workspace-level page."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            binding = {"page": page}
 
         # asset key
         asset_key = f"{workspace.id}/{uuid.uuid4().hex}-{name}"
@@ -564,7 +621,8 @@ class GenericAssetEndpoint(BaseAPIView):
                     status=status.HTTP_409_CONFLICT,
                 )
 
-        # Create a File Asset
+        # Create a File Asset. Without an entity_type the caller is a plain
+        # attachment producer, which this endpoint has always bound to issues.
         asset = FileAsset.objects.create(
             attributes={"name": name, "type": type, "size": size_limit},
             asset=asset_key,
@@ -574,7 +632,8 @@ class GenericAssetEndpoint(BaseAPIView):
             created_by=request.user,
             external_id=external_id,
             external_source=external_source,
-            entity_type=FileAsset.EntityTypeContext.ISSUE_ATTACHMENT,  # Using ISSUE_ATTACHMENT since we'll bind it to issues # noqa: E501
+            entity_type=entity_type or FileAsset.EntityTypeContext.ISSUE_ATTACHMENT,
+            **binding,
         )
 
         # Get the presigned URL
