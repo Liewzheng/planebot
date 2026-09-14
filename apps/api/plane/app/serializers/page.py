@@ -12,6 +12,11 @@ from plane.utils.content_validator import (
     validate_binary_data,
     validate_html_content,
 )
+from plane.utils.page_frontmatter import (
+    normalize_tags,
+    split_frontmatter,
+    sync_tags_to_page_labels,
+)
 from plane.db.models import (
     Page,
     PageLabel,
@@ -64,7 +69,10 @@ class PageSerializer(BaseSerializer):
         owned_by_id = self.context["owned_by_id"]
         description_json = self.context["description_json"]
         description_binary = self.context["description_binary"]
-        description_html = self.context["description_html"]
+        # frontmatter never belongs to the body: strip it before persisting and
+        # map its tags to project labels below
+        description_html, metadata = split_frontmatter(self.context["description_html"])
+        frontmatter_tags = normalize_tags(metadata.get("tags"))
 
         # Get the workspace id from the project
         project = Project.objects.get(pk=project_id)
@@ -103,6 +111,9 @@ class PageSerializer(BaseSerializer):
                 ],
                 batch_size=10,
             )
+
+        # frontmatter tags become project labels on top of the explicit ones
+        sync_tags_to_page_labels(page, frontmatter_tags, project_id)
         return page
 
     def update(self, instance, validated_data):
@@ -123,7 +134,26 @@ class PageSerializer(BaseSerializer):
                 batch_size=10,
             )
 
-        return super().update(instance, validated_data)
+        page = super().update(instance, validated_data)
+        # frontmatter tags become project labels on top of the explicit ones
+        sync_tags_to_page_labels(page, getattr(self, "_frontmatter_tags", []), self._project_id_for(page))
+        return page
+
+    def validate_description_html(self, value):
+        """Pull a leading YAML frontmatter block out of the body (update path)."""
+        body, metadata = split_frontmatter(value)
+        self._frontmatter_tags = normalize_tags(metadata.get("tags"))
+        return body
+
+    def _project_id_for(self, page):
+        """Project to scope frontmatter labels to: serializer context first,
+        then the page's own project link."""
+        project_id = self.context.get("project_id")
+        if project_id:
+            return project_id
+        return (
+            ProjectPage.objects.filter(page=page, deleted_at__isnull=True).values_list("project_id", flat=True).first()
+        )
 
 
 class PageDetailSerializer(PageSerializer):
