@@ -17,6 +17,7 @@ from plane.utils.page_frontmatter import (
     split_frontmatter,
     sync_tags_to_page_labels,
 )
+from plane.utils.text_repetition import collapse_repeated_text
 from plane.db.models import (
     Page,
     PageLabel,
@@ -62,6 +63,10 @@ class PageSerializer(BaseSerializer):
             "project_ids",
         ]
         read_only_fields = ["workspace", "owned_by"]
+
+    def validate_name(self, value):
+        """Fold a self-repeating name back to one copy (stale-merge artifact)."""
+        return collapse_repeated_text(value)
 
     def create(self, validated_data):
         labels = validated_data.pop("labels", None)
