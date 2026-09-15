@@ -5,11 +5,12 @@
  */
 
 import { observer } from "mobx-react";
+import { useParams } from "next/navigation";
 // plane imports
 import type { TDisplayConfig } from "@plane/editor";
 import type { TPageVersion } from "@plane/types";
 import { Loader } from "@plane/ui";
-import { cn } from "@plane/utils";
+import { cn, getEditorAssetSrc } from "@plane/utils";
 import DOMPurify from "dompurify";
 // hooks
 import { usePageFilters } from "@/hooks/use-page-filters";
@@ -22,15 +23,55 @@ export type TVersionEditorProps = {
   storeType: EPageStoreType;
 };
 
+// stored srcs can be absolute URLs or bare asset ids — resolve the ids through
+// the same helper the editor file handler uses so static and live views agree
+const resolveAssetSrc = (src: string, workspaceSlug?: string, projectId?: string): string => {
+  if (!src) return "";
+  if (src.startsWith("http") || src.startsWith("data:") || src.startsWith("blob:")) return src;
+  if (!workspaceSlug) return src;
+  return getEditorAssetSrc({ assetId: src, projectId, workspaceSlug }) ?? src;
+};
+
+// editor size attrs ("506px", "35%", 506) only work as presentational hints by
+// lenient browser parsing; move them to inline styles so the static markup is
+// valid and renders like the editor
+const applyDimensionStyle = (el: HTMLElement, attr: "width" | "height") => {
+  const value = el.getAttribute(attr);
+  if (!value) return;
+  el.removeAttribute(attr);
+  if (value === "auto") return;
+  el.style.setProperty(attr, /^\d+(\.\d+)?$/.test(value) ? `${value}px` : value);
+};
+
 // Version snapshots are immutable, so they are rendered as sanitized static HTML
 // instead of mounting a second (read-only) editor instance. The stored description_html
 // is class-less server-generated markup, so re-apply the block class hooks the client
 // editor adds (starter-kit) to keep the read-mode typography rules matching.
-const sanitizeVersionHTML = (html: string): string => {
+const sanitizeVersionHTML = (html: string, workspaceSlug?: string, projectId?: string): string => {
   const container = document.createElement("div");
   container.innerHTML = DOMPurify.sanitize(html, { FORBID_ATTR: ["style"] });
   container.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach((el) => el.classList.add("editor-heading-block"));
   container.querySelectorAll("p").forEach((el) => el.classList.add("editor-paragraph-block"));
+  // resolve bare asset ids in image sources
+  container.querySelectorAll("img").forEach((img) => {
+    const src = img.getAttribute("src");
+    if (src) img.setAttribute("src", resolveAssetSrc(src, workspaceSlug, projectId));
+    applyDimensionStyle(img, "width");
+    applyDimensionStyle(img, "height");
+  });
+  // custom-image nodes serialize as <image-component>; swap them for plain <img>
+  container.querySelectorAll("image-component").forEach((component) => {
+    const img = document.createElement("img");
+    const src = component.getAttribute("src");
+    if (src) img.setAttribute("src", resolveAssetSrc(src, workspaceSlug, projectId));
+    ["alt", "width", "height"].forEach((attr) => {
+      const value = component.getAttribute(attr);
+      if (value) img.setAttribute(attr, value);
+    });
+    applyDimensionStyle(img, "width");
+    applyDimensionStyle(img, "height");
+    component.replaceWith(img);
+  });
   return container.innerHTML;
 };
 
@@ -38,6 +79,8 @@ export const PagesVersionEditor = observer(function PagesVersionEditor(props: TV
   const { versionDetails } = props;
   // page filters
   const { fontSize, fontStyle } = usePageFilters();
+  // route params
+  const { workspaceSlug, projectId } = useParams();
 
   const displayConfig: TDisplayConfig = {
     fontSize,
@@ -87,7 +130,7 @@ export const PagesVersionEditor = observer(function PagesVersionEditor(props: TV
       </div>
     );
 
-  const sanitizedDescriptionHTML = sanitizeVersionHTML(versionDetails.description_html ?? "");
+  const sanitizedDescriptionHTML = sanitizeVersionHTML(versionDetails.description_html ?? "", workspaceSlug, projectId);
 
   if (!sanitizedDescriptionHTML)
     return (
