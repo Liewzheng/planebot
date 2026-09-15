@@ -74,6 +74,7 @@
     "@types/ws": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "pdf-parse": "catalog:",
+    "pdfjs-dist": "5.4.296",
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

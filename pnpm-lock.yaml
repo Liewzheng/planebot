@@ -582,6 +582,7 @@ overrides:
 
 patchedDependencies:
   '@headlessui/react@2.2.10': 8724cd84d4ad5d9c0d0631bc7d2636b91579f2d8f4033e62484c12b81916e354
+  '@react-pdf/textkit@7.0.1': 2637cf919661d9266047c190bee95f16e5e681cf1cc4316442b3f981b7fadfc4
   react-color@2.19.3: 311b81530f5338988f8b57718f24870a7550637159d8360d69f668cba2f2033f
 
 importers:
@@ -863,6 +864,9 @@ importers:
       pdf-parse:
         specifier: 'catalog:'
         version: 2.4.5
+      pdfjs-dist:
+        specifier: 5.4.296
+        version: 5.4.296
       tsdown:
         specifier: 'catalog:'
         version: 0.16.0(@emnapi/core@1.10.0)(@emnapi/runtime@1.11.3)(oxc-resolver@11.20.0)(typescript@5.8.3)
@@ -6401,10 +6405,6 @@ packages:
     resolution: {integrity: sha512-2sJGJTaXIIaR1w4iJSNoN0hnMY7Gpc/n8D4qSCJw8QqFWXf7cuAgnEHxBpweaVcPevC2l3KpjYCx3NypQQgaJg==}
     engines: {node: '>= 0.8', npm: 1.2.8000 || >= 1.4.16}
 
-  detect-libc@2.0.4:
-    resolution: {integrity: sha512-3UDv+G9CsCKO1WKMGw9fwq/SWJYbI0c5Y7LU1AXYoDdbhE2AHQ6N6Nb34sG8Fj7T5APy8qXDCKuuIHd1BR0tVA==}
-    engines: {node: '>=8'}
-
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
@@ -11765,7 +11765,7 @@ snapshots:
       '@react-pdf/paginate': 1.0.1
       '@react-pdf/primitives': 4.4.0
       '@react-pdf/stylesheet': 6.3.1
-      '@react-pdf/textkit': 7.0.1
+      '@react-pdf/textkit': 7.0.1(patch_hash=2637cf919661d9266047c190bee95f16e5e681cf1cc4316442b3f981b7fadfc4)
       '@react-pdf/types': 2.13.1
       emoji-regex-xs: 1.0.0
       queue: 6.0.2
@@ -11786,7 +11786,7 @@ snapshots:
       '@babel/runtime': 7.29.7
       '@react-pdf/fns': 3.1.3
       '@react-pdf/primitives': 4.4.0
-      '@react-pdf/textkit': 7.0.1
+      '@react-pdf/textkit': 7.0.1(patch_hash=2637cf919661d9266047c190bee95f16e5e681cf1cc4316442b3f981b7fadfc4)
       '@react-pdf/types': 2.13.1
       abs-svg-path: 0.1.1
       color-string: 2.1.4
@@ -11824,7 +11824,7 @@ snapshots:
     dependencies:
       '@react-pdf/primitives': 4.4.0
 
-  '@react-pdf/textkit@7.0.1':
+  '@react-pdf/textkit@7.0.1(patch_hash=2637cf919661d9266047c190bee95f16e5e681cf1cc4316442b3f981b7fadfc4)':
     dependencies:
       '@react-pdf/fns': 3.1.3
       '@react-pdf/hyphenate': 0.1.0
@@ -14160,8 +14160,6 @@ snapshots:
 
   destroy@1.2.0: {}
 
-  detect-libc@2.0.4: {}
-
   detect-libc@2.1.2: {}
 
   detect-node-es@1.1.0: {}
@@ -15549,7 +15547,7 @@ snapshots:
 
   lightningcss@1.32.0:
     dependencies:
-      detect-libc: 2.0.4
+      detect-libc: 2.1.2
     optionalDependencies:
       lightningcss-android-arm64: 1.32.0
       lightningcss-darwin-arm64: 1.32.0

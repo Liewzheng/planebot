@@ -287,6 +287,7 @@ minimumReleaseAgeExclude:
 
 patchedDependencies:
   '@headlessui/react@2.2.10': patches/@headlessui__react@2.2.10.patch
+  '@react-pdf/textkit@7.0.1': patches/@react-pdf__textkit@7.0.1.patch
   react-color@2.19.3: patches/react-color@2.19.3.patch
 
 peerDependencyRules:

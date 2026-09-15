@@ -92,3 +92,73 @@ export const resolvePdfFontFamilies = (text: string): string[] => {
   const preferred = LOCALE_FONT_FAMILY[detectPdfFontLocale(text)];
   return [preferred, ...PDF_FALLBACK_FONT_FAMILIES.filter((family) => family !== preferred)];
 };
+
+/**
+ * Word-breaking for the PDF exporters, as a react-pdf hyphenation callback.
+ *
+ * react-pdf's text layout splits text into words on spaces only and never
+ * breaks inside a word by default, so any run without spaces — a Chinese
+ * sentence, a URL, a code identifier, a commit hash — is treated as one
+ * unbreakable box and overflows its container (in table cells it even bleeds
+ * past the page edge). Registering this as `Font.registerHyphenationCallback`
+ * tells the line breaker which fragments a word may be split between; the
+ * fragments are joined back verbatim, so the rendered text is unchanged.
+ *
+ * Break opportunities follow roughly UAX #14 practice: between CJK code
+ * points (ideographs, kana, Hangul, CJK punctuation, fullwidth forms), plus
+ * after ASCII separator characters inside latin runs (/, -, _, . and
+ * friends, so URLs and snake_case identifiers wrap at readable spots). Runs
+ * longer than LONG_RUN_THRESHOLD with no separator — hex hashes, base64
+ * tokens — are hard-split into LONG_RUN_CHUNK pieces so extreme tokens still
+ * cannot overflow. All of these are only opportunities: the line breaker
+ * takes one when the whole word does not fit, and prefers plain space breaks
+ * otherwise.
+ */
+const LONG_RUN_THRESHOLD = 20;
+const LONG_RUN_CHUNK = 10;
+
+const CJK_BREAKABLE =
+  /[\u1100-\u11ff\u2e80-\u303f\u3040-\u30ff\u3130-\u318f\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\ua960-\ua97f\uac00-\ud7a3\uf900-\ufaff\uff00-\uffef]/u;
+const ASCII_SEPARATOR = /[/\-_.=?!&%+:;@#~,]/;
+
+export const pdfWordBreakParts = (word: string): string[] => {
+  if (!word) return [""];
+
+  const splitLongRun = (run: string): string[] => {
+    if (!run) return [];
+    if (run.length <= LONG_RUN_THRESHOLD) return [run];
+    const chunks: string[] = [];
+    for (let i = 0; i < run.length; i += LONG_RUN_CHUNK) {
+      chunks.push(run.slice(i, i + LONG_RUN_CHUNK));
+    }
+    return chunks;
+  };
+
+  const parts: string[] = [];
+  let latin = "";
+  const flushLatin = () => {
+    if (!latin) return;
+    let piece = "";
+    for (const ch of latin) {
+      piece += ch;
+      if (ASCII_SEPARATOR.test(ch)) {
+        parts.push(piece);
+        piece = "";
+      }
+    }
+    parts.push(...splitLongRun(piece));
+    latin = "";
+  };
+
+  for (const ch of word) {
+    if (CJK_BREAKABLE.test(ch)) {
+      flushLatin();
+      parts.push(ch);
+    } else {
+      latin += ch;
+    }
+  }
+  flushLatin();
+
+  return parts.length > 0 ? parts : [""];
+};

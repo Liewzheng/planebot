@@ -16,7 +16,7 @@ import {
   textFontFamiliesFor,
 } from "./fonts";
 import { pdfStyles } from "./styles";
-import { resolvePdfFontFamilies } from "@plane/utils";
+import { pdfWordBreakParts, resolvePdfFontFamilies } from "@plane/utils";
 import type { PDFExportOptions, TipTapDocument, TipTapNode } from "./types";
 
 // Use createRequire for ESM compatibility to resolve font file paths
@@ -110,6 +110,10 @@ for (const subset of NOTO_FONT_SUBSETS) {
     [700, path.join(dir, subset.bold)],
   ]);
 }
+
+// Break long unspaced runs (CJK sentences, URLs, code tokens) instead of
+// letting them overflow the page — see pdfWordBreakParts in @plane/utils.
+Font.registerHyphenationCallback(pdfWordBreakParts);
 
 /**
  * Concatenated text of a document, used to detect which locale's glyph forms it

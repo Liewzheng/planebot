@@ -18,7 +18,7 @@ import interThin from "@/app/assets/fonts/inter/thin.ttf?url";
 import interUltraBold from "@/app/assets/fonts/inter/ultrabold.ttf?url";
 import interUltraLight from "@/app/assets/fonts/inter/ultralight.ttf?url";
 // plane imports
-import { convertRemToPixel, resolvePdfFontFamilies } from "@plane/utils";
+import { convertRemToPixel, pdfWordBreakParts, resolvePdfFontFamilies } from "@plane/utils";
 // local imports
 import { NOTO_FONT_SUBSETS, codeBoldFontFamiliesFor, codeFontFamiliesFor, textFontFamiliesFor } from "./fonts";
 
@@ -210,6 +210,10 @@ Font.register({
     { src: interHeavy, fontWeight: "heavy", fontStyle: "italic" },
   ],
 });
+
+// Break long unspaced runs (CJK sentences, URLs, code tokens) instead of
+// letting them overflow the page — see pdfWordBreakParts in @plane/utils.
+Font.registerHyphenationCallback(pdfWordBreakParts);
 
 /**
  * Register each vendored subset as a fallback family: one source per weight, with
