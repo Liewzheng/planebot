@@ -6,8 +6,9 @@
 
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
+import { useCallback, useRef, useState } from "react";
 // plane imports
-import type { TDisplayConfig } from "@plane/editor";
+import { ImageFullScreenModal, type TDisplayConfig } from "@plane/editor";
 import type { TPageVersion } from "@plane/types";
 import { Loader } from "@plane/ui";
 import { cn, getEditorAssetSrc } from "@plane/utils";
@@ -43,6 +44,15 @@ const applyDimensionStyle = (el: HTMLElement, attr: "width" | "height") => {
   el.style.setProperty(attr, /^\d+(\.\d+)?$/.test(value) ? `${value}px` : value);
 };
 
+// static images open the full-screen viewer on click/keyboard activation, so
+// they need the same affordances the editor's image node view gets
+const makeImageInteractive = (img: HTMLImageElement) => {
+  img.classList.add("cursor-zoom-in");
+  img.setAttribute("tabindex", "0");
+  img.setAttribute("role", "button");
+  img.setAttribute("aria-label", "View image full screen");
+};
+
 // Version snapshots are immutable, so they are rendered as sanitized static HTML
 // instead of mounting a second (read-only) editor instance. The stored description_html
 // is class-less server-generated markup, so re-apply the block class hooks the client
@@ -58,6 +68,7 @@ const sanitizeVersionHTML = (html: string, workspaceSlug?: string, projectId?: s
     if (src) img.setAttribute("src", resolveAssetSrc(src, workspaceSlug, projectId));
     applyDimensionStyle(img, "width");
     applyDimensionStyle(img, "height");
+    makeImageInteractive(img);
   });
   // custom-image nodes serialize as <image-component>; swap them for plain <img>
   container.querySelectorAll("image-component").forEach((component) => {
@@ -70,6 +81,7 @@ const sanitizeVersionHTML = (html: string, workspaceSlug?: string, projectId?: s
     });
     applyDimensionStyle(img, "width");
     applyDimensionStyle(img, "height");
+    makeImageInteractive(img);
     component.replaceWith(img);
   });
   return container.innerHTML;
@@ -81,6 +93,46 @@ export const PagesVersionEditor = observer(function PagesVersionEditor(props: TV
   const { fontSize, fontStyle } = usePageFilters();
   // route params
   const { workspaceSlug, projectId } = useParams();
+  // full-screen image preview state
+  const [fullScreenImage, setFullScreenImage] = useState<{ src: string; aspectRatio: number; width: string } | null>(
+    null
+  );
+  const contentRef = useRef<HTMLDivElement>(null);
+  const isTouchDevice = typeof window !== "undefined" && (navigator.maxTouchPoints > 0 || "ontouchstart" in window);
+
+  const openImagePreview = useCallback((img: HTMLImageElement) => {
+    const src = img.currentSrc || img.src;
+    if (!src) return;
+    const { naturalWidth, naturalHeight } = img;
+    setFullScreenImage({
+      src,
+      // fallbacks mirror the mermaid full-screen preview in the code block node view
+      aspectRatio: naturalWidth > 0 && naturalHeight > 0 ? naturalWidth / naturalHeight : 16 / 9,
+      width: naturalWidth > 0 ? `${naturalWidth}px` : "800px",
+    });
+  }, []);
+
+  // static markup carries no React handlers, so delegate click/keyboard
+  // activation from the container to its images
+  const handleContentClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!(e.target instanceof HTMLElement)) return;
+      const img = e.target.closest("img");
+      if (!(img instanceof HTMLImageElement) || !contentRef.current?.contains(img)) return;
+      openImagePreview(img);
+    },
+    [openImagePreview]
+  );
+
+  const handleContentKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      if (!(e.target instanceof HTMLImageElement) || !contentRef.current?.contains(e.target)) return;
+      e.preventDefault();
+      openImagePreview(e.target);
+    },
+    [openImagePreview]
+  );
 
   const displayConfig: TDisplayConfig = {
     fontSize,
@@ -142,6 +194,9 @@ export const PagesVersionEditor = observer(function PagesVersionEditor(props: TV
   return (
     <div className={cn("frame-renderer w-full flex-grow", { "wide-layout": displayConfig.wideLayout })}>
       <div
+        ref={contentRef}
+        onClick={handleContentClick}
+        onKeyDown={handleContentKeyDown}
         className={cn(
           "editor-container relative cursor-text",
           `line-spacing-${displayConfig.lineSpacing ?? "regular"}`,
@@ -161,6 +216,17 @@ export const PagesVersionEditor = observer(function PagesVersionEditor(props: TV
           dangerouslySetInnerHTML={{ __html: sanitizedDescriptionHTML }}
         />
       </div>
+      <ImageFullScreenModal
+        src={fullScreenImage?.src ?? ""}
+        downloadSrc={fullScreenImage?.src ?? ""}
+        isFullScreenEnabled={!!fullScreenImage}
+        isTouchDevice={isTouchDevice}
+        aspectRatio={fullScreenImage?.aspectRatio ?? 16 / 9}
+        width={fullScreenImage?.width ?? "800px"}
+        toggleFullScreenMode={(val) => {
+          if (!val) setFullScreenImage(null);
+        }}
+      />
     </div>
   );
 });
