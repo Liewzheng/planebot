@@ -157,6 +157,10 @@ const EDITOR_PDF_DOCUMENT_STYLESHEET = StyleSheet.create({
   img: {
     marginVertical: 0,
     borderRadius: convertRemToPixel(0.375),
+    // editor display widths are CSS pixels and routinely exceed the page
+    // content box (e.g. 1101px on A4) — clamp to the container so wide
+    // images scale down instead of running off the page
+    maxWidth: "100%",
   },
   // divider
   "div[data-type='horizontalRule']": {
