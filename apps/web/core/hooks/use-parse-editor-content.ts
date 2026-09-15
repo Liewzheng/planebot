@@ -110,12 +110,13 @@ export const useParseEditorContent = (args: TArgs) => {
         imageComponents.forEach((component) => {
           // get the image src from the component
           const src = component.getAttribute("src") ?? "";
-          const height = component.getAttribute("height") ?? "";
           const width = component.getAttribute("width") ?? "";
           // create an img element to replace the image-component
           const img = doc.createElement("img");
           img.src = src;
-          img.style.height = height;
+          // width only — react-pdf derives the height from the image's aspect
+          // ratio, so a declared height would survive a max-width clamp
+          // unmatched and distort the picture
           img.style.width = width;
           // replace the image-component with the img element
           component.replaceWith(img);
@@ -129,7 +130,19 @@ export const useParseEditorContent = (args: TArgs) => {
           const src = img.getAttribute("src");
           if (src) {
             try {
-              const base64Image = await getBase64Image(src);
+              // stored src can be a bare asset id — resolve it through the same
+              // helper the editor file handler uses, like getEditorMetaData does
+              const assetSrc =
+                src.startsWith("http") || src.startsWith("data:") || src.startsWith("blob:")
+                  ? src
+                  : (getEditorAssetSrc({ assetId: src, projectId, workspaceSlug }) ?? src);
+              // getEditorAssetSrc returns a root-relative URL when API_BASE_URL
+              // is unset — getBase64Image needs an absolute URL to fetch
+              const absoluteSrc =
+                assetSrc.startsWith("/") && typeof window !== "undefined"
+                  ? new URL(assetSrc, window.location.origin).href
+                  : assetSrc;
+              const base64Image = await getBase64Image(absoluteSrc);
               img.src = base64Image;
             } catch (error) {
               // log the error if the image conversion fails
@@ -160,7 +173,7 @@ export const useParseEditorContent = (args: TArgs) => {
       serializedDoc = serializedDoc.replace(/background-color: null/g, "").replace(/color: null/g, "");
       return serializedDoc;
     },
-    [getUserDetails, parseAdditionalEditorContent]
+    [getUserDetails, parseAdditionalEditorContent, projectId, workspaceSlug]
   );
 
   /**

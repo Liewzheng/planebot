@@ -885,4 +885,42 @@ describe("PDF Rendering Integration", () => {
       expect(text).toContain("Text after image");
     });
   });
+
+  describe("image node asset resolution", () => {
+    // stored page content can carry bare asset ids as an image node's src; the
+    // exporter resolves them into metadata.resolvedImageUrls before rendering
+    const PNG_1PX =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+    it("embeds the image when the bare asset id resolves to a fetchable URL", async () => {
+      const doc: TipTapDocument = {
+        type: "doc",
+        content: [
+          { type: "image", attrs: { src: "800f7c20-5473-4c49-a9cb-84d4bf4293c6", width: 1101 } },
+          { type: "paragraph", content: [{ type: "text", text: "Text after image" }] },
+        ],
+      };
+
+      const buffer = await renderPlaneDocToPdfBuffer(doc, {
+        metadata: { resolvedImageUrls: { "800f7c20-5473-4c49-a9cb-84d4bf4293c6": PNG_1PX } },
+      });
+      const text = await extractPdfText(buffer);
+
+      expect(text).toContain("Text after image");
+      expect(buffer.toString("latin1")).toMatch(/\/Subtype\s*\/Image/);
+    });
+
+    it("renders a placeholder instead of the picture when the asset id does not resolve", async () => {
+      const doc: TipTapDocument = {
+        type: "doc",
+        content: [{ type: "image", attrs: { src: "800f7c20-5473-4c49-a9cb-84d4bf4293c6" } }],
+      };
+
+      const buffer = await renderPlaneDocToPdfBuffer(doc);
+      const text = await extractPdfText(buffer);
+
+      expect(text).toContain("[Image: 800f7c20...]");
+      expect(buffer.toString("latin1")).not.toMatch(/\/Subtype\s*\/Image/);
+    });
+  });
 });

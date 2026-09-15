@@ -279,6 +279,10 @@ export const nodeRenderers: NodeRendererRegistry = {
       return <View key={ctx.getKey()} />;
     }
 
+    // stored src can be a bare asset id — the exporter resolves those to
+    // fetchable URLs in metadata.resolvedImageUrls (same as imageComponent)
+    const resolvedSrc = ctx.metadata?.resolvedImageUrls?.[src] ?? src;
+
     const alignmentStyle =
       alignment === "center"
         ? { alignItems: "center" as const }
@@ -286,11 +290,24 @@ export const nodeRenderers: NodeRendererRegistry = {
           ? { alignItems: "flex-end" as const }
           : { alignItems: "flex-start" as const };
 
+    if (!resolvedSrc.startsWith("http") && !resolvedSrc.startsWith("data:")) {
+      return (
+        <View key={ctx.getKey()} style={[pdfStyles.imagePlaceholder, alignmentStyle]}>
+          <Text style={pdfStyles.imagePlaceholderText}>[Image: {src.slice(0, 8)}...]</Text>
+        </View>
+      );
+    }
+
     return (
       <View key={ctx.getKey()} style={[{ width: "100%" }, alignmentStyle]}>
         <Image
-          src={src}
-          style={[pdfStyles.image, width ? { width, maxHeight: 500 } : { maxWidth: 400, maxHeight: 500 }]}
+          src={resolvedSrc}
+          style={[
+            pdfStyles.image,
+            // editor width attrs are CSS pixels and can exceed the page
+            // content box — clamp so wide images scale down, not overflow
+            width ? { width, maxWidth: "100%", maxHeight: 500 } : { maxWidth: 400, maxHeight: 500 },
+          ]}
         />
       </View>
     );
@@ -330,7 +347,8 @@ export const nodeRenderers: NodeRendererRegistry = {
       );
     }
 
-    const imageStyle = width && !isNaN(width) ? { width, maxHeight: 500 } : { maxWidth: 400, maxHeight: 500 };
+    const imageStyle =
+      width && !isNaN(width) ? { width, maxWidth: "100%" as const, maxHeight: 500 } : { maxWidth: 400, maxHeight: 500 };
 
     return (
       <View key={ctx.getKey()} style={[{ width: "100%" }, alignmentStyle]}>
