@@ -106,7 +106,7 @@ export const PagesVersionEditor = observer(function PagesVersionEditor(props: TV
           displayConfig.fontStyle,
           "w-full max-w-full focus:border-0 focus:outline-none sm:rounded-lg",
           "border border-subtle-1",
-          "relative border-none p-0 pb-3 pb-64 pl-3",
+          "border-none p-0 pb-64",
           "document-editor"
         )}
       >
