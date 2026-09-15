@@ -40,6 +40,10 @@ export function ImageExtension(props: Props) {
       return {
         ...this.parent?.(),
         getImageSource: getAssetSrc,
+        // old image nodes have no dedicated download endpoint — without this the
+        // shared node view never resolves a download source and renders no toolbar
+        // (download/full-screen actions missing in both edit and read mode)
+        getImageDownloadSource: getAssetSrc,
       };
     },
 

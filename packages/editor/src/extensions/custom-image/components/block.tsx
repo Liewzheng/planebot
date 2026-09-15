@@ -6,6 +6,7 @@
 
 import { NodeSelection } from "@tiptap/pm/state";
 import React, { useRef, useState, useCallback, useLayoutEffect, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 // plane imports
 import { cn } from "@plane/utils";
 // local imports
@@ -14,6 +15,7 @@ import type { Pixel, TCustomImageAttributes, TCustomImageSize } from "../types";
 import { ensurePixelString, getImageBlockId, isImageDuplicating } from "../utils";
 import type { CustomImageNodeViewProps } from "./node-view";
 import { ImageToolbarRoot } from "./toolbar";
+import { ImageFullScreenModal } from "./toolbar/full-screen/modal";
 import { ImageUploadStatus } from "./upload-status";
 
 const MIN_SIZE = 100;
@@ -43,6 +45,7 @@ export function CustomImageBlock(props: CustomImageBlockProps) {
     downloadSrc: resolvedDownloadSrc,
     updateAttributes,
   } = props;
+  const { t } = useTranslation("editor");
   const {
     width: nodeWidth,
     height: nodeHeight,
@@ -59,6 +62,7 @@ export function CustomImageBlock(props: CustomImageBlockProps) {
   });
   const [isResizing, setIsResizing] = useState(false);
   const [initialResizeComplete, setInitialResizeComplete] = useState(false);
+  const [isReadOnlyFullScreenEnabled, setIsReadOnlyFullScreenEnabled] = useState(false);
   // refs
   const containerRef = useRef<HTMLDivElement>(null);
   const containerRect = useRef<DOMRect | null>(null);
@@ -222,6 +226,29 @@ export function CustomImageBlock(props: CustomImageBlockProps) {
   const showImageResizer = editor.isEditable && resolvedImageSrc && initialResizeComplete && !isDuplicating;
   // show the preview image from the file system if the remote image's src is not set
   const displayedImageSrc = resolvedImageSrc || imageFromFileSystem;
+  // in read-only mode the toolbar (and its full-screen action) may be unavailable — e.g. old
+  // image nodes have no download source — so the image itself opens the full-screen preview,
+  // matching the static version-history view
+  const isReadOnlyImageInteractionEnabled = !editor.isEditable && !!displayedImageSrc;
+
+  const handleReadOnlyImageClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isReadOnlyImageInteractionEnabled) return;
+      e.stopPropagation();
+      setIsReadOnlyFullScreenEnabled(true);
+    },
+    [isReadOnlyImageInteractionEnabled]
+  );
+
+  const handleReadOnlyImageKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (!isReadOnlyImageInteractionEnabled) return;
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      setIsReadOnlyFullScreenEnabled(true);
+    },
+    [isReadOnlyImageInteractionEnabled]
+  );
 
   return (
     <div
@@ -294,12 +321,22 @@ export function CustomImageBlock(props: CustomImageBlockProps) {
             // hide the image while the background calculations of the image loader are in progress (to avoid flickering) and show the loader until then
             hidden: showImageLoader,
             "read-only-image": !editor.isEditable,
+            "cursor-zoom-in": isReadOnlyImageInteractionEnabled,
             "loading-image opacity-80 blur-sm": !resolvedImageSrc,
           })}
           style={{
             width: size.width,
             ...(size.aspectRatio && { aspectRatio: size.aspectRatio }),
           }}
+          {...(isReadOnlyImageInteractionEnabled
+            ? {
+                role: "button",
+                tabIndex: 0,
+                "aria-label": t("view_image_full_screen"),
+                onClick: handleReadOnlyImageClick,
+                onKeyDown: handleReadOnlyImageKeyDown,
+              }
+            : {})}
         />
         {showUploadStatus && node.attrs[ECustomImageAttributeNames.ID] && (
           <ImageUploadStatus editor={editor} nodeId={node.attrs[ECustomImageAttributeNames.ID]} />
@@ -350,6 +387,17 @@ export function CustomImageBlock(props: CustomImageBlockProps) {
           </>
         )}
       </div>
+      {isReadOnlyImageInteractionEnabled && (
+        <ImageFullScreenModal
+          aspectRatio={size.aspectRatio ?? 1}
+          downloadSrc={resolvedDownloadSrc || displayedImageSrc}
+          isFullScreenEnabled={isReadOnlyFullScreenEnabled}
+          isTouchDevice={isTouchDevice}
+          src={displayedImageSrc}
+          width={size.width}
+          toggleFullScreenMode={setIsReadOnlyFullScreenEnabled}
+        />
+      )}
     </div>
   );
 }
