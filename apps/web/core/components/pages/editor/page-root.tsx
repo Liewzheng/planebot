@@ -171,6 +171,7 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
           fetchVersionDetails={handlers.fetchVersionDetails}
           handleRestore={handleRestoreVersion}
           pageId={page.id ?? ""}
+          pageName={page.name}
           restoreEnabled={isEditorEditable}
           storeType={storeType}
         />

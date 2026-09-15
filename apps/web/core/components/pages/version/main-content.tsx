@@ -15,7 +15,9 @@ import type { TPageVersion } from "@plane/types";
 import { renderFormattedDate, renderFormattedTime } from "@plane/utils";
 // helpers
 import type { EPageStoreType } from "@/hooks/store";
+import { usePageFilters } from "@/hooks/use-page-filters";
 // local imports
+import { getPageContentColumnClassName } from "../page-content-column";
 import type { TVersionEditorProps } from "./editor";
 
 type Props = {
@@ -25,6 +27,7 @@ type Props = {
   handleClose: () => void;
   handleRestore: (descriptionHTML: string) => Promise<void>;
   pageId: string;
+  pageName?: string;
   restoreEnabled: boolean;
   storeType: EPageStoreType;
 };
@@ -37,12 +40,15 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
     handleClose,
     handleRestore,
     pageId,
+    pageName,
     restoreEnabled,
     storeType,
   } = props;
   // states
   const [isRestoring, setIsRestoring] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
+  // page filters
+  const { isFullWidth } = usePageFilters();
 
   const {
     data: versionDetails,
@@ -82,7 +88,9 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
   const VersionEditor = editorComponent;
 
   return (
-    <div className="flex flex-grow flex-col overflow-hidden">
+    // id + container name pair this view with the same layout rules (#page-content-container)
+    // that govern the live document, so the content column is identical in both modes
+    <div id="page-version-container" className="flex flex-grow flex-col overflow-hidden">
       {versionDetailsError ? (
         <div className="grid flex-grow place-items-center">
           <div className="flex flex-col items-center gap-4 text-center">
@@ -100,26 +108,43 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
         </div>
       ) : (
         <>
-          <div className="flex min-h-14 items-center justify-between gap-2 border-b border-subtle px-5 py-3">
-            <div className="flex items-center gap-4">
-              <h6 className="text-14 font-medium">
-                {versionDetails
-                  ? `${renderFormattedDate(versionDetails.last_saved_at)} ${renderFormattedTime(versionDetails.last_saved_at)}`
-                  : "Loading version details"}
-              </h6>
-              <span className="flex flex-shrink-0 items-center gap-1 rounded-sm bg-accent-primary/20 px-1.5 py-1 text-11 font-medium text-accent-primary">
-                <ShowOutline className="size-3 flex-shrink-0" />
-                View only
-              </span>
+          <div className="flex min-h-14 items-center border-b border-subtle py-3">
+            {/* same page-header-container + content column classes as the live page header */}
+            <div className="page-header-container flex w-full items-center justify-between gap-2">
+              <div className={getPageContentColumnClassName(isFullWidth)}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-4">
+                    <h6 className="text-14 font-medium">
+                      {versionDetails
+                        ? `${renderFormattedDate(versionDetails.last_saved_at)} ${renderFormattedTime(versionDetails.last_saved_at)}`
+                        : "Loading version details"}
+                    </h6>
+                    <span className="flex flex-shrink-0 items-center gap-1 rounded-sm bg-accent-primary/20 px-1.5 py-1 text-11 font-medium text-accent-primary">
+                      <ShowOutline className="size-3 flex-shrink-0" />
+                      View only
+                    </span>
+                  </div>
+                  {restoreEnabled && (
+                    <Button
+                      variant="primary"
+                      className="flex-shrink-0"
+                      onClick={handleRestoreVersion}
+                      loading={isRestoring}
+                    >
+                      {isRestoring ? "Restoring" : "Restore"}
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
-            {restoreEnabled && (
-              <Button variant="primary" className="flex-shrink-0" onClick={handleRestoreVersion} loading={isRestoring}>
-                {isRestoring ? "Restoring" : "Restore"}
-              </Button>
-            )}
           </div>
           <div className="vertical-scrollbar scrollbar-sm h-full overflow-y-scroll pt-8">
-            <VersionEditor activeVersion={activeVersion} storeType={storeType} versionDetails={versionDetails} />
+            <VersionEditor
+              activeVersion={activeVersion}
+              pageName={pageName}
+              storeType={storeType}
+              versionDetails={versionDetails}
+            />
           </div>
         </>
       )}

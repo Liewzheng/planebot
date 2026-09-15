@@ -209,7 +209,10 @@
   }
 }
 
-#page-content-container {
+/* the version history overlay reuses the same layout rules so its content
+   column stays pixel-identical to the live document */
+#page-content-container,
+#page-version-container {
   container-name: page-content-container;
   container-type: inline-size;
 
@@ -270,7 +273,9 @@
 /* keep a static padding of 96px for wide layouts for container width >912px and <1344px */
 @container page-content-container (min-width: 912px) and (max-width: 1344px) {
   #page-content-container .frame-renderer.wide-layout .editor-container,
+  #page-version-container .frame-renderer.wide-layout .editor-container,
   #page-content-container .frame-renderer.wide-layout .document-editor-loader,
+  #page-version-container .frame-renderer.wide-layout .document-editor-loader,
   .page-header-container {
     padding-left: var(--wide-content-margin);
     padding-right: var(--wide-content-margin);
@@ -280,7 +285,9 @@
 /* keep a static padding of 20px for wide layouts for container width <912px */
 @container page-content-container (max-width: 912px) {
   #page-content-container .frame-renderer.wide-layout .editor-container,
+  #page-version-container .frame-renderer.wide-layout .editor-container,
   #page-content-container .frame-renderer.wide-layout .document-editor-loader,
+  #page-version-container .frame-renderer.wide-layout .document-editor-loader,
   .page-header-container {
     padding-left: var(--normal-content-margin);
     padding-right: var(--normal-content-margin);
@@ -290,7 +297,9 @@
 /* keep a static padding of 20px for normal layouts for container width <760px */
 @container page-content-container (max-width: 760px) {
   #page-content-container .frame-renderer:not(.wide-layout) .editor-container,
+  #page-version-container .frame-renderer:not(.wide-layout) .editor-container,
   #page-content-container .frame-renderer:not(.wide-layout) .document-editor-loader,
+  #page-version-container .frame-renderer:not(.wide-layout) .document-editor-loader,
   .page-header-container {
     padding-left: var(--normal-content-margin);
     padding-right: var(--normal-content-margin);
