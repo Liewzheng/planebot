@@ -1,0 +1,23 @@
+diff --git a/lib/textkit.js b/lib/textkit.js
+index 7bfe0d9a119a8bd1ec98ff0f4827bd6cb3a967a4..839139a40d1d23d98a8c9b51743584f33e318b6b 100644
+--- a/lib/textkit.js
++++ b/lib/textkit.js
+@@ -2673,14 +2673,17 @@ const breakLines = (attributedString, nodes, breaks) => {
+         // Last breakpoint corresponds to K&P mandatory final glue
+         if (breakPoint === nodes.length - 1)
+             continue;
+         let line;
+         if (node.type === 'penalty') {
+             // @ts-expect-error penalty node will always preceed box or glue node
+             end = prevNode.end;
+             line = slice(start, end, attributedString);
+-            line = insertGlyph(line.string.length, HYPHEN, line);
++            // Patched: upstream appends a HYPHEN glyph at every intra-word
++            // break opportunity taken, but our exporters drive word breaking
++            // (CJK text, URLs, code tokens) through the hyphenation callback,
++            // where a spurious hyphen is wrong.
+         }
+         else {
+             end = node.end;
+             line = slice(start, end, attributedString);
+         }
