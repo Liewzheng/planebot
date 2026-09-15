@@ -5,16 +5,13 @@
  */
 
 import { observer } from "mobx-react";
-import { useParams } from "next/navigation";
 // plane imports
 import type { TDisplayConfig } from "@plane/editor";
-import type { JSONContent, TPageVersion } from "@plane/types";
+import type { TPageVersion } from "@plane/types";
 import { Loader } from "@plane/ui";
-import { isJSONContentEmpty } from "@plane/utils";
-// components
-import { DocumentEditor } from "@/components/editor/document/editor";
+import { cn } from "@plane/utils";
+import DOMPurify from "dompurify";
 // hooks
-import { useWorkspace } from "@/hooks/store/use-workspace";
 import { usePageFilters } from "@/hooks/use-page-filters";
 // plane web hooks
 import type { EPageStoreType } from "@/hooks/store";
@@ -25,14 +22,12 @@ export type TVersionEditorProps = {
   storeType: EPageStoreType;
 };
 
+// Version snapshots are immutable, so they are rendered as sanitized static HTML
+// instead of mounting a second (read-only) editor instance.
+const sanitizeVersionHTML = (html: string): string => DOMPurify.sanitize(html, { FORBID_ATTR: ["style"] });
+
 export const PagesVersionEditor = observer(function PagesVersionEditor(props: TVersionEditorProps) {
-  const { activeVersion, versionDetails } = props;
-  // params
-  const { workspaceSlug, projectId } = useParams();
-  // store hooks
-  const { getWorkspaceBySlug } = useWorkspace();
-  // derived values
-  const workspaceDetails = getWorkspaceBySlug(workspaceSlug?.toString() ?? "");
+  const { versionDetails } = props;
   // page filters
   const { fontSize, fontStyle } = usePageFilters();
 
@@ -84,24 +79,37 @@ export const PagesVersionEditor = observer(function PagesVersionEditor(props: TV
       </div>
     );
 
-  const description = isJSONContentEmpty(versionDetails?.description_json as JSONContent)
-    ? versionDetails?.description_html
-    : versionDetails?.description_json;
+  const sanitizedDescriptionHTML = sanitizeVersionHTML(versionDetails.description_html ?? "");
 
-  if (!description) return null;
+  if (!sanitizedDescriptionHTML)
+    return (
+      <div className="grid h-full place-items-center px-5">
+        <p className="text-13 text-tertiary">This version has no content.</p>
+      </div>
+    );
 
   return (
-    <DocumentEditor
-      key={activeVersion ?? ""}
-      editable={false}
-      id={activeVersion ?? ""}
-      value={description}
-      containerClassName="p-0 pb-64 border-none"
-      displayConfig={displayConfig}
-      editorClassName="pl-10"
-      projectId={projectId?.toString()}
-      workspaceId={workspaceDetails?.id ?? ""}
-      workspaceSlug={workspaceSlug?.toString() ?? ""}
-    />
+    <div className={cn("frame-renderer w-full flex-grow", { "wide-layout": displayConfig.wideLayout })}>
+      <div
+        className={cn(
+          "editor-container relative cursor-text",
+          `line-spacing-${displayConfig.lineSpacing ?? "regular"}`,
+          displayConfig.fontSize,
+          displayConfig.fontStyle,
+          "w-full max-w-full focus:border-0 focus:outline-none sm:rounded-lg",
+          "border border-subtle-1",
+          "relative border-none p-0 pb-3 pb-64 pl-3",
+          "document-editor"
+        )}
+      >
+        {/* contentEditable={false} keeps the read-only affordances of the editor styles (e.g. static checkboxes) */}
+        <div
+          className="ProseMirror pl-10"
+          contentEditable={false}
+          suppressContentEditableWarning
+          dangerouslySetInnerHTML={{ __html: sanitizedDescriptionHTML }}
+        />
+      </div>
+    </div>
   );
 });
