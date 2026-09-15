@@ -11,7 +11,7 @@ import { useCallback, useRef, useState } from "react";
 import { ImageFullScreenModal, type TDisplayConfig } from "@plane/editor";
 import type { TPageVersion } from "@plane/types";
 import { Loader } from "@plane/ui";
-import { cn, getEditorAssetSrc } from "@plane/utils";
+import { cn, getEditorAssetSrc, getPageName } from "@plane/utils";
 import DOMPurify from "dompurify";
 // hooks
 import { usePageFilters } from "@/hooks/use-page-filters";
@@ -20,6 +20,7 @@ import type { EPageStoreType } from "@/hooks/store";
 
 export type TVersionEditorProps = {
   activeVersion: string | null;
+  pageName?: string;
   versionDetails: TPageVersion | undefined;
   storeType: EPageStoreType;
 };
@@ -88,9 +89,9 @@ const sanitizeVersionHTML = (html: string, workspaceSlug?: string, projectId?: s
 };
 
 export const PagesVersionEditor = observer(function PagesVersionEditor(props: TVersionEditorProps) {
-  const { versionDetails } = props;
+  const { pageName, versionDetails } = props;
   // page filters
-  const { fontSize, fontStyle } = usePageFilters();
+  const { fontSize, fontStyle, isFullWidth } = usePageFilters();
   // route params
   const { workspaceSlug, projectId } = useParams();
   // full-screen image preview state
@@ -137,7 +138,7 @@ export const PagesVersionEditor = observer(function PagesVersionEditor(props: TV
   const displayConfig: TDisplayConfig = {
     fontSize,
     fontStyle,
-    wideLayout: true,
+    wideLayout: isFullWidth,
   };
 
   if (!versionDetails)
@@ -193,6 +194,27 @@ export const PagesVersionEditor = observer(function PagesVersionEditor(props: TV
 
   return (
     <div className={cn("frame-renderer w-full flex-grow", { "wide-layout": displayConfig.wideLayout })}>
+      {/* same title markup/classes as the live page so both modes read as one document */}
+      {pageName !== undefined && (
+        <div className="relative w-full py-3">
+          <div
+            className={cn(
+              "editor-container page-title-editor relative cursor-text border-none bg-transparent py-3",
+              `line-spacing-${displayConfig.lineSpacing ?? "regular"}`,
+              displayConfig.fontSize,
+              displayConfig.fontStyle
+            )}
+          >
+            <div
+              contentEditable={false}
+              suppressContentEditableWarning
+              className="ProseMirror no-scrollbar placeholder-placeholder w-full resize-none rounded-none border-none bg-transparent p-0 text-[2rem] leading-[2.375rem] font-bold tracking-[-2%] outline-none"
+            >
+              <h1>{getPageName(pageName)}</h1>
+            </div>
+          </div>
+        </div>
+      )}
       <div
         ref={contentRef}
         onClick={handleContentClick}
@@ -210,7 +232,7 @@ export const PagesVersionEditor = observer(function PagesVersionEditor(props: TV
       >
         {/* contentEditable={false} keeps the read-only affordances of the editor styles (e.g. static checkboxes) */}
         <div
-          className="ProseMirror prose-brand prose-headings:font-display font-default max-w-full pl-10 prose focus:outline-none"
+          className="ProseMirror prose-brand prose-headings:font-display font-default max-w-full prose focus:outline-none"
           contentEditable={false}
           suppressContentEditableWarning
           dangerouslySetInnerHTML={{ __html: sanitizedDescriptionHTML }}

@@ -24,12 +24,13 @@ type Props = {
   fetchVersionDetails: (pageId: string, versionId: string) => Promise<TPageVersion | undefined>;
   handleRestore: (descriptionHTML: string) => Promise<void>;
   pageId: string;
+  pageName?: string;
   restoreEnabled: boolean;
   storeType: EPageStoreType;
 };
 
 export const PageVersionsOverlay = observer(function PageVersionsOverlay(props: Props) {
-  const { editorComponent, fetchVersionDetails, handleRestore, pageId, restoreEnabled, storeType } = props;
+  const { editorComponent, fetchVersionDetails, handleRestore, pageId, pageName, restoreEnabled, storeType } = props;
   // navigation
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -66,6 +67,7 @@ export const PageVersionsOverlay = observer(function PageVersionsOverlay(props: 
           handleClose={handleClose}
           handleRestore={handleRestore}
           pageId={pageId}
+          pageName={pageName}
           restoreEnabled={restoreEnabled}
           storeType={storeType}
         />

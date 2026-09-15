@@ -22,7 +22,7 @@ import type {
 import { useTranslation } from "@plane/i18n";
 import type { TSearchEntityRequestPayload, TSearchResponse, TWebhookConnectionQueryParams } from "@plane/types";
 import { ERowVariant, Row } from "@plane/ui";
-import { cn, generateRandomColor, hslToHex } from "@plane/utils";
+import { generateRandomColor, hslToHex } from "@plane/utils";
 // components
 import { EditorMentionsRoot } from "@/components/editor/embeds/mentions";
 // helpers
@@ -44,6 +44,7 @@ import { useEditorFlagging } from "@/hooks/use-editor-flagging";
 import type { TPageInstance } from "@/store/pages/base-page";
 // local imports
 import { PageContentLoader } from "../loaders/page-content-loader";
+import { getPageContentColumnClassName } from "../page-content-column";
 import { PageEditorHeaderRoot } from "./header";
 import { PageContentBrowser } from "./summary";
 import { EditorAIMenu } from "./ai/menu";
@@ -232,12 +233,7 @@ export const PageEditorBody = observer(function PageEditorBody(props: Props) {
     [currentUser?.display_name, currentUser?.id]
   );
 
-  const blockWidthClassName = cn(
-    "mx-auto block w-full max-w-[720px] bg-transparent transition-all duration-200 ease-in-out",
-    {
-      "max-w-[1152px]": isFullWidth,
-    }
-  );
+  const blockWidthClassName = getPageContentColumnClassName(isFullWidth);
 
   const isPageLoading = pageId === undefined || !realtimeConfig;
 
