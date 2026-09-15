@@ -58,16 +58,18 @@ export const PageVersionsOverlay = observer(function PageVersionsOverlay(props: 
         width: `calc(100% - ${PAGE_NAVIGATION_PANE_WIDTH}px)`,
       }}
     >
-      <PageVersionsMainContent
-        activeVersion={activeVersion}
-        editorComponent={editorComponent}
-        fetchVersionDetails={fetchVersionDetails}
-        handleClose={handleClose}
-        handleRestore={handleRestore}
-        pageId={pageId}
-        restoreEnabled={restoreEnabled}
-        storeType={storeType}
-      />
+      {isOpen && (
+        <PageVersionsMainContent
+          activeVersion={activeVersion}
+          editorComponent={editorComponent}
+          fetchVersionDetails={fetchVersionDetails}
+          handleClose={handleClose}
+          handleRestore={handleRestore}
+          pageId={pageId}
+          restoreEnabled={restoreEnabled}
+          storeType={storeType}
+        />
+      )}
     </div>
   );
 });

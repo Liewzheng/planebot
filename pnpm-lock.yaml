@@ -1113,6 +1113,9 @@ importers:
       date-fns:
         specifier: 'catalog:'
         version: 4.1.0
+      dompurify:
+        specifier: 3.4.15
+        version: 3.4.15
       emoji-picker-react:
         specifier: 'catalog:'
         version: 4.12.2(react@19.2.8)

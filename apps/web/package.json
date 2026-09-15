@@ -46,6 +46,7 @@
     "cmdk": "catalog:",
     "comlink": "catalog:",
     "date-fns": "catalog:",
+    "dompurify": "3.4.15",
     "emoji-picker-react": "catalog:",
     "export-to-csv": "catalog:",
     "isbot": "catalog:",
