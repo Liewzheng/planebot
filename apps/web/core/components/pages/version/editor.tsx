@@ -23,8 +23,16 @@ export type TVersionEditorProps = {
 };
 
 // Version snapshots are immutable, so they are rendered as sanitized static HTML
-// instead of mounting a second (read-only) editor instance.
-const sanitizeVersionHTML = (html: string): string => DOMPurify.sanitize(html, { FORBID_ATTR: ["style"] });
+// instead of mounting a second (read-only) editor instance. The stored description_html
+// is class-less server-generated markup, so re-apply the block class hooks the client
+// editor adds (starter-kit) to keep the read-mode typography rules matching.
+const sanitizeVersionHTML = (html: string): string => {
+  const container = document.createElement("div");
+  container.innerHTML = DOMPurify.sanitize(html, { FORBID_ATTR: ["style"] });
+  container.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach((el) => el.classList.add("editor-heading-block"));
+  container.querySelectorAll("p").forEach((el) => el.classList.add("editor-paragraph-block"));
+  return container.innerHTML;
+};
 
 export const PagesVersionEditor = observer(function PagesVersionEditor(props: TVersionEditorProps) {
   const { versionDetails } = props;
@@ -104,7 +112,7 @@ export const PagesVersionEditor = observer(function PagesVersionEditor(props: TV
       >
         {/* contentEditable={false} keeps the read-only affordances of the editor styles (e.g. static checkboxes) */}
         <div
-          className="ProseMirror pl-10"
+          className="ProseMirror prose-brand prose-headings:font-display font-default max-w-full pl-10 prose focus:outline-none"
           contentEditable={false}
           suppressContentEditableWarning
           dangerouslySetInnerHTML={{ __html: sanitizedDescriptionHTML }}
