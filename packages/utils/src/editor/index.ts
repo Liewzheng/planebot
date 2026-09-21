@@ -8,4 +8,5 @@ export * from "./common";
 export * from "./markdown-parser";
 export * from "./mermaid";
 export * from "./math-block";
+export * from "./markdown-images";
 export * from "./math-inline";
