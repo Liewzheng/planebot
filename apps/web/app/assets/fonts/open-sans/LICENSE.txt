@@ -1,0 +1,11 @@
+Open Sans (Apache License, Version 2.0)
+
+Copyright 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans)
+
+This font software is licensed under the Apache License, Version 2.0
+(the "License"). You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Source package: github-theme.zip as provided by the project owner (Typora GitHub
+theme; fonts are Google Fonts' open-sans-v17 latin-ext_latin subsets).
