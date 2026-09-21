@@ -25,6 +25,12 @@ from django.db.models import (
     Subquery,
 )
 
+# Third party imports
+from rest_framework.authentication import SessionAuthentication
+
+# Module imports
+from plane.api.middleware.api_authentication import APIKeyAuthentication
+
 from django.utils import timezone
 from django.conf import settings
 
@@ -320,9 +326,9 @@ class IssueListCreateAPIEndpoint(BaseAPIView):
             return Response(
                 {
                     "pql": (
-                        "PQL and structured filters are not supported on this Plane edition. "
+                        "PQL and structured filters are not supported on this pbot edition. "
                         "Remove the pql/filters parameter and filter results client-side, or use "
-                        "a Plane edition that supports work item query filtering."
+                        "a pbot edition that supports work item query filtering."
                     ),
                     "unsupported_parameters": unsupported_filters,
                 },
@@ -1842,6 +1848,14 @@ class IssueAttachmentListCreateAPIEndpoint(BaseAPIView):
     model = FileAsset
     use_read_replica = True
 
+    # The default APIKeyAuthentication is too strict for `<img>` requests in
+    # rendered comment bodies: the browser auto-includes the session cookie
+    # but never an API key, so images embedded in old comments come back as
+    # 401 placeholders. Accept both so comment images render normally for
+    # logged-in users while external consumers can still authenticate with a
+    # token.
+    authentication_classes = [SessionAuthentication, APIKeyAuthentication]
+
     @issue_attachment_docs(
         operation_id="create_work_item_attachment",
         description="Generate presigned URL for uploading file attachments to a work item.",
@@ -2056,6 +2070,11 @@ class IssueAttachmentDetailAPIEndpoint(BaseAPIView):
     serializer_class = IssueAttachmentSerializer
     model = FileAsset
     use_read_replica = True
+
+    # See IssueAttachmentListCreateAPIEndpoint above — the default
+    # APIKeyAuthentication rejects the session cookie that browsers
+    # auto-attach, so <img> in comments comes back as 401 placeholders.
+    authentication_classes = [SessionAuthentication, APIKeyAuthentication]
 
     @issue_attachment_docs(
         operation_id="delete_work_item_attachment",

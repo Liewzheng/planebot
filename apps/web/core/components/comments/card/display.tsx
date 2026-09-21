@@ -5,7 +5,7 @@
  */
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { observer } from "mobx-react";
 import { usePathname } from "next/navigation";
 // plane imports
@@ -13,6 +13,7 @@ import { Avatar } from "@makeplane/propel/components/avatar";
 import { Tooltip } from "@makeplane/propel/components/tooltip";
 import type { EditorRefApi } from "@plane/editor";
 import { useHashScroll } from "@plane/hooks";
+import { useTranslation } from "@plane/i18n";
 import { GlobeOutline, LockOutline } from "@makeplane/propel/icons";
 import { EIssueCommentAccessSpecifier } from "@plane/types";
 import type { TCommentsOperations, TIssueComment } from "@plane/types";
@@ -62,6 +63,8 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   // store hooks
   const { getUserDetails } = useMember();
+  // translation
+  const { t, currentLocale } = useTranslation();
   // derived values
   const userDetails = getUserDetails(comment?.actor);
   const displayName = comment?.actor_detail?.is_bot
@@ -70,6 +73,29 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
   const avatarUrl = userDetails?.avatar_url ?? comment?.actor_detail?.avatar_url;
 
   const userReactions = activityOperations.userReactions(comment.id);
+
+  // Some older comment bodies store image URLs as
+  // `/api/v1/workspaces/{slug}/projects/{pid}/issues/{id}/attachments/{uuid}/`.
+  // That path actually exists in apps/api, and apps/api now accepts the
+  // user session cookie for it (IssueAttachmentDetailAPIEndpoint.get accepts
+  // SessionAuthentication + APIKeyAuthentication). The browser's session-id
+  // cookie covers that path directly — no rewrite needed for newer comments —
+  // but older comments were written when the api only accepted API keys, and
+  // images came back as 401 placeholders. Rewrite them to the v2 assets path
+  // (`/api/assets/v2/...`) which has always been cookie-authenticated and
+  // redirects to an S3 presigned URL.
+  // Memoised so it does not run on every render (the parent passes the same
+  // string down and re-computing on each render is what was triggering the
+  // React #418 hydration mismatch).
+  const rewrittenCommentHtml = useMemo(
+    () =>
+      (comment?.comment_html ?? "").replace(
+        /(<img\b[^>]*?\bsrc=")([^"]*?)(\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/issues\/([0-9a-f-]{36})\/attachments\/([0-9a-f-]{36}))([^"]*")/gi,
+        (_m, pre, base, _full, slug, projectId, issueId, assetId, post) =>
+          `${pre}${base}/api/assets/v2/workspaces/${slug}/projects/${projectId}/issues/${issueId}/attachments/${assetId}${post}`
+      ),
+    [comment?.comment_html]
+  );
 
   // navigation
   const pathname = usePathname();
@@ -122,7 +148,7 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
         <div className="flex flex-1 flex-wrap items-center gap-1">
           <div className="text-caption-sm-medium">{displayName}</div>
           <div className="text-caption-sm-regular text-tertiary">
-            commented{" "}
+            {t("issue_activity.commented")}
             <Tooltip
               label={`${renderFormattedDate(comment.created_at)} at ${renderFormattedTime(comment.created_at)}`}
               side="bottom"
@@ -130,8 +156,8 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
               delay={200}
             >
               <span className="text-tertiary">
-                {calculateTimeAgo(comment.created_at)}
-                {comment.edited_at && " (edited)"}
+                {calculateTimeAgo(comment.created_at, currentLocale)}
+                {comment.edited_at && ` (${t("edited")})`}
               </span>
             </Tooltip>
           </div>
@@ -167,7 +193,7 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
             editable={false}
             ref={readOnlyEditorRef}
             id={comment.id}
-            initialValue={comment.comment_html ?? ""}
+            initialValue={rewrittenCommentHtml}
             workspaceId={workspaceId}
             workspaceSlug={workspaceSlug}
             containerClassName={cn("!py-1 transition-[border-color] duration-500", highlightClassName)}
