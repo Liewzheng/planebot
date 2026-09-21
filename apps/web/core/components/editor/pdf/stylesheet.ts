@@ -82,7 +82,7 @@ export const EDITOR_PDF_TYPOGRAPHY_STYLES: Styles = {
     fontSize: convertRemToPixel(0.75),
     lineHeight: 1.5,
   },
-  "p:not(ol p, ul p)": {
+  "p:not(ol p, ul p, table p)": {
     marginTop: convertRemToPixel(0.4),
     marginBottom: convertRemToPixel(0.4),
   },
@@ -213,8 +213,8 @@ export const EDITOR_PDF_DOCUMENT_STYLESHEET = StyleSheet.create({
     width: "100%",
   },
   "table td": {
-    paddingVertical: 6,
-    paddingHorizontal: 13,
+    paddingVertical: 3,
+    paddingHorizontal: 10,
     border: "1px solid #ddd",
     fontSize: convertRemToPixel(0.75),
     lineHeight: 1.45,
@@ -225,8 +225,8 @@ export const EDITOR_PDF_DOCUMENT_STYLESHEET = StyleSheet.create({
   // header cells read as a header: shaded and bold (zebra rows are stamped
   // inline by the export preprocessing — this engine does not do nth-child)
   "table th": {
-    paddingVertical: 6,
-    paddingHorizontal: 13,
+    paddingVertical: 3,
+    paddingHorizontal: 10,
     border: "1px solid #ddd",
     backgroundColor: "#f8f8f8",
     fontWeight: "bold",
@@ -239,5 +239,6 @@ export const EDITOR_PDF_DOCUMENT_STYLESHEET = StyleSheet.create({
   "table p": {
     fontSize: convertRemToPixel(0.75),
     lineHeight: 1.45,
+    marginVertical: 0,
   },
 });
