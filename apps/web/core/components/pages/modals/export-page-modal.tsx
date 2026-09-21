@@ -13,6 +13,9 @@ import { useParams } from "react-router";
 import type { EditorRefApi } from "@plane/editor";
 // plane i18n
 import { useTranslation } from "@plane/i18n";
+// plane utils
+import { getEditorAssetSrc } from "@plane/utils";
+import { applyPdfTableLayoutToHtml } from "@plane/utils";
 // plane ui
 import { Button } from "@plane/propel/button";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
@@ -21,6 +24,31 @@ import { CustomSelect, EModalPosition, EModalWidth, ModalCore } from "@plane/ui"
 import { PDFDocument } from "@/components/editor/pdf";
 // hooks
 import { useParseEditorContent } from "@/hooks/use-parse-editor-content";
+// local imports
+import { buildMarkdownArchive } from "./markdown-archive";
+
+/** Lay out the tables of a page export for react-pdf-html.
+ *
+ * react-pdf-html reads `table.style` and each cell's inline `style.width`
+ * (the stylesheet pins `flexGrow`/`flexShrink` to 0 so the pixel widths
+ * stick) but ignores `td { width }` rules, and it has no `nth-child` for the
+ * theme's zebra rows. The helper in @plane/utils/pdf-tables stamps the
+ * content-derived per-cell widths, the table's `width: 100%`, and the zebra
+ * shades inline on the HTML string.
+ */
+const PAGE_CONTENT_WIDTH_PX_LOCAL: Record<string, number> = {
+  A4: 595.28 - 128,
+  A3: 841.89 - 128,
+  A2: 1190.55 - 128,
+  LETTER: 612 - 128,
+  LEGAL: 612 - 128,
+  TABLOID: 792 - 128,
+};
+const layoutPageTables = (html: string, _contentWidthPx: number): string =>
+  // applyPdfTableLayoutToHtml in @plane/utils/pdf-tables stamps per-cell
+  // pixel widths (from the content widths computed there) and the table
+  // `width: 100%` rule react-pdf-html actually reads; also paints zebra.
+  applyPdfTableLayoutToHtml(html, _contentWidthPx);
 
 type Props = {
   editorRef: EditorRefApi | null;
@@ -124,6 +152,8 @@ export function ExportPageModal(props: Props) {
   const selectedPageFormat = watch("page_format");
   const selectedContentVariety = watch("content_variety");
   const isPDFSelected = selectedExportFormat === "pdf";
+  // markdown with images ships as an archive — say so before the download starts
+  const isMarkdownArchive = !isPDFSelected && selectedContentVariety !== "no-assets";
   // Keep non-ASCII characters (Chinese, etc.) in the file name. The previous
   // sanitizer replaced everything outside [a-z0-9-_], so a Chinese title came
   // out as a run of dashes — `cmos--a4.pdf`, `-2026-09-14--a4.pdf`. Only strip
@@ -158,16 +188,35 @@ export function ExportPageModal(props: Props) {
   // handle export as a PDF
   const handleExportAsPDF = async () => {
     try {
-      const pageContent = `<h1 class="page-title">${pageTitle}</h1>${editorRef?.getDocument().html ?? "<p></p>"}`;
-      const parsedPageContent = await replaceCustomComponentsFromHTMLContent({
+      const documentHtml = editorRef?.getDocument().html ?? "<p></p>";
+      // The editor seeds a page with an <h1> carrying the page title, so
+      // prepending our own title would print it twice — swap that first
+      // heading for the styled page-title instead of adding another one.
+      const leadingH1Text = documentHtml
+        .match(/^\s*<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1]
+        ?.replace(/<[^>]+>/g, "")
+        .trim();
+      const pageContent =
+        leadingH1Text && leadingH1Text === pageTitle.trim()
+          ? documentHtml.replace(/^\s*<h1[^>]*>[\s\S]*?<\/h1>/i, `<h1 class="page-title">${pageTitle}</h1>`)
+          : `<h1 class="page-title">${pageTitle}</h1>${documentHtml}`;
+      const contentWidthPx =
+        PAGE_CONTENT_WIDTH_PX_LOCAL[selectedPageFormat as string] ?? PAGE_CONTENT_WIDTH_PX_LOCAL.A4;
+      const parsedHtml = await replaceCustomComponentsFromHTMLContent({
         htmlContent: pageContent,
         noAssets: selectedContentVariety === "no-assets",
+        contentWidthPx,
       });
+      // Table layout: react-pdf-html splits every column evenly, so stamp
+      // each cell with a width derived from its content (a label column no
+      // longer wastes half the page). The theme's zebra row is stamped inline
+      // because the renderer does not understand nth-child selectors.
+      const parsedPageContent = layoutPageTables(parsedHtml, contentWidthPx);
 
       const blob = await pdf(<PDFDocument content={parsedPageContent} pageFormat={selectedPageFormat} />).toBlob();
       initiateDownload(blob, `${fileName}-${selectedPageFormat.toString().toLowerCase()}.pdf`);
     } catch (error) {
-      throw new Error(`Error in exporting as a PDF: ${error}`);
+      throw new Error(`Error in exporting as a PDF: ${error}`, { cause: error });
     }
   };
   // handle export as markdown
@@ -179,10 +228,23 @@ export function ExportPageModal(props: Props) {
         noAssets: selectedContentVariety === "no-assets",
       });
 
+      // with images: the pictures travel with the document (assets/ in a zip),
+      // because the markdown alone only holds links into this instance
+      if (selectedContentVariety !== "no-assets") {
+        const archive = await buildMarkdownArchive({
+          markdown: parsedMarkdownContent,
+          fileName,
+          resolveAssetSrc: (assetId) =>
+            workspaceSlug ? getEditorAssetSrc({ assetId, projectId, workspaceSlug }) : undefined,
+        });
+        initiateDownload(archive, `${fileName}.zip`);
+        return;
+      }
+
       const blob = new Blob([parsedMarkdownContent], { type: "text/markdown" });
       initiateDownload(blob, `${fileName}.md`);
     } catch (error) {
-      throw new Error(`Error in exporting as markdown: ${error}`);
+      throw new Error(`Error in exporting as markdown: ${error}`, { cause: error });
     }
   };
   // handle export
@@ -297,6 +359,7 @@ export function ExportPageModal(props: Props) {
                 />
               </div>
             )}
+            {isMarkdownArchive && <p className="text-11 text-tertiary">{t("export_page.markdown_archive_note")}</p>}
           </div>
         </div>
         <div className="flex items-center justify-end gap-2 border-t-[0.5px] border-subtle px-5 py-4">
