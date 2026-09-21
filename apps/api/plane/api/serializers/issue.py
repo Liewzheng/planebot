@@ -6,6 +6,7 @@
 from django.utils import timezone
 from lxml import html
 from django.db import IntegrityError
+import re
 
 #  Third party imports
 from rest_framework import serializers
@@ -765,6 +766,29 @@ class IssueCommentSerializer(BaseSerializer):
                 raise serializers.ValidationError({"comment_html": "HTML content is not valid"})
             if sanitized_html is not None:
                 data["comment_html"] = sanitized_html
+        return data
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # pbot CLI (and the editor) embed image attachments in comments as a bare
+        # UUID: `<p><img src="{asset_uuid}" /></p>`. That URL is relative to the
+        # current page origin and 404s against the api root. Rewrite it here so
+        # any client (pbot's `--json` reader, the web frontend, webhook consumers)
+        # sees a fully-qualified URL pointing at the v1 attachment endpoint,
+        # which now accepts both session cookie and API key (after the auth
+        # override on IssueAttachmentDetailAPIEndpoint.get).
+        html = data.get("comment_html")
+        if html and instance.issue_id and instance.project_id:
+            try:
+                workspace_slug = instance.issue.project.workspace.slug
+            except Exception:
+                workspace_slug = None
+            if workspace_slug:
+                data["comment_html"] = re.sub(
+                    r"(<img\b[^>]*?\bsrc=\")([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\")",
+                    lambda m: f'{m.group(1)}/api/v1/workspaces/{workspace_slug}/projects/{instance.project_id}/issues/{instance.issue_id}/issue-attachments/{m.group(2)}{m.group(3)}',
+                    html,
+                )
         return data
 
 
