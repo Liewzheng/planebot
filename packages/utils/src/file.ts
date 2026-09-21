@@ -94,3 +94,27 @@ export const csvDownload = (data: Array<Array<string>> | { [key: string]: string
   link.click();
   document.body.removeChild(link);
 };
+
+/**
+ * @description splits a data URI into its mime type and its bytes.
+ *
+ * `getBase64Image` hands images back in this form, and an export archive needs
+ * the bytes back out of it. Both spellings a data URI can take are accepted:
+ * base64 payloads, and percent-encoded plain payloads.
+ * @param {string} dataUri - the data URI to decode
+ * @returns {{ mimeType: string; bytes: Uint8Array }}
+ */
+export const parseDataUri = (dataUri: string): { mimeType: string; bytes: Uint8Array } => {
+  const match = /^data:([^;,]*)(;base64)?,([\s\S]*)$/.exec(dataUri);
+  if (!match) throw new Error("Not a data URI");
+
+  const [, mimeType = "", isBase64, payload = ""] = match;
+  if (isBase64) {
+    const binary = atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+    return { mimeType: mimeType || "application/octet-stream", bytes };
+  }
+
+  return { mimeType: mimeType || "text/plain", bytes: new TextEncoder().encode(decodeURIComponent(payload)) };
+};
