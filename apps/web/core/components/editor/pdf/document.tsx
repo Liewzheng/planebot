@@ -4,214 +4,54 @@
  * See the LICENSE file for details.
  */
 
-import type { PageProps, Styles } from "@react-pdf/renderer";
-import { Document, Font, Page, StyleSheet } from "@react-pdf/renderer";
+import type { PageProps } from "@react-pdf/renderer";
+import { Document, Font, Page } from "@react-pdf/renderer";
 import { Html } from "react-pdf-html";
-// assets
+// assets — the symbol-capable fallback (① → ≥ …) that Open Sans lacks
 import interBold from "@/app/assets/fonts/inter/bold.ttf?url";
-import interHeavy from "@/app/assets/fonts/inter/heavy.ttf?url";
-import interLight from "@/app/assets/fonts/inter/light.ttf?url";
-import interMedium from "@/app/assets/fonts/inter/medium.ttf?url";
 import interRegular from "@/app/assets/fonts/inter/regular.ttf?url";
-import interSemibold from "@/app/assets/fonts/inter/semibold.ttf?url";
-import interThin from "@/app/assets/fonts/inter/thin.ttf?url";
-import interUltraBold from "@/app/assets/fonts/inter/ultrabold.ttf?url";
-import interUltraLight from "@/app/assets/fonts/inter/ultralight.ttf?url";
 // plane imports
-import { convertRemToPixel, pdfWordBreakParts, resolvePdfFontFamilies } from "@plane/utils";
+import { pdfWordBreakParts, resolvePdfFontFamilies } from "@plane/utils";
 // local imports
-import { NOTO_FONT_SUBSETS, codeBoldFontFamiliesFor, codeFontFamiliesFor, textFontFamiliesFor } from "./fonts";
+import {
+  NOTO_FONT_SUBSETS,
+  OPEN_SANS_FONT_SOURCES,
+  codeBoldFontFamiliesFor,
+  codeFontFamiliesFor,
+  textFontFamiliesFor,
+} from "./fonts";
+import { EDITOR_PDF_DOCUMENT_STYLESHEET, EDITOR_PDF_INLINE_CODE_STYLE } from "./stylesheet";
 
 /** Plain text of the exported HTML, used to detect which script the page is in. */
 const htmlToText = (html: string): string => html.replace(/<[^>]*>/g, " ");
 
-const EDITOR_PDF_TYPOGRAPHY_STYLES: Styles = {
-  // page title
-  "h1.page-title": {
-    fontSize: convertRemToPixel(1.6),
-    fontWeight: "bold",
-    marginTop: 0,
-    marginBottom: convertRemToPixel(2),
-  },
-  // headings
-  "h1:not(.page-title)": {
-    fontSize: convertRemToPixel(1.4),
-    fontWeight: "semibold",
-    marginTop: convertRemToPixel(2),
-    marginBottom: convertRemToPixel(0.25),
-  },
-  h2: {
-    fontSize: convertRemToPixel(1.2),
-    fontWeight: "semibold",
-    marginTop: convertRemToPixel(1.4),
-    marginBottom: convertRemToPixel(0.0625),
-  },
-  h3: {
-    fontSize: convertRemToPixel(1.1),
-    fontWeight: "semibold",
-    marginTop: convertRemToPixel(1),
-    marginBottom: convertRemToPixel(0.0625),
-  },
-  h4: {
-    fontSize: convertRemToPixel(1),
-    fontWeight: "semibold",
-    marginTop: convertRemToPixel(1),
-    marginBottom: convertRemToPixel(0.0625),
-  },
-  h5: {
-    fontSize: convertRemToPixel(0.9),
-    fontWeight: "semibold",
-    marginTop: convertRemToPixel(1),
-    marginBottom: convertRemToPixel(0.0625),
-  },
-  h6: {
-    fontSize: convertRemToPixel(0.8),
-    fontWeight: "semibold",
-    marginTop: convertRemToPixel(1),
-    marginBottom: convertRemToPixel(0.0625),
-  },
-  // paragraph
-  "p:not(table p)": {
-    fontSize: convertRemToPixel(0.8),
-  },
-  "p:not(ol p, ul p)": {
-    marginTop: convertRemToPixel(0.25),
-    marginBottom: convertRemToPixel(0.0625),
-  },
-};
-
-const EDITOR_PDF_LIST_STYLES: Styles = {
-  "ul, ol": {
-    fontSize: convertRemToPixel(0.8),
-    marginHorizontal: -20,
-  },
-  "ol p, ul p": {
-    marginVertical: 0,
-  },
-  "ol li, ul li": {
-    marginTop: convertRemToPixel(0.45),
-  },
-  "ul ul, ul ol, ol ol, ol ul": {
-    marginVertical: 0,
-  },
-  "ul[data-type='taskList']": {
-    position: "relative",
-  },
-  "div.input-checkbox": {
-    position: "absolute",
-    top: convertRemToPixel(0.15),
-    left: -convertRemToPixel(1.2),
-    height: convertRemToPixel(0.75),
-    width: convertRemToPixel(0.75),
-    borderWidth: "1.5px",
-    borderStyle: "solid",
-    borderRadius: convertRemToPixel(0.125),
-  },
-  "div.input-checkbox:not(.checked)": {
-    backgroundColor: "#ffffff",
-    borderColor: "#171717",
-  },
-  "div.input-checkbox.checked": {
-    backgroundColor: "#3f76ff",
-    borderColor: "#3f76ff",
-  },
-  "ul li[data-checked='true'] p": {
-    color: "#a3a3a3",
-  },
-};
-
-const EDITOR_PDF_CODE_STYLES: Styles = {
-  // code block
-  "[data-node-type='code-block']": {
-    marginVertical: convertRemToPixel(0.5),
-    padding: convertRemToPixel(1),
-    borderRadius: convertRemToPixel(0.5),
-    backgroundColor: "#f7f7f7",
-    fontSize: convertRemToPixel(0.7),
-  },
-  // inline code block
-  "[data-node-type='inline-code-block']": {
-    margin: 0,
-    paddingVertical: convertRemToPixel(0.25 / 4 + 0.25 / 8),
-    paddingHorizontal: convertRemToPixel(0.375),
-    border: "0.5px solid #e5e5e5",
-    borderRadius: convertRemToPixel(0.25),
-    backgroundColor: "#e8e8e8",
-    color: "#f97316",
-    fontSize: convertRemToPixel(0.7),
-  },
-};
-
-const EDITOR_PDF_DOCUMENT_STYLESHEET = StyleSheet.create({
-  ...EDITOR_PDF_TYPOGRAPHY_STYLES,
-  ...EDITOR_PDF_LIST_STYLES,
-  ...EDITOR_PDF_CODE_STYLES,
-  // quote block
-  blockquote: {
-    borderLeft: "3px solid gray",
-    paddingLeft: convertRemToPixel(1),
-    marginTop: convertRemToPixel(0.625),
-    marginBottom: 0,
-    marginHorizontal: 0,
-  },
-  img: {
-    marginVertical: 0,
-    borderRadius: convertRemToPixel(0.375),
-    // editor display widths are CSS pixels and routinely exceed the page
-    // content box (e.g. 1101px on A4) — clamp to the container so wide
-    // images scale down instead of running off the page
-    maxWidth: "100%",
-  },
-  // divider
-  "div[data-type='horizontalRule']": {
-    marginVertical: convertRemToPixel(1),
-    height: 1,
-    width: "100%",
-    backgroundColor: "gray",
-  },
-  // mention block
-  "[data-node-type='mention-block']": {
-    margin: 0,
-    color: "#3f76ff",
-    backgroundColor: "#3f76ff33",
-    paddingHorizontal: convertRemToPixel(0.375),
-  },
-  // table
-  table: {
-    marginTop: convertRemToPixel(0.5),
-    marginBottom: convertRemToPixel(1),
-    marginHorizontal: 0,
-  },
-  "table td": {
-    padding: convertRemToPixel(0.625),
-    border: "1px solid #e5e5e5",
-  },
-  "table p": {
-    fontSize: convertRemToPixel(0.7),
-  },
+Font.register({
+  // the GitHub theme's latin body; only two weights ship, so the intermediate
+  // ones alias them (a stylesheet asking for them resolves instead of throwing)
+  family: "Open Sans",
+  fonts: [
+    { src: OPEN_SANS_FONT_SOURCES.regular, fontWeight: "thin" },
+    { src: OPEN_SANS_FONT_SOURCES.regular, fontWeight: "ultralight" },
+    { src: OPEN_SANS_FONT_SOURCES.regular, fontWeight: "light" },
+    { src: OPEN_SANS_FONT_SOURCES.regular, fontWeight: "normal" },
+    { src: OPEN_SANS_FONT_SOURCES.italic, fontWeight: "normal", fontStyle: "italic" },
+    { src: OPEN_SANS_FONT_SOURCES.regular, fontWeight: "medium" },
+    { src: OPEN_SANS_FONT_SOURCES.bold, fontWeight: "semibold" },
+    { src: OPEN_SANS_FONT_SOURCES.bold, fontWeight: "bold" },
+    { src: OPEN_SANS_FONT_SOURCES.boldItalic, fontWeight: "bold", fontStyle: "italic" },
+    { src: OPEN_SANS_FONT_SOURCES.bold, fontWeight: "ultrabold" },
+    { src: OPEN_SANS_FONT_SOURCES.bold, fontWeight: "heavy" },
+  ],
 });
 
+// symbols Open Sans does not carry (circled digits, →, ≥, …) resolve to Inter
 Font.register({
   family: "Inter",
   fonts: [
-    { src: interThin, fontWeight: "thin" },
-    { src: interThin, fontWeight: "thin", fontStyle: "italic" },
-    { src: interUltraLight, fontWeight: "ultralight" },
-    { src: interUltraLight, fontWeight: "ultralight", fontStyle: "italic" },
-    { src: interLight, fontWeight: "light" },
-    { src: interLight, fontWeight: "light", fontStyle: "italic" },
     { src: interRegular, fontWeight: "normal" },
     { src: interRegular, fontWeight: "normal", fontStyle: "italic" },
-    { src: interMedium, fontWeight: "medium" },
-    { src: interMedium, fontWeight: "medium", fontStyle: "italic" },
-    { src: interSemibold, fontWeight: "semibold" },
-    { src: interSemibold, fontWeight: "semibold", fontStyle: "italic" },
     { src: interBold, fontWeight: "bold" },
     { src: interBold, fontWeight: "bold", fontStyle: "italic" },
-    { src: interUltraBold, fontWeight: "ultrabold" },
-    { src: interUltraBold, fontWeight: "ultrabold", fontStyle: "italic" },
-    { src: interHeavy, fontWeight: "heavy" },
-    { src: interHeavy, fontWeight: "heavy", fontStyle: "italic" },
   ],
 });
 
@@ -251,7 +91,14 @@ export function PDFDocument(props: Props) {
   // Han unification: the subset that comes first decides the glyph form for
   // ideographs the locales share, so order the chain by the document's language.
   const notoFamilies = resolvePdfFontFamilies(htmlToText(content));
+  // applyStylesheets resolves same-element rules in reverse object order, so
+  // the mono override for inline <code> must precede the universal text-family
+  // rule or the latter would win and code would render in the body face.
   const stylesheet = {
+    code: {
+      ...EDITOR_PDF_INLINE_CODE_STYLE,
+      fontFamily: codeFontFamiliesFor(notoFamilies),
+    },
     ...EDITOR_PDF_DOCUMENT_STYLESHEET,
     "*:not(.courier, .courier-bold)": { fontFamily: textFontFamiliesFor(notoFamilies) },
     ".courier": { fontFamily: codeFontFamiliesFor(notoFamilies) },
