@@ -6,9 +6,9 @@
 
 /** Rough width of one displayed character, in px, for the mixed CJK/latin body
  *  font at the export's table size. */
-const PX_PER_CHAR = 7.2;
+const PX_PER_CHAR = 7;
 /** Cell padding (both sides) plus border slack, in px. */
-const CELL_PADDING_PX = 26;
+const CELL_PADDING_PX = 20;
 
 const displayUnits = (text: string): number => {
   let units = 0;
