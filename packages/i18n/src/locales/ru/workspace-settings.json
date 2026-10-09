@@ -150,129 +150,6 @@
           }
         }
       },
-      "ai_accounts": {
-        "title": "AI-аккаунты",
-        "description": "Создавайте и управляйте аккаунтами ботов, которые позволяют AI-агентам получать доступ к вашему воркспейсу с ограниченными правами.",
-        "add_account": "Добавить AI-аккаунт",
-        "modal": {
-          "create_title": "Создать AI-аккаунт",
-          "edit_title": "Редактировать AI-аккаунт",
-          "name": "Имя",
-          "name_required": "Имя обязательно",
-          "description": "Описание",
-          "create": "Создать аккаунт",
-          "update": "Обновить аккаунт",
-          "creating": "Создание",
-          "updating": "Обновление"
-        },
-        "token": {
-          "title": "Аккаунт создан",
-          "rotated_title": "Токен заменён",
-          "copy_warning": "Скопируйте и сохраните этот токен сейчас. После закрытия этого диалога вы больше не сможете его увидеть.",
-          "copied": "Токен скопирован в буфер обмена.",
-          "not_copied": "Не удалось скопировать токен. Попробуйте еще раз."
-        },
-        "list": {
-          "created_on": "Дата создания",
-          "edit": "Редактировать",
-          "delete": "Удалить",
-          "manage_scopes": "Управление областями",
-          "rotate_token": "Ротация токена"
-        },
-        "avatar": {
-          "label": "Аватар",
-          "upload": "Загрузить",
-          "remove": "Удалить"
-        },
-        "delete": {
-          "title": "Удалить AI-аккаунт",
-          "description": "Любая интеграция, использующая этот аккаунт, больше не сможет получить доступ к вашему воркспейсу. Это действие нельзя отменить.",
-          "success": {
-            "title": "Успех!",
-            "message": "AI-аккаунт успешно удален"
-          },
-          "error": {
-            "title": "Ошибка!",
-            "message": "Не удалось удалить AI-аккаунт"
-          }
-        },
-        "rotate": {
-          "title": "Ротация токена",
-          "description": "Текущий токен будет немедленно отозван, и интеграции, использующие его, перестанут работать. Новый токен отображается только один раз.",
-          "confirm": "Ротация токена",
-          "rotating": "Ротация",
-          "success": {
-            "title": "Токен заменён",
-            "message": "Токен AI-аккаунта заменён. Предыдущий токен больше не действителен."
-          },
-          "error": {
-            "title": "Ошибка!",
-            "message": "Не удалось заменить токен"
-          }
-        },
-        "scopes": {
-          "title": "Управление областями",
-          "description": "Области определяют, к чему этот аккаунт имеет доступ. Сохранение заменяет все существующие области.",
-          "project": "Проект",
-          "all_projects": "Все проекты",
-          "resource_type": "Ресурс",
-          "action": "Действие",
-          "resources": {
-            "all": "Все",
-            "project": "Проект",
-            "member": "Участник",
-            "user": "Пользователь",
-            "asset": "Файл",
-            "estimate": "Оценка",
-            "cycle": "Цикл",
-            "module": "Модуль",
-            "sticky": "Sticky",
-            "label": "Метка",
-            "intake": "Intake",
-            "work_item": "Рабочий элемент",
-            "comment": "Комментарий",
-            "state": "Статус",
-            "page": "Страница",
-            "invite": "Приглашение"
-          },
-          "actions": {
-            "all": "Все",
-            "read": "Чтение",
-            "create": "Создать",
-            "update": "Обновить",
-            "delete": "Удалить"
-          },
-          "add_scope": "Добавить область",
-          "save": "Сохранить области",
-          "saving": "Сохранение",
-          "success": {
-            "title": "Успех!",
-            "message": "Области успешно обновлены"
-          },
-          "error": {
-            "title": "Ошибка!",
-            "message": "Не удалось обновить области"
-          }
-        },
-        "toasts": {
-          "created": {
-            "title": "AI-аккаунт создан",
-            "message": "AI-аккаунт успешно создан"
-          },
-          "not_created": {
-            "title": "AI-аккаунт не создан",
-            "message": "Не удалось создать AI-аккаунт"
-          },
-          "updated": {
-            "title": "AI-аккаунт обновлен",
-            "message": "AI-аккаунт успешно обновлен"
-          },
-          "not_updated": {
-            "title": "AI-аккаунт не обновлен",
-            "message": "Не удалось обновить AI-аккаунт"
-          }
-        }
-      },
       "api_tokens": {
         "heading": "API-токены",
         "description": "Создавайте безопасные API-токены для интеграции ваших данных с внешними системами и приложениями.",
@@ -607,6 +484,180 @@
         "heading": "Скрипты",
         "new_script": "Новый скрипт",
         "description": "Автоматизируйте рабочие процессы с помощью пользовательских скриптов и правил автоматизации."
+      },
+      "service_principals": {
+        "title": "Service principals",
+        "description": "Создавайте и управляйте service principals, которые позволяют автоматизированным агентам и интеграциям получать доступ к вашему workspace с ограниченными разрешениями.",
+        "add_principal": "Добавить service principal",
+        "assignable": {
+          "label": "Service principals назначаемы",
+          "description": "Когда включено, service principals отображаются в селекторах назначения и фильтрации по всему workspace. По умолчанию выключено — opt-in держит principals вне селекторов для людей, пока администратор workspace не решит иначе.",
+          "not_persisted": "Backend endpoint для этого переключателя ещё не подключён. Изменения сохраняются только в этой сессии.",
+          "toast_updated": "Настройка назначаемости service principal обновлена",
+          "toast_update_failed": "Не удалось обновить настройку назначаемости service principal"
+        },
+        "step_up": {
+          "hint": "Эта операция влияет на безопасность токена. Введите 6-значный код из приложения-аутентификатора.",
+          "code_required": "Введите 6-значный код",
+          "code_invalid": "Код недействителен или истёк. Попробуйте снова."
+        },
+        "modal": {
+          "create_title": "Создать service principal",
+          "edit_title": "Изменить service principal",
+          "name": "Имя",
+          "name_required": "Имя обязательно",
+          "description": "Описание",
+          "create": "Создать principal",
+          "update": "Обновить principal",
+          "creating": "Создание",
+          "updating": "Обновление"
+        },
+        "token": {
+          "title": "Service principal создан",
+          "rotated_title": "Токен ротирован",
+          "copy_warning": "Скопируйте и сохраните этот токен сейчас. После закрытия этого диалога вы больше не сможете его увидеть.",
+          "copied": "Токен скопирован в буфер обмена.",
+          "not_copied": "Не удалось скопировать токен. Попробуйте снова."
+        },
+        "list": {
+          "created_on": "Создан",
+          "edit": "Редактировать",
+          "delete": "Удалить",
+          "manage_scopes": "Управлять scopes",
+          "manage_grants": "Управлять grants",
+          "rotate_token": "Ротировать токен"
+        },
+        "avatar": {
+          "label": "Аватар",
+          "upload": "Загрузить",
+          "remove": "Удалить"
+        },
+        "delete": {
+          "title": "Удалить service principal",
+          "description": "Любая интеграция, использующая этот principal, больше не сможет получить доступ к вашему workspace. Это действие необратимо.",
+          "success": {
+            "title": "Успех!",
+            "message": "Service principal успешно удалён"
+          },
+          "error": {
+            "title": "Ошибка!",
+            "message": "Не удалось удалить service principal"
+          }
+        },
+        "rotate": {
+          "title": "Ротировать токен",
+          "description": "Текущий токен будет немедленно отозван, а интеграции, использующие его, перестанут работать. Новый токен показывается только один раз.",
+          "confirm": "Ротировать токен",
+          "rotating": "Ротация",
+          "success": {
+            "title": "Токен ротирован",
+            "message": "Токен service principal был ротирован. Предыдущий токен больше недействителен."
+          },
+          "error": {
+            "title": "Ошибка!",
+            "message": "Не удалось ротировать токен"
+          }
+        },
+        "scopes": {
+          "title": "Управлять scopes",
+          "description": "Scopes определяют, к чему этот principal имеет доступ. Сохранение заменяет все существующие scopes.",
+          "project": "Проект",
+          "all_projects": "Все проекты",
+          "resource_type": "Ресурс",
+          "action": "Действие",
+          "resources": {
+            "all": "Все",
+            "project": "Проект",
+            "member": "Участник",
+            "user": "Пользователь",
+            "asset": "Актив",
+            "estimate": "Оценка",
+            "cycle": "Цикл",
+            "module": "Модуль",
+            "sticky": "Sticky",
+            "label": "Метка",
+            "intake": "Intake",
+            "work_item": "Рабочий элемент",
+            "comment": "Комментарий",
+            "state": "Состояние",
+            "page": "Страница",
+            "invite": "Приглашение"
+          },
+          "actions": {
+            "all": "Все",
+            "read": "Чтение",
+            "create": "Создание",
+            "update": "Обновление",
+            "delete": "Удаление"
+          },
+          "add_scope": "Добавить scope",
+          "save": "Сохранить scopes",
+          "saving": "Сохранение",
+          "clear_confirm": {
+            "title": "Удалить все scopes?",
+            "message": "Сохранение без scopes удаляет все разрешения этого principal. Principal отклоняется по умолчанию, пока не будут добавлены новые scopes.",
+            "confirm": "Удалить все scopes"
+          },
+          "success": {
+            "title": "Успех!",
+            "message": "Scopes успешно обновлены"
+          },
+          "error": {
+            "title": "Ошибка!",
+            "message": "Не удалось обновить scopes"
+          }
+        },
+        "grants": {
+          "title": "Управлять grants проектов",
+          "description": "Grants определяют, к каким проектам этот principal имеет доступ и какую максимальную роль может там иметь. Сохранение заменяет все существующие grants.",
+          "project": "Проект",
+          "role_cap": "Лимит роли",
+          "status": "Статус",
+          "add_grant": "Добавить grant",
+          "save": "Сохранить grants",
+          "saving": "Сохранение",
+          "role_caps": {
+            "5": "Гость",
+            "15": "Участник",
+            "20": "Администратор"
+          },
+          "statuses": {
+            "active": "Активный",
+            "inactive": "Неактивный"
+          },
+          "clear_confirm": {
+            "title": "Удалить все grants?",
+            "message": "Сохранение без grants удаляет этого principal из всех проектов. Он не будет участником ни одного проекта, пока не будут добавлены новые grants.",
+            "confirm": "Удалить все grants"
+          },
+          "success": {
+            "title": "Успех!",
+            "message": "Grants успешно обновлены"
+          },
+          "error": {
+            "title": "Ошибка!",
+            "message": "Не удалось обновить grants",
+            "missing_project": "Каждый grant должен ссылаться на проект."
+          }
+        },
+        "toasts": {
+          "created": {
+            "title": "Service principal создан",
+            "message": "Service principal успешно создан"
+          },
+          "not_created": {
+            "title": "Service principal не создан",
+            "message": "Не удалось создать service principal"
+          },
+          "updated": {
+            "title": "Service principal обновлён",
+            "message": "Service principal успешно обновлён"
+          },
+          "not_updated": {
+            "title": "Service principal не обновлён",
+            "message": "Не удалось обновить service principal"
+          }
+        }
       }
     },
     "empty_state": {

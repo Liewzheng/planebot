@@ -226,11 +226,6 @@
       "description": "Proje olayları gerçekleştiğinde harici hizmetlere bildirimleri otomatikleştirin.",
       "cta_primary": "Webhook ekle"
     },
-    "ai_accounts": {
-      "title": "Henüz AI hesabı yok",
-      "description": "AI ajanlarının kapsamlı izinlerle çalışma alanınıza erişmesini sağlamak için AI hesapları oluşturun.",
-      "cta_primary": "AI hesabı ekle"
-    },
     "work_item_types": {
       "title": "İş öğesi türleri oluşturun ve özelleştirin",
       "description": "Projeniz için benzersiz iş öğesi türleri tanımlayın. Her tür, projenizin ve ekibinizin ihtiyaçlarına göre uyarlanmış kendi özellikleri, iş akışları ve alanlarına sahip olabilir.",
@@ -270,6 +265,11 @@
         "title": "Durum ekle",
         "description": "İş öğesinin ilerlediği durumları seçin."
       }
+    },
+    "service_principals": {
+      "title": "Henüz service principal yok",
+      "description": "Otomatikleştirilmiş agent'ların ve entegrasyonların workspace'inize kapsamlı izinlerle erişmesini sağlamak için service principal'lar oluşturun.",
+      "cta_primary": "Service principal ekle"
     }
   }
 }

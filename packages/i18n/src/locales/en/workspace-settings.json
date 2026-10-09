@@ -156,28 +156,35 @@
           }
         }
       },
-      "ai_accounts": {
-        "title": "AI accounts",
-        "description": "Create and manage bot accounts that let AI agents access your workspace with scoped permissions.",
-        "add_account": "Add AI account",
+      "service_principals": {
+        "title": "Service principals",
+        "description": "Create and manage service principals that let automated agents and integrations access your workspace with scoped permissions.",
+        "add_principal": "Add service principal",
+        "assignable": {
+          "label": "Service principals are assignable",
+          "description": "When enabled, service principals appear in assignee and filter pickers across the workspace. Off by default — opt-in keeps principals out of human-facing selectors until a workspace admin decides otherwise.",
+          "not_persisted": "The backend endpoint for this toggle isn't wired yet. Changes are kept in this session only.",
+          "toast_updated": "Service principal assignable setting updated",
+          "toast_update_failed": "Service principal assignable setting could not be updated"
+        },
         "step_up": {
           "hint": "This operation affects token security. Enter the 6-digit code from your authenticator app.",
           "code_required": "Enter the 6-digit code",
           "code_invalid": "The code is invalid or expired. Try again."
         },
         "modal": {
-          "create_title": "Create AI account",
-          "edit_title": "Edit AI account",
+          "create_title": "Create service principal",
+          "edit_title": "Edit service principal",
           "name": "Name",
           "name_required": "Name is required",
           "description": "Description",
-          "create": "Create account",
-          "update": "Update account",
+          "create": "Create principal",
+          "update": "Update principal",
           "creating": "Creating",
           "updating": "Updating"
         },
         "token": {
-          "title": "Account created",
+          "title": "Service principal created",
           "rotated_title": "Token rotated",
           "copy_warning": "Copy and save this token now. You won't be able to see it again after you close this dialog.",
           "copied": "Token copied to clipboard.",
@@ -188,6 +195,7 @@
           "edit": "Edit",
           "delete": "Delete",
           "manage_scopes": "Manage scopes",
+          "manage_grants": "Manage grants",
           "rotate_token": "Rotate token"
         },
         "avatar": {
@@ -196,15 +204,15 @@
           "remove": "Remove"
         },
         "delete": {
-          "title": "Delete AI account",
-          "description": "Any integration using this account will no longer be able to access your workspace. This action cannot be undone.",
+          "title": "Delete service principal",
+          "description": "Any integration using this principal will no longer be able to access your workspace. This action cannot be undone.",
           "success": {
             "title": "Success!",
-            "message": "The AI account has been successfully deleted"
+            "message": "The service principal has been successfully deleted"
           },
           "error": {
             "title": "Error!",
-            "message": "The AI account could not be deleted"
+            "message": "The service principal could not be deleted"
           }
         },
         "rotate": {
@@ -214,7 +222,7 @@
           "rotating": "Rotating",
           "success": {
             "title": "Token rotated",
-            "message": "The AI account token has been rotated. The previous token is no longer valid."
+            "message": "The service principal token has been rotated. The previous token is no longer valid."
           },
           "error": {
             "title": "Error!",
@@ -223,7 +231,7 @@
         },
         "scopes": {
           "title": "Manage scopes",
-          "description": "Scopes define what this account can access. Saving replaces all existing scopes.",
+          "description": "Scopes define what this principal can access. Saving replaces all existing scopes.",
           "project": "Project",
           "all_projects": "All projects",
           "resource_type": "Resource",
@@ -256,6 +264,11 @@
           "add_scope": "Add scope",
           "save": "Save scopes",
           "saving": "Saving",
+          "clear_confirm": {
+            "title": "Remove all scopes?",
+            "message": "Saving with no scopes removes every permission this principal has. The principal is denied by default until new scopes are added.",
+            "confirm": "Remove all scopes"
+          },
           "success": {
             "title": "Success!",
             "message": "Scopes updated successfully"
@@ -265,22 +278,55 @@
             "message": "Scopes could not be updated"
           }
         },
+        "grants": {
+          "title": "Manage project grants",
+          "description": "Grants decide which projects this principal can access and the highest role it may carry there. Saving replaces all existing grants.",
+          "project": "Project",
+          "role_cap": "Role cap",
+          "status": "Status",
+          "add_grant": "Add grant",
+          "save": "Save grants",
+          "saving": "Saving",
+          "role_caps": {
+            "20": "Admin",
+            "15": "Member",
+            "5": "Guest"
+          },
+          "statuses": {
+            "active": "Active",
+            "inactive": "Inactive"
+          },
+          "clear_confirm": {
+            "title": "Remove all grants?",
+            "message": "Saving with no grants removes this principal from every project. It will not be a member of any project until new grants are added.",
+            "confirm": "Remove all grants"
+          },
+          "success": {
+            "title": "Success!",
+            "message": "Grants updated successfully"
+          },
+          "error": {
+            "title": "Error!",
+            "message": "Grants could not be updated",
+            "missing_project": "Each grant must reference a project."
+          }
+        },
         "toasts": {
           "created": {
-            "title": "AI account created",
-            "message": "The AI account has been successfully created"
+            "title": "Service principal created",
+            "message": "The service principal has been successfully created"
           },
           "not_created": {
-            "title": "AI account not created",
-            "message": "The AI account could not be created"
+            "title": "Service principal not created",
+            "message": "The service principal could not be created"
           },
           "updated": {
-            "title": "AI account updated",
-            "message": "The AI account has been successfully updated"
+            "title": "Service principal updated",
+            "message": "The service principal has been successfully updated"
           },
           "not_updated": {
-            "title": "AI account not updated",
-            "message": "The AI account could not be updated"
+            "title": "Service principal not updated",
+            "message": "The service principal could not be updated"
           }
         }
       },

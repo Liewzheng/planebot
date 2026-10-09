@@ -8,33 +8,33 @@ import { useState } from "react";
 import { mutate } from "swr";
 // plane imports
 import { useTranslation } from "@plane/i18n";
-import type { TAIAccount } from "@plane/types";
+import type { TServicePrincipal } from "@plane/types";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 // ui
 import { AlertModalCore, EModalPosition, EModalWidth, ModalCore } from "@plane/ui";
 // hooks
 import { useUser } from "@/hooks/store/user";
 // services
-import { aiAccountService } from "@/services/ai-account.service";
+import { servicePrincipalService } from "@/services/ai-account.service";
 // local imports
-import { AI_ACCOUNTS_LIST, getMfaStepUpError } from "./constants";
+import { SERVICE_PRINCIPALS_LIST, getMfaStepUpError } from "./constants";
 import { GeneratedTokenDetails } from "./generated-token-details";
 import { MfaCodeField } from "./mfa-code-field";
 
-type TRotatedAIAccount = TAIAccount & { token: string };
+type TRotatedServicePrincipal = TServicePrincipal & { token: string };
 
 type Props = {
-  account: TAIAccount;
+  principal: TServicePrincipal;
   isOpen: boolean;
   onClose: () => void;
   workspaceSlug: string;
 };
 
-export function RotateAIAccountTokenModal(props: Props) {
-  const { account, isOpen, onClose, workspaceSlug } = props;
+export function RotateServicePrincipalTokenModal(props: Props) {
+  const { principal, isOpen, onClose, workspaceSlug } = props;
   // states
   const [isRotating, setIsRotating] = useState(false);
-  const [rotatedAccount, setRotatedAccount] = useState<TRotatedAIAccount | null>(null);
+  const [rotatedPrincipal, setRotatedPrincipal] = useState<TRotatedServicePrincipal | null>(null);
   const [totpCode, setTotpCode] = useState("");
   const [totpError, setTotpError] = useState<string | undefined>(undefined);
   // hooks
@@ -47,7 +47,7 @@ export function RotateAIAccountTokenModal(props: Props) {
     onClose();
     setTimeout(() => {
       setIsRotating(false);
-      setRotatedAccount(null);
+      setRotatedPrincipal(null);
       setTotpCode("");
       setTotpError(undefined);
     }, 350);
@@ -55,24 +55,24 @@ export function RotateAIAccountTokenModal(props: Props) {
 
   const handleRotate = async () => {
     if (isMFAEnabled && !totpCode.trim()) {
-      setTotpError(t("workspace_settings.settings.ai_accounts.step_up.code_required"));
+      setTotpError(t("workspace_settings.settings.service_principals.step_up.code_required"));
       return;
     }
     setIsRotating(true);
     setTotpError(undefined);
     try {
-      const res = await aiAccountService.rotateAIAccountToken(
+      const res = await servicePrincipalService.rotateServicePrincipalToken(
         workspaceSlug,
-        account.id,
+        principal.id,
         isMFAEnabled ? totpCode.trim() : undefined
       );
-      setRotatedAccount(res);
+      setRotatedPrincipal(res);
       setToast({
         type: TOAST_TYPE.SUCCESS,
-        title: t("workspace_settings.settings.ai_accounts.rotate.success.title"),
-        message: t("workspace_settings.settings.ai_accounts.rotate.success.message"),
+        title: t("workspace_settings.settings.service_principals.rotate.success.title"),
+        message: t("workspace_settings.settings.service_principals.rotate.success.message"),
       });
-      mutate<TAIAccount[]>(AI_ACCOUNTS_LIST(workspaceSlug));
+      mutate<TServicePrincipal[]>(SERVICE_PRINCIPALS_LIST(workspaceSlug));
     } catch (err) {
       const mfaError = getMfaStepUpError(err, t);
       if (mfaError) {
@@ -81,9 +81,10 @@ export function RotateAIAccountTokenModal(props: Props) {
       } else {
         setToast({
           type: TOAST_TYPE.ERROR,
-          title: t("workspace_settings.settings.ai_accounts.rotate.error.title"),
+          title: t("workspace_settings.settings.service_principals.rotate.error.title"),
           message:
-            (err as { message?: string })?.message ?? t("workspace_settings.settings.ai_accounts.rotate.error.message"),
+            (err as { message?: string })?.message ??
+            t("workspace_settings.settings.service_principals.rotate.error.message"),
         });
       }
       setIsRotating(false);
@@ -91,13 +92,13 @@ export function RotateAIAccountTokenModal(props: Props) {
   };
 
   // After a successful rotation the new token is shown exactly once
-  if (rotatedAccount) {
+  if (rotatedPrincipal) {
     return (
       <ModalCore isOpen={isOpen} handleClose={() => {}} position={EModalPosition.TOP} width={EModalWidth.XXL}>
         <GeneratedTokenDetails
-          account={rotatedAccount}
+          principal={rotatedPrincipal}
           handleClose={handleClose}
-          title={t("workspace_settings.settings.ai_accounts.token.rotated_title")}
+          title={t("workspace_settings.settings.service_principals.token.rotated_title")}
         />
       </ModalCore>
     );
@@ -110,16 +111,18 @@ export function RotateAIAccountTokenModal(props: Props) {
       isSubmitting={isRotating}
       isOpen={isOpen}
       primaryButtonText={{
-        loading: t("workspace_settings.settings.ai_accounts.rotate.rotating"),
-        default: t("workspace_settings.settings.ai_accounts.rotate.confirm"),
+        loading: t("workspace_settings.settings.service_principals.rotate.rotating"),
+        default: t("workspace_settings.settings.service_principals.rotate.confirm"),
       }}
-      title={t("workspace_settings.settings.ai_accounts.rotate.title")}
+      title={t("workspace_settings.settings.service_principals.rotate.title")}
       content={
         <div className="space-y-3">
-          <p>{t("workspace_settings.settings.ai_accounts.rotate.description")}</p>
+          <p>{t("workspace_settings.settings.service_principals.rotate.description")}</p>
           {isMFAEnabled && (
             <>
-              <p className="text-11 text-tertiary">{t("workspace_settings.settings.ai_accounts.step_up.hint")}</p>
+              <p className="text-11 text-tertiary">
+                {t("workspace_settings.settings.service_principals.step_up.hint")}
+              </p>
               <MfaCodeField value={totpCode} onChange={setTotpCode} error={totpError} />
             </>
           )}

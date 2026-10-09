@@ -4,9 +4,13 @@
  * See the LICENSE file for details.
  */
 
-export * from "./ai-accounts-list";
-export * from "./create-account-modal";
-export * from "./delete-account-modal";
-export * from "./edit-account-modal";
+export * from "./service-principal-form";
+export * from "./service-principals-list";
+export * from "./service-principals-list-item";
+export * from "./create-service-principal-modal";
+export * from "./delete-service-principal-modal";
+export * from "./edit-service-principal-modal";
 export * from "./rotate-token-modal";
 export * from "./scopes-modal";
+export * from "./grants-modal";
+export * from "./workspace-sp-settings-section";

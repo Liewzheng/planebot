@@ -15,19 +15,19 @@ import { TextArea } from "@plane/ui";
 // local imports
 import { MfaCodeField } from "./mfa-code-field";
 
-export type TAIAccountFormValues = {
+export type TServicePrincipalFormValues = {
   name: string;
   description: string;
 };
 
 type Props = {
-  defaultValues: TAIAccountFormValues;
+  defaultValues: TServicePrincipalFormValues;
   handleClose: () => void;
   isSubmitting: boolean;
   loadingLabel: string;
   submitLabel: string;
   title: string;
-  onSubmit: (data: TAIAccountFormValues) => Promise<void>;
+  onSubmit: (data: TServicePrincipalFormValues) => Promise<void>;
   // Step-up TOTP input, rendered only when the acting user has 2FA enabled
   totp?: {
     value: string;
@@ -36,14 +36,14 @@ type Props = {
   };
 };
 
-export function AIAccountForm(props: Props) {
+export function ServicePrincipalForm(props: Props) {
   const { defaultValues, handleClose, isSubmitting, loadingLabel, submitLabel, title, onSubmit, totp } = props;
   // form
   const {
     control,
     formState: { errors },
     handleSubmit,
-  } = useForm<TAIAccountFormValues>({ defaultValues });
+  } = useForm<TServicePrincipalFormValues>({ defaultValues });
   // hooks
   const { t } = useTranslation();
 
@@ -57,9 +57,9 @@ export function AIAccountForm(props: Props) {
               control={control}
               name="name"
               rules={{
-                required: t("workspace_settings.settings.ai_accounts.modal.name_required"),
+                required: t("workspace_settings.settings.service_principals.modal.name_required"),
                 validate: (val) =>
-                  val.trim() !== "" || t("workspace_settings.settings.ai_accounts.modal.name_required"),
+                  val.trim() !== "" || t("workspace_settings.settings.service_principals.modal.name_required"),
               }}
               render={({ field: { value, onChange } }) => (
                 <Field name="input" invalid={Boolean(errors.name)}>
@@ -69,8 +69,8 @@ export function AIAccountForm(props: Props) {
                       type="text"
                       value={value}
                       onChange={onChange}
-                      placeholder={t("workspace_settings.settings.ai_accounts.modal.name")}
-                      aria-label={t("workspace_settings.settings.ai_accounts.modal.name")}
+                      placeholder={t("workspace_settings.settings.service_principals.modal.name")}
+                      aria-label={t("workspace_settings.settings.service_principals.modal.name")}
                     />
                   </InputGroup>
                 </Field>
@@ -86,14 +86,16 @@ export function AIAccountForm(props: Props) {
                 value={value}
                 onChange={onChange}
                 hasError={Boolean(errors.description)}
-                placeholder={t("workspace_settings.settings.ai_accounts.modal.description")}
+                placeholder={t("workspace_settings.settings.service_principals.modal.description")}
                 className="min-h-24 w-full resize-none text-14"
               />
             )}
           />
           {totp && (
             <div className="pt-2">
-              <p className="pb-2 text-11 text-tertiary">{t("workspace_settings.settings.ai_accounts.step_up.hint")}</p>
+              <p className="pb-2 text-11 text-tertiary">
+                {t("workspace_settings.settings.service_principals.step_up.hint")}
+              </p>
               <MfaCodeField value={totp.value} onChange={totp.onChange} error={totp.error} />
             </div>
           )}

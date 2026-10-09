@@ -55,12 +55,12 @@ export const WORKSPACE_SETTINGS: Record<TWorkspaceSettingsTabs, TWorkspaceSettin
     access: [EUserWorkspaceRoles.ADMIN],
     highlight: (pathname: string, baseUrl: string) => pathname === `${baseUrl}/settings/webhooks/`,
   },
-  "ai-accounts": {
-    key: "ai-accounts",
-    i18n_label: "workspace_settings.settings.ai_accounts.title",
-    href: `/settings/ai-accounts`,
+  "service-principals": {
+    key: "service-principals",
+    i18n_label: "workspace_settings.settings.service_principals.title",
+    href: `/settings/service-principals`,
     access: [EUserWorkspaceRoles.ADMIN],
-    highlight: (pathname: string, baseUrl: string) => pathname === `${baseUrl}/settings/ai-accounts/`,
+    highlight: (pathname: string, baseUrl: string) => pathname === `${baseUrl}/settings/service-principals/`,
   },
 };
 
@@ -75,5 +75,5 @@ export const GROUPED_WORKSPACE_SETTINGS: Record<WORKSPACE_SETTINGS_CATEGORY, TWo
     WORKSPACE_SETTINGS["export"],
   ],
   [WORKSPACE_SETTINGS_CATEGORY.FEATURES]: [],
-  [WORKSPACE_SETTINGS_CATEGORY.DEVELOPER]: [WORKSPACE_SETTINGS["webhooks"], WORKSPACE_SETTINGS["ai-accounts"]],
+  [WORKSPACE_SETTINGS_CATEGORY.DEVELOPER]: [WORKSPACE_SETTINGS["webhooks"], WORKSPACE_SETTINGS["service-principals"]],
 };

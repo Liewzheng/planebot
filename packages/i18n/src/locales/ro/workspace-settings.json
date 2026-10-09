@@ -150,129 +150,6 @@
           }
         }
       },
-      "ai_accounts": {
-        "title": "Conturi AI",
-        "description": "Creează și gestionează conturi de bot care permit agenților AI să acceseze workspace-ul tău cu permisiuni cu domeniu limitat.",
-        "add_account": "Adaugă cont AI",
-        "modal": {
-          "create_title": "Creează cont AI",
-          "edit_title": "Editează contul AI",
-          "name": "Nume",
-          "name_required": "Numele este obligatoriu",
-          "description": "Descriere",
-          "create": "Creează cont",
-          "update": "Actualizează contul",
-          "creating": "Se creează",
-          "updating": "Se actualizează"
-        },
-        "token": {
-          "title": "Cont creat",
-          "rotated_title": "Token rotit",
-          "copy_warning": "Copiază și salvează acest token acum. Nu îl vei mai putea vedea după ce închizi această fereastră.",
-          "copied": "Token copiat în clipboard.",
-          "not_copied": "Tokenul nu a putut fi copiat. Încearcă din nou."
-        },
-        "list": {
-          "created_on": "Creată la",
-          "edit": "Editează",
-          "delete": "Șterge",
-          "manage_scopes": "Gestionează domeniile",
-          "rotate_token": "Rotește tokenul"
-        },
-        "avatar": {
-          "label": "Imagine de profil",
-          "upload": "Încarcă",
-          "remove": "Elimină"
-        },
-        "delete": {
-          "title": "Șterge contul AI",
-          "description": "Orice integrare care folosește acest cont nu va mai putea accesa workspace-ul tău. Această acțiune nu poate fi anulată.",
-          "success": {
-            "title": "Succes!",
-            "message": "Contul AI a fost șters cu succes"
-          },
-          "error": {
-            "title": "Eroare!",
-            "message": "Contul AI nu a putut fi șters"
-          }
-        },
-        "rotate": {
-          "title": "Rotește tokenul",
-          "description": "Tokenul curent va fi revocat imediat, iar integrările care îl folosesc vor înceta să funcționeze. Noul token este afișat o singură dată.",
-          "confirm": "Rotește tokenul",
-          "rotating": "Se rotește",
-          "success": {
-            "title": "Token rotit",
-            "message": "Tokenul contului AI a fost rotit. Tokenul anterior nu mai este valid."
-          },
-          "error": {
-            "title": "Eroare!",
-            "message": "Tokenul nu a putut fi rotit"
-          }
-        },
-        "scopes": {
-          "title": "Gestionează domeniile",
-          "description": "Domeniile definesc ce poate accesa acest cont. Salvarea înlocuiește toate domeniile existente.",
-          "project": "Proiect",
-          "all_projects": "Toate proiectele",
-          "resource_type": "Resursă",
-          "action": "Acțiune",
-          "resources": {
-            "all": "Toate",
-            "project": "Proiect",
-            "member": "Membru",
-            "user": "Utilizator",
-            "asset": "Fișier",
-            "estimate": "Estimare",
-            "cycle": "Ciclu",
-            "module": "Modul",
-            "sticky": "Sticky",
-            "label": "Etichetă",
-            "intake": "Intake",
-            "work_item": "Activitate",
-            "comment": "Comentariu",
-            "state": "Stare",
-            "page": "Pagină",
-            "invite": "Invitație"
-          },
-          "actions": {
-            "all": "Toate",
-            "read": "Citire",
-            "create": "Creează",
-            "update": "Actualizează",
-            "delete": "Șterge"
-          },
-          "add_scope": "Adaugă domeniu",
-          "save": "Salvează domeniile",
-          "saving": "Se salvează",
-          "success": {
-            "title": "Succes!",
-            "message": "Domeniile au fost actualizate cu succes"
-          },
-          "error": {
-            "title": "Eroare!",
-            "message": "Domeniile nu au putut fi actualizate"
-          }
-        },
-        "toasts": {
-          "created": {
-            "title": "Cont AI creat",
-            "message": "Contul AI a fost creat cu succes"
-          },
-          "not_created": {
-            "title": "Cont AI necreat",
-            "message": "Contul AI nu a putut fi creat"
-          },
-          "updated": {
-            "title": "Cont AI actualizat",
-            "message": "Contul AI a fost actualizat cu succes"
-          },
-          "not_updated": {
-            "title": "Cont AI neactualizat",
-            "message": "Contul AI nu a putut fi actualizat"
-          }
-        }
-      },
       "api_tokens": {
         "heading": "Chei secrete API",
         "description": "Generează chei secrete API sigure pentru a integra datele tale cu sisteme și aplicații externe.",
@@ -607,6 +484,180 @@
         "heading": "Script-uri",
         "new_script": "Script nou",
         "description": "Automatizează fluxurile tale de lucru cu scripturi personalizate și reguli de automatizare."
+      },
+      "service_principals": {
+        "title": "Service principals",
+        "description": "Creează și gestionează service principals care permit agenților automatizați și integrărilor să acceseze workspace-ul cu permisiuni delimitate.",
+        "add_principal": "Adaugă service principal",
+        "assignable": {
+          "label": "Service principals sunt asignabili",
+          "description": "Când este activat, service principals apar în selectorii de asignare și filtrare din întregul workspace. Dezactivat implicit — opt-in-ul ține principal-ii în afara selectorilor umani până când un administrator al workspace-ului hotărăște altfel.",
+          "not_persisted": "Endpoint-ul backend pentru acest comutator nu este încă conectat. Modificările sunt păstrate doar în această sesiune.",
+          "toast_updated": "Setarea de asignabilitate a service principal actualizată",
+          "toast_update_failed": "Setarea de asignabilitate a service principal nu a putut fi actualizată"
+        },
+        "step_up": {
+          "hint": "Această operațiune afectează securitatea token-ului. Introdu codul din 6 cifre din aplicația ta de autentificare.",
+          "code_required": "Introdu codul din 6 cifre",
+          "code_invalid": "Codul este invalid sau a expirat. Încearcă din nou."
+        },
+        "modal": {
+          "create_title": "Creează service principal",
+          "edit_title": "Editează service principal",
+          "name": "Nume",
+          "name_required": "Numele este obligatoriu",
+          "description": "Descriere",
+          "create": "Creează principal",
+          "update": "Actualizează principal",
+          "creating": "Se creează",
+          "updating": "Se actualizează"
+        },
+        "token": {
+          "title": "Service principal creat",
+          "rotated_title": "Token rotit",
+          "copy_warning": "Copiază și salvează acest token acum. Nu îl vei mai putea vedea după închiderea acestei ferestre.",
+          "copied": "Token copiat în clipboard.",
+          "not_copied": "Token-ul nu a putut fi copiat. Încearcă din nou."
+        },
+        "list": {
+          "created_on": "Creat la",
+          "edit": "Editează",
+          "delete": "Șterge",
+          "manage_scopes": "Gestionează scopes",
+          "manage_grants": "Gestionează grants",
+          "rotate_token": "Roteste token"
+        },
+        "avatar": {
+          "label": "Avatar",
+          "upload": "Încarcă",
+          "remove": "Elimină"
+        },
+        "delete": {
+          "title": "Șterge service principal",
+          "description": "Orice integrare care folosește acest principal nu va mai putea accesa workspace-ul tău. Această acțiune nu poate fi anulată.",
+          "success": {
+            "title": "Succes!",
+            "message": "Service principal a fost șters cu succes"
+          },
+          "error": {
+            "title": "Eroare!",
+            "message": "Service principal nu a putut fi șters"
+          }
+        },
+        "rotate": {
+          "title": "Roteste token",
+          "description": "Token-ul curent va fi revocat imediat, iar integrările care îl folosesc nu vor mai funcționa. Noul token este afișat o singură dată.",
+          "confirm": "Roteste token",
+          "rotating": "Se roteste",
+          "success": {
+            "title": "Token rotit",
+            "message": "Token-ul service principal a fost rotit. Token-ul anterior nu mai este valid."
+          },
+          "error": {
+            "title": "Eroare!",
+            "message": "Token-ul nu a putut fi rotit"
+          }
+        },
+        "scopes": {
+          "title": "Gestionează scopes",
+          "description": "Scopes defines ce poate accesul a acest principal. Salvarea înlocuiește toate scopes-urile existente.",
+          "project": "Proiect",
+          "all_projects": "Toate proiectele",
+          "resource_type": "Resursă",
+          "action": "Acțiune",
+          "resources": {
+            "all": "Toate",
+            "project": "Proiect",
+            "member": "Membru",
+            "user": "Utilizator",
+            "asset": "Asset",
+            "estimate": "Estimare",
+            "cycle": "Ciclu",
+            "module": "Modul",
+            "sticky": "Sticky",
+            "label": "Etichetă",
+            "intake": "Intake",
+            "work_item": "Element de lucru",
+            "comment": "Comentariu",
+            "state": "Stare",
+            "page": "Pagină",
+            "invite": "Invitație"
+          },
+          "actions": {
+            "all": "Toate",
+            "read": "Citire",
+            "create": "Creează",
+            "update": "Actualizează",
+            "delete": "Șterge"
+          },
+          "add_scope": "Adaugă scope",
+          "save": "Salvează scopes",
+          "saving": "Se salvează",
+          "clear_confirm": {
+            "title": "Elimină toate scopes?",
+            "message": "Salvarea fără scopes elimină toate permisiunile acestui principal. Principal-ul este refuzat implicit până când se adaugă scopes noi.",
+            "confirm": "Elimină toate scopes"
+          },
+          "success": {
+            "title": "Succes!",
+            "message": "Scopes actualizate cu succes"
+          },
+          "error": {
+            "title": "Eroare!",
+            "message": "Scopes nu au putut fi actualizate"
+          }
+        },
+        "grants": {
+          "title": "Gestionează grants de proiect",
+          "description": "Grants decid la ce proiecte poate accesa acest principal și cel mai înalt rol pe care îl poate avea acolo. Salvarea înlocuiește toate grants-urile existente.",
+          "project": "Proiect",
+          "role_cap": "Limită de rol",
+          "status": "Stare",
+          "add_grant": "Adaugă grant",
+          "save": "Salvează grants",
+          "saving": "Se salvează",
+          "role_caps": {
+            "5": "Oaspete",
+            "15": "Membru",
+            "20": "Administrator"
+          },
+          "statuses": {
+            "active": "Activ",
+            "inactive": "Inactiv"
+          },
+          "clear_confirm": {
+            "title": "Elimină toate grants?",
+            "message": "Salvarea fără grants elimină acest principal din toate proiectele. Nu va fi membru al niciunui proiect până când nu se adaugă grants noi.",
+            "confirm": "Elimină toate grants"
+          },
+          "success": {
+            "title": "Succes!",
+            "message": "Grants actualizate cu succes"
+          },
+          "error": {
+            "title": "Eroare!",
+            "message": "Grants nu au putut fi actualizate",
+            "missing_project": "Fiecare grant trebuie să facă referire la un proiect."
+          }
+        },
+        "toasts": {
+          "created": {
+            "title": "Service principal creat",
+            "message": "Service principal a fost creat cu succes"
+          },
+          "not_created": {
+            "title": "Service principal nu a fost creat",
+            "message": "Service principal nu a putut fi creat"
+          },
+          "updated": {
+            "title": "Service principal actualizat",
+            "message": "Service principal a fost actualizat cu succes"
+          },
+          "not_updated": {
+            "title": "Service principal nu a fost actualizat",
+            "message": "Service principal nu a putut fi actualizat"
+          }
+        }
       }
     },
     "empty_state": {

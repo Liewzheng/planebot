@@ -226,11 +226,6 @@
       "description": "Tự động hóa thông báo đến các dịch vụ bên ngoài khi sự kiện dự án xảy ra.",
       "cta_primary": "Thêm webhook"
     },
-    "ai_accounts": {
-      "title": "Chưa có tài khoản AI",
-      "description": "Tạo tài khoản AI để cho phép tác tử AI truy cập workspace của bạn với quyền theo phạm vi.",
-      "cta_primary": "Thêm tài khoản AI"
-    },
     "work_item_types": {
       "title": "Tạo và tùy chỉnh các loại mục công việc",
       "description": "Xác định các loại mục công việc độc đáo cho dự án của bạn. Mỗi loại có thể có thuộc tính, quy trình làm việc và trường riêng - được điều chỉnh theo nhu cầu của dự án và đội của bạn.",
@@ -270,6 +265,11 @@
         "title": "Thêm trạng thái",
         "description": "Chọn các trạng thái mà mục công việc sẽ đi qua."
       }
+    },
+    "service_principals": {
+      "title": "Chưa có service principal",
+      "description": "Tạo service principals để các tác nhân tự động và tích hợp truy cập workspace của bạn với quyền được phân định.",
+      "cta_primary": "Thêm service principal"
     }
   }
 }
