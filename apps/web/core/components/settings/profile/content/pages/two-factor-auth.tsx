@@ -21,6 +21,8 @@ import { useUser } from "@/hooks/store/user";
 // services
 import { AuthService } from "@/services/auth.service";
 import { UserService } from "@/services/user.service";
+// utils
+import DOMPurify from "dompurify";
 
 const authService = new AuthService();
 const userService = new UserService();
@@ -192,6 +194,11 @@ export const TwoFactorAuthSettings = observer(function TwoFactorAuthSettings() {
 
   // Step 2: confirm the authenticator code to finish the setup
   if (setupData) {
+    // the backend serves the QR code as an SVG string; sanitize it before
+    // injecting it into the DOM (SVG profile only)
+    const qrSvg = setupData.qr_svg
+      ? DOMPurify.sanitize(setupData.qr_svg, { USE_PROFILES: { svg: true, svgFilters: true } })
+      : null;
     return (
       <div className="flex flex-col gap-y-6">
         <ProfileSettingsHeading
@@ -199,13 +206,13 @@ export const TwoFactorAuthSettings = observer(function TwoFactorAuthSettings() {
           description={t("auth.mfa.settings.setup.description")}
         />
         <div className="flex max-w-md flex-col gap-y-2">
-          {setupData.qr_svg && (
+          {qrSvg && (
             <>
               <p className="text-13 text-tertiary">{t("auth.mfa.settings.setup.scan_qr")}</p>
               <div
                 className="w-fit rounded-md bg-white p-3 [&>svg]:block"
                 // oxlint-disable-next-line react/no-danger
-                dangerouslySetInnerHTML={{ __html: setupData.qr_svg }}
+                dangerouslySetInnerHTML={{ __html: qrSvg }}
               />
             </>
           )}
