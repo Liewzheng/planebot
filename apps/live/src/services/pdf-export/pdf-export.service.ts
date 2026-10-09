@@ -320,6 +320,12 @@ export const exportToPdf = (
       cookie: input.cookie,
       documentType,
       userId: "",
+      // M10 — PDF export runs as a server-side job (no live
+      // WS connection), so the SP path is not exercised here;
+      // the cookie session is the credential.  The new context
+      // fields default to null.
+      serviceToken: null,
+      servicePrincipalId: null,
     });
 
     // Fetch content

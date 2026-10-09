@@ -9,6 +9,7 @@ import type { fetchPayload, onLoadDocumentPayload, storePayload } from "@hocuspo
 export type TConvertDocumentRequestBody = {
   description_html: string;
   variant: "rich" | "document";
+  document_name?: string;
 };
 
 export interface OnLoadDocumentPayloadWithContext extends onLoadDocumentPayload {
@@ -32,4 +33,11 @@ export type HocusPocusServerContext = {
   documentType: TDocumentTypes;
   workspaceSlug: string | null;
   userId: string;
+  // M10 — service-principal connection.  When a connection authenticates
+  // with a `plane_svc_*` token, the token is stored on the context and
+  // forwarded as `X-Api-Key` on every page-service call so the app API
+  // can run `authorize()` against the SP.  Both fields are null for the
+  // legacy cookie path.
+  serviceToken: string | null;
+  servicePrincipalId: string | null;
 };
