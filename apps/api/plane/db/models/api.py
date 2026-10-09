@@ -20,6 +20,16 @@ def generate_token():
     return "plane_api_" + uuid4().hex
 
 
+def generate_service_token():
+    """Generate a SP service token with the ``plane_svc_`` prefix.
+
+    Service tokens are visually and lexically distinct from user tokens so they
+    can be identified at the credential layer before principal resolution.
+    """
+    from plane.service_principals.constants import SERVICE_TOKEN_PREFIX
+    return SERVICE_TOKEN_PREFIX + uuid4().hex
+
+
 class APIToken(BaseModel):
     # Meta information
     label = models.CharField(max_length=255, default=generate_label_token)
@@ -37,6 +47,21 @@ class APIToken(BaseModel):
     expired_at = models.DateTimeField(blank=True, null=True)
     is_service = models.BooleanField(default=False)
     allowed_rate_limit = models.CharField(max_length=255, default="60/min")
+
+    # Principal kind: 0=user (the default), 1=service principal. User tokens
+    # continue to authenticate as ``user``; service tokens authenticate as
+    # ``service_principal`` and bypass User membership paths entirely.
+    principal_type = models.PositiveSmallIntegerField(
+        choices=((0, "User"), (1, "Service")),
+        default=0,
+    )
+    service_principal = models.ForeignKey(
+        "service_principals.ServicePrincipal",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="tokens",
+    )
 
     class Meta:
         verbose_name = "API Token"
