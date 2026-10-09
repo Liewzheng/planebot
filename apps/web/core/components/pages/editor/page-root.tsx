@@ -159,6 +159,11 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
       }
     }
 
+    // the publish landed: the draft side doc is obsolete. Clearing
+    // `draftToLoad` rebinds the editor to `provider.document` for the
+    // next read so a stale draft body is not re-applied on the next
+    // `isEditing=true` toggle.
+    setDraftToLoad(null);
     setIsEditing(false);
   }, [handlers, page.name, save]);
 
@@ -167,7 +172,14 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
   // revision.
   const handleStashDraft = useCallback(async () => {
     const stashed = await stashAsDraft();
-    if (stashed) setIsEditing(false);
+    if (stashed) {
+      // the editor was reset to baseline inside `stashAsDraft`; the side
+      // doc is obsolete. Without this clear, the next "Load Draft" of a
+      // different draft would render the previous draft until the new
+      // hash fires the side-doc effect.
+      setDraftToLoad(null);
+      setIsEditing(false);
+    }
   }, [stashAsDraft]);
 
   // A draft is loaded INTO a new editing session, never into the shared
@@ -180,6 +192,9 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
   }, [page.name, serverDraft]);
 
   const handleDiscardServerDraft = useCallback(() => {
+    // the server-side draft is gone; the next edit session must not
+    // re-load it from `draftToLoad`.
+    setDraftToLoad(null);
     void discardServerDraft();
   }, [discardServerDraft]);
 

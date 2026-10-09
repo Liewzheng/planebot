@@ -7,6 +7,7 @@
 import { useEditorState, useEditor as useTiptapEditor } from "@tiptap/react";
 import { useImperativeHandle, useEffect } from "react";
 import type { MarkdownStorage } from "tiptap-markdown";
+import type * as Y from "yjs";
 // extensions
 import { CoreEditorExtensions } from "@/extensions";
 // helpers
@@ -53,6 +54,24 @@ export const useEditor = (props: TEditorHookProps) => {
     value,
   } = props;
 
+  // The Collaboration extension binds a Y.Doc at editor creation. To switch
+  // docs (e.g. the live provider.document -> a draft side doc) without
+  // carrying the old binding over, the editor must be recreated. We pick
+  // out the doc the Collaboration extension was configured with and use
+  // its guid as a recreation dep; switching the active doc changes the
+  // guid, the deps array changes, tiptap-react recreates the editor.
+  const boundDoc = (() => {
+    for (const ext of extensions) {
+      const name = (ext as { name?: string }).name;
+      if (name === "collaboration") {
+        const doc = (ext as { options?: { document?: Y.Doc } }).options?.document;
+        if (doc) return doc;
+      }
+    }
+    return null;
+  })();
+  const boundDocGuid = boundDoc?.guid ?? null;
+
   const editor = useTiptapEditor(
     {
       editable,
@@ -98,7 +117,10 @@ export const useEditor = (props: TEditorHookProps) => {
       onDestroy: () => handleEditorReady?.(false),
       onFocus: onEditorFocus,
     },
-    [editable]
+    // boundDocGuid flips when the active document changes (live doc ->
+    // draft side doc), which is the cue to recreate the editor against
+    // the new binding; a null guid falls back to editable-only changes
+    [editable, boundDocGuid]
   );
 
   // Effect for syncing SWR data
@@ -153,8 +175,9 @@ export const useEditor = (props: TEditorHookProps) => {
         editor,
         getEditorMetaData,
         provider,
+        activeDocument: boundDoc,
       }),
-    [editor, getEditorMetaData, provider]
+    [editor, getEditorMetaData, provider, boundDoc]
   );
 
   if (!editor) {

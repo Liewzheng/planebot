@@ -39,8 +39,9 @@ RUN corepack enable pnpm
 COPY --from=builder /app/out/full/ .
 COPY turbo.json turbo.json
 # pnpm-managed patches come out of the warm store, but the root postinstall
-# applies patches/*.patch by hand (see patches/apply-y-prosemirror-patch.mjs),
-# so the directory has to exist before installing.
+# applies patches/y-prosemirror@1.3.7.patch by hand (see
+# patches/apply-y-prosemirror-patch.mjs), so the directory has to exist
+# before installing.
 COPY patches patches
 
 # Fetch dependencies to cache store, then install offline with dev deps

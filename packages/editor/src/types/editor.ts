@@ -131,8 +131,21 @@ export type CoreEditorRefApi = {
   getMarkDown: () => string;
   copyMarkdownToClipboard: () => void;
   getSelectedText: () => string | null;
+  /**
+   * True when the underlying Yjs document holds no content. The editor's
+   * ProseMirror JSON can read as empty while the Yjs document still carries
+   * content (a render failure, or a client that has not rendered it yet), and
+   * a seed that merges into a non-empty Y.Doc duplicates the page.
+   */
+  isDocumentEmpty: () => boolean;
   insertText: (contentHTML: string, insertOnNextLine?: boolean) => void;
   isAnyDropbarOpen: () => boolean;
+  /**
+   * True while an IME composition owns the editor's DOM. The browser feeds the
+   * pre-edit string into ProseMirror itself, so the document does not yet hold
+   * what the user sees and any external write or save must wait.
+   */
+  isComposing: () => boolean;
   isEditorReadyToDiscard: () => boolean;
   isMenuItemActive: <T extends TEditorCommands>(props: TCommandWithPropsWithItemKey<T>) => boolean;
   listenToRealTimeUpdate: () => TDocumentEventEmitter | undefined;
@@ -148,6 +161,12 @@ export type CoreEditorRefApi = {
   setFocusAtPosition: (position: number) => void;
   setProviderDocument: (value: Uint8Array) => void;
   undo: () => void;
+  /**
+   * Resolves once the editor is no longer composing (immediately when it
+   * already is not). The save path awaits this so the document it serializes
+   * holds the committed text, not the IME's in-flight pre-edit.
+   */
+  waitUntilCompositionEnds: () => Promise<void>;
 };
 
 export type EditorRefApi = CoreEditorRefApi & TExtendedEditorRefApi;
@@ -177,7 +196,7 @@ export type IEditorProps = {
   mentionHandler: TMentionHandler;
   onAssetChange?: (assets: TEditorAsset[]) => void;
   onEditorFocus?: () => void;
-  onChange?: (json: object, html: string, { isMigrationUpdate }?: { isMigrationUpdate?: boolean }) => void;
+  onChange?: (json: object, html: string, options?: { isMigrationUpdate?: boolean }) => void;
   onEnterKeyPress?: (e?: any) => void;
   onTransaction?: () => void;
   placeholder?: string | ((isFocused: boolean, value: string) => string);
@@ -212,6 +231,19 @@ export type ICollaborativeDocumentEditorProps = Omit<IEditorProps, "initialValue
   pageRestorationInProgress?: boolean;
   titleRef?: React.MutableRefObject<EditorTitleRefApi | null>;
   isFetchingFallbackBinary?: boolean;
+  /**
+   * The author's own unpublished revision — loaded into a new editing session
+   * instead of the shared document, so it stays invisible to other readers
+   * until the user publishes.
+   */
+  draftHtml?: string | null;
+  /**
+   * The served revision's content identity. The collaborative session uses it
+   * to decide whether the locally cached document is a descendant of the
+   * served one (safe to merge) or a stale copy from a previous revision that
+   * must be replaced.
+   */
+  contentStamp?: string;
 };
 
 export type IDocumentEditorProps = Omit<IEditorProps, "initialValue" | "onEnterKeyPress" | "value"> & {

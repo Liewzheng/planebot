@@ -7,7 +7,7 @@
 import { useCallback } from "react";
 // plane imports
 import type { TFileHandler } from "@plane/editor";
-import { getEditorAssetDownloadSrc, getEditorAssetSrc } from "@plane/utils";
+import { getEditorAssetDownloadSrc, getEditorAssetSrc, editorAssetApiVersion } from "@plane/utils";
 // hooks
 import { useEditorAsset } from "@/hooks/store/use-editor-asset";
 // plane web hooks
@@ -44,7 +44,13 @@ export const useEditorConfig = () => {
           return res?.exists ?? false;
         },
         delete: async (src: string) => {
-          if (src?.startsWith("http")) {
+          // Match the restore routing by URL family: a V2 URL or a bare asset
+          // id goes to the v2 endpoint; only the legacy `/api/workspaces/file-assets/`
+          // shape goes to the v1 endpoint. The "starts with http" heuristic
+          // mis-routed every V2 image (also absolute, once getFileURL adds
+          // the API base) into a silent 404 and orphaned the file.
+          if (!src) return;
+          if (editorAssetApiVersion(src) === "v1") {
             await fileService.deleteOldWorkspaceAsset(workspaceId, src);
           } else {
             await fileService.deleteNewAsset(
@@ -85,7 +91,18 @@ export const useEditorConfig = () => {
           }
         },
         restore: async (src: string) => {
-          if (src?.startsWith("http")) {
+          // The src is one of three things: a bare asset id (the editor's
+          // private-bucket short form, written into the document before the
+          // editor turns it into a full URL), a full V2 URL, or — for pages
+          // authored before V2 shipped — a full V1 URL. The two restore
+          // endpoints take very different shapes (V2 wants the workspace slug
+          // and asset UUID; V1 wants the workspace UUID and asset key), so
+          // route by the URL family rather than by whether the src happens to
+          // be absolute — V2 URLs are absolute too once `getFileURL` adds the
+          // API base, and the old "starts with http → V1" heuristic made
+          // every V2 image silently 404 on draft load.
+          if (!src) return;
+          if (editorAssetApiVersion(src) === "v1") {
             await fileService.restoreOldEditorAsset(workspaceId, src);
           } else {
             await fileService.restoreNewAsset(workspaceSlug, src);

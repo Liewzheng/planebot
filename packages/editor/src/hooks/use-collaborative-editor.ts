@@ -10,6 +10,8 @@ import Collaboration from "@tiptap/extension-collaboration";
 // react
 import type React from "react";
 import { useEffect, useMemo } from "react";
+// yjs
+import type * as Y from "yjs";
 // extensions
 import { HeadingListExtension, SideMenuExtension } from "@/extensions";
 // hooks
@@ -31,6 +33,13 @@ import { useTitleEditor } from "./use-title-editor";
 
 type UseCollaborativeEditorArgs = Omit<TCollaborativeEditorHookProps, "realtimeConfig" | "serverHandler" | "user"> & {
   provider: HocuspocusProvider;
+  /**
+   * The Y.Doc the editor should bind to. The collaborative session
+   * normally points this at `provider.document`; when a draft is active
+   * the hook swaps in a side doc so the unpublished body never reaches
+   * the websocket.
+   */
+  activeDocument: Y.Doc;
   user: TCollaborativeEditorHookProps["user"];
   actions: {
     signalForcedClose: (value: boolean) => void;
@@ -40,6 +49,7 @@ type UseCollaborativeEditorArgs = Omit<TCollaborativeEditorHookProps, "realtimeC
 export const useCollaborativeEditor = (props: UseCollaborativeEditorArgs) => {
   const {
     provider,
+    activeDocument,
     onAssetChange,
     onChange,
     onTransaction,
@@ -77,8 +87,12 @@ export const useCollaborativeEditor = (props: UseCollaborativeEditorArgs) => {
         dragDropEnabled,
       }),
       HeadingListExtension,
+      // Bind to the active doc, not provider.document directly. When a
+      // draft is active, `activeDocument` is the side doc the hook built
+      // for this draft: keystrokes land on the side doc, the websocket
+      // never sees them, the live server never persists them.
       Collaboration.configure({
-        document: provider.document,
+        document: activeDocument,
         field: "default",
       }),
       ...extensions,
@@ -95,6 +109,7 @@ export const useCollaborativeEditor = (props: UseCollaborativeEditorArgs) => {
     ],
     [
       provider,
+      activeDocument,
       disabledExtensions,
       dragDropEnabled,
       extensions,

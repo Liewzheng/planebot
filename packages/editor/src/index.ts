@@ -17,6 +17,9 @@ export * from "@/constants/common";
 
 // helpers
 export * from "@/helpers/common";
+export * from "@/helpers/document-stamp";
+export { createDraftSideDoc, createEditingDocument } from "@/helpers/editing-document";
+export * from "@/helpers/publish-state";
 export * from "@/helpers/yjs-utils";
 
 export { CORE_EXTENSIONS } from "@/constants/extension";
@@ -28,3 +31,4 @@ export * from "@/types";
 // additional exports
 export { TrailingNode } from "@/extensions/trailing-node";
 export { ImageFullScreenModal } from "@/extensions/custom-image/components/toolbar/full-screen/modal";
+export { sanitizeHTML, sanitizePageVersionHTML, sanitizeSVG } from "@/utils/sanitize-html";
