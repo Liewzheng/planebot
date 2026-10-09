@@ -7,16 +7,28 @@
 Implements the chain from ``sp-design.md`` §5.2:
 
 1. **scope hit** — ``(resource_type, action)`` must be in the SP's
-   :class:`ServiceScope` set (wildcards honored).
+   :class:`ServiceScope` set (wildcards honored). A ``read`` scope row
+   also satisfies a ``list`` request (LIST is authz-internal; the SP
+   management API exposes ``read`` only — see ``engine._scope_action_set``).
 2. **grant present** — for project resources, an active
    :class:`ProjectGrant` row exists. For workspace-level resources, a
    workspace-wide scope row (project=None) is required.
 3. **role_cap covers** — the action's required role (per
    :data:`ACTION_REQUIRED_ROLE`) must be ``<=`` the ``ProjectGrant.role_cap``.
 4. **owner intersection** — the SP's owner user must currently be an
-   active workspace member whose role covers ``role_cap``. This step is
-   non-cached: every call re-queries WorkspaceMember so a demotion takes
-   effect on the next request.
+   active workspace member whose role covers the effective floor. This
+   step is non-cached: every call re-queries WorkspaceMember so a
+   demotion takes effect on the next request.
+
+Pre-chain guards:
+
+* ``Action.ALL`` / ``ResourceType.ALL`` are NOT accepted as caller-side
+  input. Wildcards live on the scope-row side only — the engine never
+  short-circuits to a wildcard resolution against the matrix, which would
+  silently drop the role floor (P2-3 from M7 review).
+* ``ctx.workspace_slug`` must match the SP's workspace; the engine
+  refuses to evaluate a cross-workspace request even though M6's
+  management API cannot create one (defense-in-depth — P2-5).
 
 Any failure short-circuits to a deny :class:`Decision`. The chain is the
 single authorization point for every SP request regardless of which surface
@@ -53,20 +65,42 @@ if TYPE_CHECKING:
     from plane.db.models import Project
 
 
+# Reject caller-side wildcards. ``Action.ALL`` / ``ResourceType.ALL`` are
+# scope-row-side only; accepting them at the call site would let a future
+# caller bypass the matrix floor (P2-3 from M7 review).
+_CALLER_WILDCARDS = frozenset({actions.Action.ALL})
+
+
 @dataclass(frozen=True)
 class AuthzContext:
     """Per-request context for :func:`authorize`.
 
     Attributes:
         workspace_slug: The workspace slug from the URL. Used by the
-            owner-intersection step. Optional — when absent, the SP's
-            workspace slug is used.
+            owner-intersection step and the cross-workspace consistency
+            check. Optional — when absent, the SP's own workspace slug is
+            used (and the consistency check becomes a no-op).
         project_id: The project UUID the request is targeting, if any.
             ``None`` for workspace-level endpoints.
     """
 
     workspace_slug: Optional[str] = None
     project_id: Optional[str] = None
+
+
+def _scope_action_set(action: str) -> list[str]:
+    """Action values that satisfy a scope lookup for ``action``.
+
+    A ``read`` scope row satisfies a ``list`` request: the SP management
+    API exposes ``read`` only (no ``list``), so a scope row keyed on
+    ``list`` is unreachable in practice; widening the lookup means a
+    SP granted ``read`` correctly authorizes list endpoints when M8/M9
+    map collection routes to ``Action.LIST``. The ``all`` wildcard is
+    also honored, matching the documented scope-row semantics.
+    """
+    if action == actions.Action.LIST:
+        return [actions.Action.LIST, actions.Action.READ, actions.Action.ALL]
+    return [action, actions.Action.ALL]
 
 
 def authorize(
@@ -80,8 +114,11 @@ def authorize(
 
     Args:
         principal: Resolved by the authentication layer. ``None`` ⇒ deny.
-        action: One of :class:`Action`'s values (or ``"all"`` wildcard).
-        resource_type: One of :class:`ResourceType`'s values.
+        action: One of :class:`Action`'s values (``read``, ``list``,
+            ``create``, ``update``, ``delete``). ``all`` is rejected as
+            caller-side input — wildcards belong on the scope row.
+        resource_type: One of :class:`ResourceType`'s values. ``all`` is
+            rejected as caller-side input for the same reason.
         resource: The actual resource instance, when available. Reserved
             for future per-row decisions; the chain currently only consults
             the resource's type and project. Pass ``None`` for collection
@@ -95,11 +132,28 @@ def authorize(
     ctx = ctx or AuthzContext()
 
     # Step 0 — basic shape: principal must be present and the action/resource
-    # must be registered. An unregistered pair is default-deny (no need to
-    # do further work; even an admin would not reach here on a normal path
-    # because the URL is registered, but new paths throw 403 until they are).
+    # must be registered. An unregistered pair is default-deny. Wildcards
+    # are rejected at the caller boundary (see P2-3 in M7 review).
     if principal is None:
         return Decision.deny(DENY_NO_PRINCIPAL, "No principal on the request.")
+
+    if action in _CALLER_WILDCARDS:
+        return Decision.deny(
+            DENY_UNREGISTERED,
+            (
+                f"Action '{action}' is a scope-row wildcard and not "
+                "accepted as caller input."
+            ),
+        )
+
+    if resource_type in _CALLER_WILDCARDS:
+        return Decision.deny(
+            DENY_UNREGISTERED,
+            (
+                f"Resource type '{resource_type}' is a scope-row wildcard "
+                "and not accepted as caller input."
+            ),
+        )
 
     if not actions.is_registered_action(action):
         return Decision.deny(
@@ -120,6 +174,26 @@ def authorize(
         return Decision.allow(effective_role=None)
 
     sp = principal.service_principal
+
+    # Cross-workspace consistency check (P2-5 from M7 review). M6's
+    # management API already constrains scope/grant rows to the SP's
+    # workspace, so reaching this branch needs M8/M9 to also pass a
+    # foreign slug. Reject defensively rather than silently using the
+    # SP's workspace.
+    sp_workspace_slug = getattr(sp.workspace, "slug", None)
+    if (
+        ctx.workspace_slug
+        and sp_workspace_slug
+        and ctx.workspace_slug != sp_workspace_slug
+    ):
+        return Decision.deny(
+            DENY_NO_PRINCIPAL,
+            (
+                f"Workspace slug '{ctx.workspace_slug}' does not match "
+                f"service principal's workspace '{sp_workspace_slug}'."
+            ),
+        )
+
     if not sp.is_active:
         return Decision.deny(
             DENY_INACTIVE_PRINCIPAL,
@@ -132,7 +206,6 @@ def authorize(
     if (
         resources.is_workspace_level(resource_type)
         and action not in resources.ALLOWED_WORKSPACE_LEVEL_ACTIONS
-        and action not in (actions.Action.ALL,)
     ):
         return Decision.deny(
             DENY_WORKSPACE_LEVEL_WRITE,
@@ -143,6 +216,7 @@ def authorize(
         )
 
     # Step 1 — scope hit. Project-scoped scope wins over workspace-wide scope.
+    # LIST requests are satisfied by a READ scope row (see _scope_action_set).
     from plane.service_principals.models import ServiceScope
 
     project_id = _resolve_project_id(resource, ctx)
@@ -150,7 +224,7 @@ def authorize(
     scope_qs = ServiceScope.objects.filter(
         service_principal=sp,
         resource_type__in=[resource_type, resources.ResourceType.ALL],
-        action__in=[action, actions.Action.ALL],
+        action__in=_scope_action_set(action),
     )
     if project_id:
         scope_present = scope_qs.filter(
@@ -209,18 +283,20 @@ def authorize(
                 ),
             )
 
-        effective_role = grant.role_cap
+        effective_role: Optional[int] = grant.role_cap
     else:
         # Workspace-level resource: scope row is the only gate. The
         # owner-intersection step still applies; effective_role is the
-        # owner's workspace role at the time of the call.
+        # owner's workspace role at the time of the call. Set it to the
+        # action's required role so the intersection has a floor even
+        # when no ProjectGrant produced one (P2-4 from M7 review).
         effective_role = None
 
     # Step 4 — owner intersection. The owner user must be an active
     # workspace member whose role covers the action. The role is fetched
     # fresh on every call (no cache): a demotion takes effect on the next
     # request, which is the design constraint from sp-design.md §5.2.
-    workspace_slug = ctx.workspace_slug or getattr(sp.workspace, "slug", None)
+    workspace_slug = ctx.workspace_slug or sp_workspace_slug
     if not workspace_slug:
         return Decision.deny(
             DENY_NO_PRINCIPAL,
@@ -251,9 +327,15 @@ def authorize(
             "Service principal owner is inactive.",
         )
 
-    required_for_intersection = effective_role if project_id else (
-        actions.required_role(action, resource_type) or 0
-    )
+    # Owner floor: prefer the grant's effective_role when present
+    # (project-scoped resources), fall back to the action's required
+    # role for workspace-level resources so the floor is never None
+    # (P2-4 from M7 review).
+    required_for_intersection = effective_role
+    if required_for_intersection is None:
+        required_for_intersection = (
+            actions.required_role(action, resource_type) or 0
+        )
     if required_for_intersection and owner_row < required_for_intersection:
         return Decision.deny(
             DENY_OWNER_ROLE,

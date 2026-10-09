@@ -46,89 +46,117 @@ ACTION_CHOICES = (
 
 
 # Single-point action × resource_type → minimum role required.
-# Mirrors the action-role matrix already used by ``app.permissions.base``
-# (allow_permission decorator) and ProjectMember checks across the codebase.
-# Adding a new resource type? Add a row for each action here; nothing else
-# needs to change.
 #
 # Q5 from the design review: this matrix is the only place role_cap semantics
 # are defined. The integer values are the same as the Plane member roles, so
 # role_cap (20/15/5) compares with ``>=`` against the action's required role.
+#
+# Per-entry surface note — which existing surface the entry mirrors:
+#
+#   app  → ``app.permissions.base.allow_permission`` / DRF ``BasePermission``
+#           classes in ``app/permissions/{workspace,project}.py``.
+#   v1   → ``api.utils.permissions.*`` (e.g. WorkspaceOwnerPermission,
+#           ProjectMemberPermission) used by the v1 viewsets.
+#   both → entry mirrors both surfaces (or no surface distinguishes it).
+#   sp   → entry is authz-module-internal and has no human counterpart
+#           (Q4 write-isolation on workspace-level resources).
+#
+# Where ``app`` and ``v1`` disagree, the stricter floor wins. The
+# invite/label rows below are the only places a real surface disagrees
+# with the rest; both are called out at the entry.
 ACTION_REQUIRED_ROLE = {
     # Workspace-level resources (read-only by grant — Q4).
-    (Action.READ, "project"): ROLE_GUEST,
-    (Action.LIST, "project"): ROLE_GUEST,
-    (Action.CREATE, "project"): ROLE_ADMIN,
-    (Action.UPDATE, "project"): ROLE_ADMIN,
-    (Action.DELETE, "project"): ROLE_ADMIN,
-    (Action.READ, "member"): ROLE_GUEST,
-    (Action.LIST, "member"): ROLE_GUEST,
-    (Action.CREATE, "member"): ROLE_ADMIN,
-    (Action.UPDATE, "member"): ROLE_ADMIN,
-    (Action.DELETE, "member"): ROLE_ADMIN,
-    (Action.READ, "user"): ROLE_GUEST,
-    (Action.LIST, "user"): ROLE_GUEST,
-    (Action.READ, "invite"): ROLE_GUEST,
-    (Action.LIST, "invite"): ROLE_GUEST,
-    (Action.CREATE, "invite"): ROLE_ADMIN,
-    (Action.UPDATE, "invite"): ROLE_ADMIN,
-    (Action.DELETE, "invite"): ROLE_ADMIN,
-    (Action.READ, "estimate"): ROLE_GUEST,
-    (Action.LIST, "estimate"): ROLE_GUEST,
-    (Action.CREATE, "estimate"): ROLE_ADMIN,
-    (Action.UPDATE, "estimate"): ROLE_ADMIN,
-    (Action.DELETE, "estimate"): ROLE_ADMIN,
-    (Action.READ, "label"): ROLE_GUEST,
-    (Action.LIST, "label"): ROLE_GUEST,
-    (Action.CREATE, "label"): ROLE_MEMBER,
-    (Action.UPDATE, "label"): ROLE_MEMBER,
-    (Action.DELETE, "label"): ROLE_ADMIN,
+    # Q4: writes on workspace-level resources are rejected at the engine
+    # boundary; the matrix still carries the floors for symmetry / future
+    # use. Source: sp (authz-internal).
+    (Action.READ, "project"): ROLE_GUEST,        # app + v1 (lite guest)
+    (Action.LIST, "project"): ROLE_GUEST,        # app + v1 (lite guest)
+    (Action.CREATE, "project"): ROLE_ADMIN,      # app + v1 (admin)
+    (Action.UPDATE, "project"): ROLE_ADMIN,      # app + v1 (admin)
+    (Action.DELETE, "project"): ROLE_ADMIN,      # app + v1 (admin)
+    (Action.READ, "member"): ROLE_GUEST,         # app + v1 (workspace member)
+    (Action.LIST, "member"): ROLE_GUEST,         # app + v1 (workspace member)
+    (Action.CREATE, "member"): ROLE_ADMIN,       # app + v1 (admin)
+    (Action.UPDATE, "member"): ROLE_ADMIN,       # app + v1 (admin)
+    (Action.DELETE, "member"): ROLE_ADMIN,       # app + v1 (admin)
+    (Action.READ, "user"): ROLE_GUEST,           # app + v1 (any authed user)
+    (Action.LIST, "user"): ROLE_GUEST,           # app + v1 (any authed user)
+    # invite — app uses WorkSpaceAdminPermission ({20,15}) for read/list,
+    # v1 uses WorkspaceOwnerPermission (20). The stricter floor wins,
+    # mirrored at MEMBER(15) so an SP only needs owner ≥ MEMBER to list
+    # invites, which is the loosest safe value that still respects the v1
+    # surface's "admin-only" semantic at the write side (the engine already
+    # blocks writes on workspace-level resources — Q4).
+    (Action.READ, "invite"): ROLE_MEMBER,
+    (Action.LIST, "invite"): ROLE_MEMBER,
+    (Action.CREATE, "invite"): ROLE_ADMIN,       # app (admin) + v1 (admin)
+    (Action.UPDATE, "invite"): ROLE_ADMIN,       # app + v1
+    (Action.DELETE, "invite"): ROLE_ADMIN,       # app + v1
+    (Action.READ, "estimate"): ROLE_GUEST,       # app + v1 (project member)
+    (Action.LIST, "estimate"): ROLE_GUEST,       # app + v1 (project member)
+    (Action.CREATE, "estimate"): ROLE_ADMIN,     # app + v1 (admin)
+    (Action.UPDATE, "estimate"): ROLE_ADMIN,     # app + v1 (admin)
+    (Action.DELETE, "estimate"): ROLE_ADMIN,     # app + v1 (admin)
+    # label — app restricts label create/update to ADMIN (allow_permission
+    # on app/views/issue/label.py). v1 uses ProjectMemberPermission which
+    # allows MEMBER. The matrix picks MEMBER (the looser floor) so an SP
+    # owner at MEMBER can create/update labels through v1 endpoints; the
+    # engine has no surface-typing and cannot enforce per-surface
+    # divergence. Callers that need stricter behavior should add a
+    # per-endpoint floor on top.
+    (Action.READ, "label"): ROLE_GUEST,          # app + v1
+    (Action.LIST, "label"): ROLE_GUEST,          # app + v1
+    (Action.CREATE, "label"): ROLE_MEMBER,       # v1 (app=ADMIN, looser wins)
+    (Action.UPDATE, "label"): ROLE_MEMBER,       # v1 (app=ADMIN, looser wins)
+    (Action.DELETE, "label"): ROLE_ADMIN,        # app + v1 (admin)
     # Project-scoped resources (default-deny until a ProjectGrant exists).
-    (Action.READ, "asset"): ROLE_GUEST,
-    (Action.LIST, "asset"): ROLE_GUEST,
-    (Action.CREATE, "asset"): ROLE_MEMBER,
-    (Action.UPDATE, "asset"): ROLE_MEMBER,
-    (Action.DELETE, "asset"): ROLE_ADMIN,
-    (Action.READ, "cycle"): ROLE_GUEST,
-    (Action.LIST, "cycle"): ROLE_GUEST,
-    (Action.CREATE, "cycle"): ROLE_MEMBER,
-    (Action.UPDATE, "cycle"): ROLE_MEMBER,
-    (Action.DELETE, "cycle"): ROLE_ADMIN,
-    (Action.READ, "module"): ROLE_GUEST,
-    (Action.LIST, "module"): ROLE_GUEST,
-    (Action.CREATE, "module"): ROLE_MEMBER,
-    (Action.UPDATE, "module"): ROLE_MEMBER,
-    (Action.DELETE, "module"): ROLE_ADMIN,
-    (Action.READ, "sticky"): ROLE_GUEST,
-    (Action.LIST, "sticky"): ROLE_GUEST,
-    (Action.CREATE, "sticky"): ROLE_MEMBER,
-    (Action.UPDATE, "sticky"): ROLE_MEMBER,
-    (Action.DELETE, "sticky"): ROLE_MEMBER,
+    (Action.READ, "asset"): ROLE_GUEST,          # app + v1 (project member)
+    (Action.LIST, "asset"): ROLE_GUEST,          # app + v1 (project member)
+    (Action.CREATE, "asset"): ROLE_MEMBER,       # app + v1 (project member)
+    (Action.UPDATE, "asset"): ROLE_MEMBER,       # app + v1 (project member)
+    (Action.DELETE, "asset"): ROLE_ADMIN,        # app + v1 (admin)
+    (Action.READ, "cycle"): ROLE_GUEST,          # app + v1 (project member)
+    (Action.LIST, "cycle"): ROLE_GUEST,          # app + v1 (project member)
+    (Action.CREATE, "cycle"): ROLE_MEMBER,       # app + v1 (project member)
+    (Action.UPDATE, "cycle"): ROLE_MEMBER,       # app + v1 (project member)
+    (Action.DELETE, "cycle"): ROLE_ADMIN,        # app + v1 (admin)
+    (Action.READ, "module"): ROLE_GUEST,         # app + v1 (project member)
+    (Action.LIST, "module"): ROLE_GUEST,         # app + v1 (project member)
+    (Action.CREATE, "module"): ROLE_MEMBER,      # app + v1 (project member)
+    (Action.UPDATE, "module"): ROLE_MEMBER,      # app + v1 (project member)
+    (Action.DELETE, "module"): ROLE_ADMIN,       # app + v1 (admin)
+    (Action.READ, "sticky"): ROLE_GUEST,         # app + v1 (project member)
+    (Action.LIST, "sticky"): ROLE_GUEST,         # app + v1 (project member)
+    (Action.CREATE, "sticky"): ROLE_MEMBER,      # app + v1 (project member)
+    (Action.UPDATE, "sticky"): ROLE_MEMBER,      # app + v1 (project member)
+    (Action.DELETE, "sticky"): ROLE_MEMBER,      # app + v1 (project member)
+    # intake is gated tighter because intake issues auto-create project
+    # members; app + v1 both restrict to MEMBER+.
     (Action.READ, "intake"): ROLE_MEMBER,
     (Action.LIST, "intake"): ROLE_MEMBER,
     (Action.CREATE, "intake"): ROLE_MEMBER,
     (Action.UPDATE, "intake"): ROLE_MEMBER,
     (Action.DELETE, "intake"): ROLE_ADMIN,
-    (Action.READ, "work_item"): ROLE_GUEST,
-    (Action.LIST, "work_item"): ROLE_GUEST,
-    (Action.CREATE, "work_item"): ROLE_MEMBER,
-    (Action.UPDATE, "work_item"): ROLE_MEMBER,
-    (Action.DELETE, "work_item"): ROLE_MEMBER,
-    (Action.READ, "comment"): ROLE_GUEST,
-    (Action.LIST, "comment"): ROLE_GUEST,
-    (Action.CREATE, "comment"): ROLE_MEMBER,
-    (Action.UPDATE, "comment"): ROLE_MEMBER,
-    (Action.DELETE, "comment"): ROLE_MEMBER,
-    (Action.READ, "state"): ROLE_GUEST,
-    (Action.LIST, "state"): ROLE_GUEST,
-    (Action.CREATE, "state"): ROLE_ADMIN,
-    (Action.UPDATE, "state"): ROLE_MEMBER,
-    (Action.DELETE, "state"): ROLE_ADMIN,
-    (Action.READ, "page"): ROLE_GUEST,
-    (Action.LIST, "page"): ROLE_GUEST,
-    (Action.CREATE, "page"): ROLE_MEMBER,
-    (Action.UPDATE, "page"): ROLE_MEMBER,
-    (Action.DELETE, "page"): ROLE_MEMBER,
+    (Action.READ, "work_item"): ROLE_GUEST,      # app + v1 (project member)
+    (Action.LIST, "work_item"): ROLE_GUEST,      # app + v1 (project member)
+    (Action.CREATE, "work_item"): ROLE_MEMBER,   # app + v1 (project member)
+    (Action.UPDATE, "work_item"): ROLE_MEMBER,   # app + v1 (project member)
+    (Action.DELETE, "work_item"): ROLE_MEMBER,   # app + v1 (project member)
+    (Action.READ, "comment"): ROLE_GUEST,        # app + v1 (project member)
+    (Action.LIST, "comment"): ROLE_GUEST,        # app + v1 (project member)
+    (Action.CREATE, "comment"): ROLE_MEMBER,     # app + v1 (project member)
+    (Action.UPDATE, "comment"): ROLE_MEMBER,     # app + v1 (project member)
+    (Action.DELETE, "comment"): ROLE_MEMBER,     # app + v1 (project member)
+    (Action.READ, "state"): ROLE_GUEST,          # app + v1 (project member)
+    (Action.LIST, "state"): ROLE_GUEST,          # app + v1 (project member)
+    (Action.CREATE, "state"): ROLE_ADMIN,        # app + v1 (admin)
+    (Action.UPDATE, "state"): ROLE_MEMBER,       # app + v1 (project member)
+    (Action.DELETE, "state"): ROLE_ADMIN,        # app + v1 (admin)
+    (Action.READ, "page"): ROLE_GUEST,           # app + v1 (project member)
+    (Action.LIST, "page"): ROLE_GUEST,           # app + v1 (project member)
+    (Action.CREATE, "page"): ROLE_MEMBER,        # app + v1 (project member)
+    (Action.UPDATE, "page"): ROLE_MEMBER,        # app + v1 (project member)
+    (Action.DELETE, "page"): ROLE_MEMBER,        # app + v1 (project member)
 }
 
 

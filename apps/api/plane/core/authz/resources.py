@@ -78,12 +78,6 @@ WORKSPACE_LEVEL_RESOURCES = frozenset(
 )
 
 
-# Action names that are permitted on workspace-level resource types even
-# though there is no project grant to attach them to. Writes go through a
-# separate gate (see ``ALLOWED_WORKSPACE_LEVEL_ACTIONS`` below).
-ACTION_NAMES = ("read", "create", "update", "delete", "list")
-
-
 # Workspace-level resource types only accept read actions. Writes must land
 # on a project-scoped resource via an explicit ProjectGrant. This is the
 # Q4 enforcement point for workspace-wide grants.

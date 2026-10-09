@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from rest_framework.exceptions import PermissionDenied
 
-from .decision import ALLOWED as _ALLOWED, Decision
+from .decision import Decision
 
 
 def enforce(decision: Decision) -> None:
@@ -24,9 +24,9 @@ def enforce(decision: Decision) -> None:
     and the human-readable detail; both are surfaced in the 403 body and
     in the server logs.
     """
-    if decision.reason == _ALLOWED:
-        return
-    raise PermissionDenied(detail=decision.detail or decision.reason)
+    if not decision.allowed:
+        raise PermissionDenied(detail=decision.detail or decision.reason)
+    return None
 
 
 def ensure_allowed(decision: Decision) -> None:

@@ -30,6 +30,7 @@ from plane.core.authz import (
     DENY_GRANT_MISS,
     DENY_INACTIVE_OWNER,
     DENY_INACTIVE_PRINCIPAL,
+    DENY_NO_PRINCIPAL,
     DENY_OWNER_NOT_WORKSPACE_MEMBER,
     DENY_OWNER_ROLE,
     DENY_ROLE_CAP,
@@ -893,9 +894,15 @@ class TestVocabularyIntegrity:
         assert required_role(Action.READ, "totally_unknown") is None
 
     def test_required_role_consistent_with_role_cap(self):
-        """role_cap choices (20/15/5) must align with the matrix floor."""
-        # Every action-role requirement is one of 5/15/20.
-        for (_, _), required in required_role.__globals__["ACTION_REQUIRED_ROLE"].items():
+        """role_cap choices (20/15/5) must align with the matrix floor.
+
+        Iterates the imported ``ACTION_REQUIRED_ROLE`` mapping by attribute
+        access (not via ``__globals__``), so the test stays valid even if
+        the lookup helper's enclosing scope changes.
+        """
+        from plane.core.authz.actions import ACTION_REQUIRED_ROLE as MATRIX
+
+        for required in MATRIX.values():
             assert required in (5, 15, 20), f"unexpected required role: {required}"
 
     def test_resource_choices_match_module_constants(self):
@@ -926,3 +933,355 @@ class TestVocabularyIntegrity:
             f"SP exposes actions the authz module does not know: "
             f"{sp_actions - core_actions}"
         )
+
+
+# --------------------------------------------------------------------------- #
+# R1 review fixes — P2-1 invite floor, P2-2 LIST, P2-3 ALL bypass,            #
+# P2-4 workspace-level owner floor, P2-5 cross-workspace, P2-6 pinning vector. #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestInviteFloorP2_1:
+    """P2-1: invite read/list at MEMBER (15) — mirrors the app surface and
+    closes the v1/admin-only gap that would otherwise let a guest-owned
+    SP list invitations.
+    """
+
+    def test_invite_read_requires_member_role(self):
+        assert required_role(Action.READ, ResourceType.INVITE) == 15
+
+    def test_invite_list_requires_member_role(self):
+        assert required_role(Action.LIST, ResourceType.INVITE) == 15
+
+    def test_guest_cap_denies_invite_read(self, sp, public_project, workspace):
+        """role_cap=GUEST (5) on the SP grant is below MEMBER (15) for invite
+        read — owner-floor must deny, even though the SP could be used
+        through a different surface at GUEST."""
+        _add_scope(sp, ResourceType.INVITE, Action.READ, project=None)
+        # No project grant; workspace-level resource uses the workspace-wide
+        # scope row + the action's required role as the owner floor.
+        principal = ServicePrincipal_(service_principal=sp)
+        d = authorize(
+            principal,
+            Action.READ,
+            ResourceType.INVITE,
+            ctx=AuthzContext(workspace_slug=workspace.slug),
+        )
+        # The owner (create_user fixture) is admin (20) so the floor holds.
+        # We instead assert the matrix value and that an owner at GUEST
+        # would deny. Demote owner and rerun.
+        WorkspaceMember.objects.filter(
+            workspace=workspace, member=sp.owner
+        ).update(role=5)
+        d = authorize(
+            principal,
+            Action.READ,
+            ResourceType.INVITE,
+            ctx=AuthzContext(workspace_slug=workspace.slug),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_OWNER_ROLE
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestListActionP2_2:
+    """P2-2: a ``read`` scope row must satisfy a ``list`` request because
+    the SP management API has no ``list`` action — wiring a list endpoint
+    to ``Action.LIST`` must not surprise the engine.
+    """
+
+    def test_list_satisfied_by_read_scope(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        _add_scope(sp, ResourceType.WORK_ITEM, Action.READ, project=public_project)
+        _add_grant(sp, public_project, role_cap=15)
+        d = authorize(
+            sp_principal,
+            Action.LIST,
+            ResourceType.WORK_ITEM,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert d.allowed, (
+            f"A read scope row should satisfy a list request; got {d}"
+        )
+
+    def test_list_satisfied_by_all_action_scope(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        _add_scope(sp, ResourceType.WORK_ITEM, Action.ALL, project=public_project)
+        _add_grant(sp, public_project, role_cap=15)
+        d = authorize(
+            sp_principal,
+            Action.LIST,
+            ResourceType.WORK_ITEM,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert d.allowed
+
+    def test_list_without_any_scope_denies(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        # Create a different-scope row to prove lookup misses.
+        _add_scope(
+            sp, ResourceType.WORK_ITEM, Action.CREATE, project=public_project
+        )
+        _add_grant(sp, public_project, role_cap=20)
+        d = authorize(
+            sp_principal,
+            Action.LIST,
+            ResourceType.WORK_ITEM,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_SCOPE_MISS
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestAllActionBypassP2_3:
+    """P2-3: ``all`` is rejected as caller-side action/resource_type so a
+    future caller cannot bypass the Q4 workspace-level write guard or
+    the role_cap floor by passing the wildcard through.
+    """
+
+    def test_action_all_as_caller_input_denies(self, sp_principal):
+        d = authorize(sp_principal, Action.ALL, ResourceType.PROJECT)
+        assert not d.allowed
+        assert d.reason == DENY_UNREGISTERED
+
+    def test_resource_all_as_caller_input_denies(self, sp_principal):
+        d = authorize(sp_principal, Action.READ, ResourceType.ALL)
+        assert not d.allowed
+        assert d.reason == DENY_UNREGISTERED
+
+    def test_action_all_workspace_level_does_not_grant_write(
+        self, sp, sp_principal, workspace
+    ):
+        """Even with an all-action workspace-wide scope, caller-side
+        ``all`` is rejected before the Q4 guard runs — no shortcut."""
+        _add_scope(sp, ResourceType.ALL, Action.ALL, project=None)
+        d = authorize(
+            sp_principal,
+            Action.ALL,
+            ResourceType.PROJECT,
+            ctx=AuthzContext(workspace_slug=workspace.slug),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_UNREGISTERED
+
+    def test_scope_row_with_all_action_still_authorizes_real_call(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        """The ``all`` action is still honored on scope rows (not on caller
+        input). A scope row keyed on ``all`` satisfies a real call."""
+        _add_scope(sp, ResourceType.WORK_ITEM, Action.ALL, project=public_project)
+        _add_grant(sp, public_project, role_cap=15)
+        d = authorize(
+            sp_principal,
+            Action.READ,
+            ResourceType.WORK_ITEM,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert d.allowed
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestWorkspaceLevelOwnerFloorP2_4:
+    """P2-4: workspace-level resource + project context must still check
+    the owner floor against the action's required role — previously
+    skipped because ``effective_role`` was ``None`` on the workspace path.
+    """
+
+    def test_owner_floor_applies_to_workspace_read_with_project_ctx(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        """A workspace-level resource (invite) with a project_id in the
+        context skips the grant step. Previously the owner-intersection
+        floor was None (effective_role is None on the workspace path).
+        The fix routes to required_role(action, resource_type) so MEMBER
+        floors still bite — even on workspace-level resources."""
+
+        _add_scope(sp, ResourceType.INVITE, Action.READ, project=None)
+        WorkspaceMember.objects.filter(
+            workspace=workspace, member=sp.owner
+        ).update(role=5)
+        d = authorize(
+            sp_principal,
+            Action.READ,
+            ResourceType.INVITE,
+            resource=public_project,
+            ctx=AuthzContext(workspace_slug=workspace.slug),
+        )
+        # invite read requires MEMBER (15); owner is GUEST (5) — denied.
+        assert not d.allowed
+        assert d.reason == DENY_OWNER_ROLE
+
+    def test_owner_floor_passed_when_owner_meets_floor(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        _add_scope(sp, ResourceType.INVITE, Action.READ, project=None)
+        # create_user is admin (20) ≥ MEMBER (15) → allowed.
+        d = authorize(
+            sp_principal,
+            Action.READ,
+            ResourceType.INVITE,
+            resource=public_project,
+            ctx=AuthzContext(workspace_slug=workspace.slug),
+        )
+        assert d.allowed
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestCrossWorkspaceConsistencyP2_5:
+    """P2-5: the engine refuses to authorize across workspaces even if a
+    caller passes a foreign slug. The M6 management API cannot produce
+    this state, but defense-in-depth matters when M8/M9 start passing
+    ctx from request routing.
+    """
+
+    def test_foreign_workspace_slug_denies(
+        self, workspace, create_user, public_project
+    ):
+        from plane.db.models import Workspace
+
+        other = Workspace.objects.create(
+            name="Other", owner=create_user, slug="other-ws"
+        )
+        WorkspaceMember.objects.create(
+            workspace=other, member=create_user, role=20
+        )
+        sp = ServicePrincipal.objects.create(
+            workspace=workspace, owner=create_user, name="bot"
+        )
+        _add_scope(sp, ResourceType.WORK_ITEM, Action.READ, project=public_project)
+        _add_grant(sp, public_project, role_cap=20)
+        principal = ServicePrincipal_(service_principal=sp)
+        d = authorize(
+            principal,
+            Action.READ,
+            ResourceType.WORK_ITEM,
+            ctx=AuthzContext(
+                workspace_slug="other-ws",
+                project_id=str(public_project.id),
+            ),
+        )
+        assert not d.allowed
+        # DENY_NO_PRINCIPAL is reused for cross-workspace — the slug
+        # mismatch makes the principal's effective workspace ambiguous.
+        assert d.reason == DENY_NO_PRINCIPAL
+
+    def test_matching_slug_allows(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        _add_scope(sp, ResourceType.WORK_ITEM, Action.READ, project=public_project)
+        _add_grant(sp, public_project, role_cap=20)
+        d = authorize(
+            sp_principal,
+            Action.READ,
+            ResourceType.WORK_ITEM,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert d.allowed
+
+    def test_no_slug_in_ctx_falls_back_to_sp_workspace(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        """Defense-in-depth is only triggered when the caller passes a
+        slug. With no slug, the engine uses the SP's own workspace — the
+        normal path."""
+        _add_scope(sp, ResourceType.WORK_ITEM, Action.READ, project=public_project)
+        _add_grant(sp, public_project, role_cap=20)
+        d = authorize(
+            sp_principal,
+            Action.READ,
+            ResourceType.WORK_ITEM,
+            ctx=AuthzContext(project_id=str(public_project.id)),
+        )
+        assert d.allowed
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestTowerVectorPinningP2_6:
+    """P2-6: pinning test for the tower-flagged vector — a workspace-wide
+    scope row + secret project + NO ProjectGrant must yield DENY_GRANT_MISS.
+    The grant step runs unconditionally for project-scoped resources so a
+    workspace-wide scope cannot reach a secret project.
+    """
+
+    def test_workspace_wide_scope_secret_project_no_grant_denies(
+        self, sp, sp_principal, secret_project, workspace
+    ):
+        # Workspace-wide scope row (project=None) — would have allowed
+        # access under a buggy implementation.
+        _add_scope(sp, ResourceType.WORK_ITEM, Action.READ, project=None)
+        # Deliberately no ProjectGrant for the secret project.
+        d = authorize(
+            sp_principal,
+            Action.READ,
+            ResourceType.WORK_ITEM,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(secret_project.id),
+            ),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_GRANT_MISS
+
+    def test_workspace_wide_scope_with_grant_allows(
+        self, sp, sp_principal, secret_project, workspace
+    ):
+        """Sanity: with both the workspace-wide scope AND a project grant,
+        the secret project is reachable (default-deny was the only path
+        we wanted to pin — opt-in remains the only authorized path)."""
+        _add_scope(sp, ResourceType.WORK_ITEM, Action.READ, project=None)
+        _add_grant(sp, secret_project, role_cap=20)
+        d = authorize(
+            sp_principal,
+            Action.READ,
+            ResourceType.WORK_ITEM,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(secret_project.id),
+            ),
+        )
+        assert d.allowed
+
+    def test_workspace_wide_scope_inactive_grant_denies(
+        self, sp, sp_principal, secret_project, workspace
+    ):
+        """An inactive grant also denies — the grant step checks
+        ``is_active=True``."""
+        _add_scope(sp, ResourceType.WORK_ITEM, Action.READ, project=None)
+        _add_grant(sp, secret_project, role_cap=20, is_active=False)
+        d = authorize(
+            sp_principal,
+            Action.READ,
+            ResourceType.WORK_ITEM,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(secret_project.id),
+            ),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_GRANT_MISS
