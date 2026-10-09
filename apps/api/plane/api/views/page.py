@@ -8,6 +8,7 @@ import json
 # Django imports
 from django.contrib.postgres.aggregates import ArrayAgg
 from django.contrib.postgres.fields import ArrayField
+from django.db import transaction
 from django.db.models import Q, UUIDField, Value
 from django.db.models.functions import Coalesce
 from django.core.serializers.json import DjangoJSONEncoder
@@ -35,7 +36,7 @@ from plane.db.models import (
 from .base import BaseAPIView
 from plane.bgtasks.page_version_task import track_page_version
 from plane.utils.order_queryset import PAGE_ORDER_BY_ALLOWLIST, sanitize_order_by
-from plane.utils.page_content import sync_page_description_formats
+from plane.utils.page_content import content_is_unchanged, sync_page_description_formats
 from plane.utils.openapi import (
     page_docs,
     PAGE_PK_PARAMETER,
@@ -58,6 +59,50 @@ from plane.utils.openapi import (
 )
 
 
+def visible_project_pages(request, slug, project_id):
+    """
+    The pages of one project the requester may read, with the label and project id
+    annotations both page endpoints return.
+
+    Visibility lives here and nowhere else: a page is listed when its project is
+    an active membership of the requester and it is either theirs or explicitly
+    public (access=0). Shared by the list and the detail endpoints so a change to
+    that rule cannot land on only one of them.
+    """
+    return (
+        Page.objects.filter(workspace__slug=slug)
+        .filter(projects__id=project_id)
+        .filter(project_pages__deleted_at__isnull=True)
+        .filter(
+            projects__project_projectmember__member=request.user,
+            projects__project_projectmember__is_active=True,
+            projects__archived_at__isnull=True,
+        )
+        .filter(Q(owned_by=request.user) | Q(access=0))
+        .select_related("workspace")
+        .select_related("owned_by")
+        .select_related("parent")
+        .prefetch_related("labels")
+        .prefetch_related("projects")
+        .annotate(
+            label_ids=Coalesce(
+                ArrayAgg(
+                    "page_labels__label_id",
+                    distinct=True,
+                    filter=~Q(page_labels__label_id__isnull=True),
+                ),
+                Value([], output_field=ArrayField(UUIDField())),
+            ),
+            project_ids=Coalesce(
+                ArrayAgg("projects__id", distinct=True, filter=Q(projects__id__isnull=False)),
+                Value([], output_field=ArrayField(UUIDField())),
+            ),
+        )
+        .order_by("-created_at")
+        .distinct()
+    )
+
+
 class PageListCreateAPIEndpoint(BaseAPIView):
     """Page List and Create Endpoint"""
 
@@ -69,38 +114,7 @@ class PageListCreateAPIEndpoint(BaseAPIView):
     use_read_replica = True
 
     def get_queryset(self):
-        return (
-            Page.objects.filter(workspace__slug=self.kwargs.get("slug"))
-            .filter(projects__id=self.kwargs.get("project_id"))
-            .filter(project_pages__deleted_at__isnull=True)
-            .filter(
-                projects__project_projectmember__member=self.request.user,
-                projects__project_projectmember__is_active=True,
-                projects__archived_at__isnull=True,
-            )
-            .filter(Q(owned_by=self.request.user) | Q(access=0))
-            .select_related("workspace")
-            .select_related("owned_by")
-            .select_related("parent")
-            .prefetch_related("labels")
-            .prefetch_related("projects")
-            .annotate(
-                label_ids=Coalesce(
-                    ArrayAgg(
-                        "page_labels__label_id",
-                        distinct=True,
-                        filter=~Q(page_labels__label_id__isnull=True),
-                    ),
-                    Value([], output_field=ArrayField(UUIDField())),
-                ),
-                project_ids=Coalesce(
-                    ArrayAgg("projects__id", distinct=True, filter=Q(projects__id__isnull=False)),
-                    Value([], output_field=ArrayField(UUIDField())),
-                ),
-            )
-            .order_by("-created_at")
-            .distinct()
-        )
+        return visible_project_pages(self.request, self.kwargs.get("slug"), self.kwargs.get("project_id"))
 
     @page_docs(
         operation_id="create_page",
@@ -215,38 +229,7 @@ class PageDetailAPIEndpoint(BaseAPIView):
     use_read_replica = True
 
     def get_queryset(self):
-        return (
-            Page.objects.filter(workspace__slug=self.kwargs.get("slug"))
-            .filter(projects__id=self.kwargs.get("project_id"))
-            .filter(project_pages__deleted_at__isnull=True)
-            .filter(
-                projects__project_projectmember__member=self.request.user,
-                projects__project_projectmember__is_active=True,
-                projects__archived_at__isnull=True,
-            )
-            .filter(Q(owned_by=self.request.user) | Q(access=0))
-            .select_related("workspace")
-            .select_related("owned_by")
-            .select_related("parent")
-            .prefetch_related("labels")
-            .prefetch_related("projects")
-            .annotate(
-                label_ids=Coalesce(
-                    ArrayAgg(
-                        "page_labels__label_id",
-                        distinct=True,
-                        filter=~Q(page_labels__label_id__isnull=True),
-                    ),
-                    Value([], output_field=ArrayField(UUIDField())),
-                ),
-                project_ids=Coalesce(
-                    ArrayAgg("projects__id", distinct=True, filter=Q(projects__id__isnull=False)),
-                    Value([], output_field=ArrayField(UUIDField())),
-                ),
-            )
-            .order_by("-created_at")
-            .distinct()
-        )
+        return visible_project_pages(self.request, self.kwargs.get("slug"), self.kwargs.get("project_id"))
 
     @page_docs(
         operation_id="retrieve_page",
@@ -342,6 +325,14 @@ class PageDetailAPIEndpoint(BaseAPIView):
                 )
             old_description_html = page.description_html
             existing_instance = json.dumps({"description_html": old_description_html}, cls=DjangoJSONEncoder)
+            # An upload that says the same thing as the stored page (a repeated
+            # markdown import, a re-run of the same generation) is a no-op:
+            # writing it would move the revision, invent a history entry, and
+            # make every open editor reload for a page nobody changed. Content
+            # identity ignores serialization, so the stored markup is kept.
+            if content_is_unchanged(page.description_html, request.data.get("description_html")):
+                page = self.get_queryset().get(pk=pk)
+                return Response(PageSerializer(page).data, status=status.HTTP_200_OK)
             serializer.save()
             # Backfill the Yjs binary when content was written as HTML only
             # (e.g. by the CLI) so the web editor can load the page. When the
@@ -408,27 +399,32 @@ class PageDetailAPIEndpoint(BaseAPIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # Remove the parent from all the children
-        _ = Page.objects.filter(
-            parent_id=pk,
-            projects__id=project_id,
-            workspace__slug=slug,
-            project_pages__deleted_at__isnull=True,
-        ).update(parent=None)
+        # Detaching children, deleting the page, and clearing its favorites and
+        # recent visits happen together: a failure in any step must not leave
+        # children detached while the page survives, or the page gone while its
+        # favorites/visits linger.
+        with transaction.atomic():
+            # Remove the parent from all the children
+            _ = Page.objects.filter(
+                parent_id=pk,
+                projects__id=project_id,
+                workspace__slug=slug,
+                project_pages__deleted_at__isnull=True,
+            ).update(parent=None)
 
-        page.delete()
-        # Delete the user favorite page
-        UserFavorite.objects.filter(
-            project_id=project_id,
-            workspace__slug=slug,
-            entity_identifier=pk,
-            entity_type="page",
-        ).delete()
-        # Delete the page from recent visits
-        UserRecentVisit.objects.filter(
-            project_id=project_id,
-            workspace__slug=slug,
-            entity_identifier=pk,
-            entity_name="page",
-        ).delete(soft=False)
+            page.delete()
+            # Delete the user favorite page
+            UserFavorite.objects.filter(
+                project_id=project_id,
+                workspace__slug=slug,
+                entity_identifier=pk,
+                entity_type="page",
+            ).delete()
+            # Delete the page from recent visits
+            UserRecentVisit.objects.filter(
+                project_id=project_id,
+                workspace__slug=slug,
+                entity_identifier=pk,
+                entity_name="page",
+            ).delete(soft=False)
         return Response(status=status.HTTP_204_NO_CONTENT)
