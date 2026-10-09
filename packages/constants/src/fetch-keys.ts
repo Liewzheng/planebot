@@ -60,6 +60,13 @@ export const WORKSPACE_PARTIAL_PROJECTS = (workspaceSlug: string) =>
 
 export const WORKSPACE_MEMBERS = (workspaceSlug: string) => `WORKSPACE_MEMBERS_${workspaceSlug.toUpperCase()}`;
 
+// M10 — unified principal-dispatch payload (single source of truth
+// for member visibility and effective permissions; the store layer
+// no longer recomputes the predicate, so this key must be loaded
+// for every workspace).
+export const WORKSPACE_PRINCIPAL_DISPATCH = (workspaceSlug: string) =>
+  `WORKSPACE_PRINCIPAL_DISPATCH_${workspaceSlug.toUpperCase()}`;
+
 export const WORKSPACE_MODULES = (workspaceSlug: string) => `WORKSPACE_MODULES_${workspaceSlug.toUpperCase()}`;
 
 export const WORKSPACE_CYCLES = (workspaceSlug: string) => `WORKSPACE_CYCLES_${workspaceSlug.toUpperCase()}`;
