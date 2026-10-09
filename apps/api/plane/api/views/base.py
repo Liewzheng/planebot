@@ -65,18 +65,12 @@ class TimezoneMixin:
 
 
 class AIScopeEnforcementMixin:
-    """Enforce per-account scope policies for AI (bot) service accounts and
-    for Service Principal tokens.
+    """Authorization hook for Service-Principal-authenticated requests.
 
     Three callers feed this hook:
 
     * **Human users** — pass through untouched. The base DRF permission
       classes already gate workspace/project membership.
-    * **AI bots** (``request.user.is_bot=True``) — the historical path:
-      ``plane.ai_accounts.policy.enforce_ai_scope`` checks the bot's
-      ``AIScopePolicy`` rows against a URL-name keyed resource map. Behavior
-      is unchanged from before M8 — vihar's review #2 / mission context
-      explicit guarantee.
     * **Service principals** (``request._sp_principal`` stashed by
       :class:`APIKeyAuthentication`) — every SP-authenticated request runs
       :func:`plane.core.authz.authorize`. The view must declare its
@@ -85,6 +79,13 @@ class AIScopeEnforcementMixin:
       :meth:`get_permissions` because those classes reason about
       ``request.user``-as-member, which is the wrong semantic for an SP —
       the SP's grants (not the owner's) own the project membership decision.
+
+    The historical ``AI bots`` branch — which routed
+    ``is_bot=True`` requests through ``plane.ai_accounts.policy.enforce_ai_scope``
+    — was deleted as part of M12. AIAccount-era bots are now reached
+    through the dual-read shim in ``APIKeyAuthentication`` (``plane_api_``
+    tokens with ``principal_type=SERVICE`` flip to the SP branch), and the
+    legacy bot path is a no-op.
     """
 
     #: Resource type this view targets. Subclasses MUST set this when the
@@ -119,13 +120,6 @@ class AIScopeEnforcementMixin:
         if sp_principal is not None:
             self._enforce_sp_permission(request, sp_principal)
             return
-
-        # AI-bot path — unchanged. Called only when the request user is an
-        # is_bot User, never for SP requests (the wrapper sets is_bot=False).
-        if getattr(request.user, "is_bot", False):
-            from plane.ai_accounts.policy import enforce_ai_scope
-
-            enforce_ai_scope(request, self)
 
     def _enforce_sp_permission(self, request, sp_principal):
         """Run :func:`authorize` for the current SP + (action, resource).

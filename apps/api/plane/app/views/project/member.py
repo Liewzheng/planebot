@@ -19,7 +19,7 @@ from plane.app.serializers import (
 from plane.app.permissions import WorkspaceUserPermission
 
 from plane.db.models import Project, ProjectMember, ProjectUserProperty, WorkspaceMember
-from plane.ai_accounts.constants import AI_VISIBLE_MEMBER_Q
+from plane.core.authz.visibility import VISIBLE_MEMBER_Q
 from plane.bgtasks.project_add_user_email_task import project_add_user_email
 from plane.utils.host import base_host
 from plane.app.permissions.base import allow_permission, ROLE
@@ -37,7 +37,7 @@ class ProjectMemberViewSet(BaseViewSet):
             .get_queryset()
             .filter(workspace__slug=self.kwargs.get("slug"))
             .filter(project_id=self.kwargs.get("project_id"))
-            .filter(AI_VISIBLE_MEMBER_Q)
+            .filter(VISIBLE_MEMBER_Q)
             .filter()
             .select_related("project")
             .select_related("member")
@@ -158,7 +158,7 @@ class ProjectMemberViewSet(BaseViewSet):
     def list(self, request, slug, project_id):
         # Get the list of project members for the project
         project_members = ProjectMember.objects.filter(
-            AI_VISIBLE_MEMBER_Q,
+            VISIBLE_MEMBER_Q,
             project_id=project_id,
             workspace__slug=slug,
             is_active=True,
@@ -180,7 +180,7 @@ class ProjectMemberViewSet(BaseViewSet):
 
         project_member = (
             ProjectMember.objects.filter(
-                AI_VISIBLE_MEMBER_Q,
+                VISIBLE_MEMBER_Q,
                 pk=pk,
                 project_id=project_id,
                 workspace__slug=slug,
@@ -291,7 +291,7 @@ class ProjectMemberViewSet(BaseViewSet):
     @allow_permission([ROLE.ADMIN])
     def destroy(self, request, slug, project_id, pk):
         project_member = ProjectMember.objects.get(
-            AI_VISIBLE_MEMBER_Q,
+            VISIBLE_MEMBER_Q,
             workspace__slug=slug,
             project_id=project_id,
             pk=pk,

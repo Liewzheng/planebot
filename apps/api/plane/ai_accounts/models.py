@@ -67,3 +67,38 @@ class AIScopePolicy(BaseModel):
 
     def __str__(self):
         return f"{self.ai_account.name}: {self.action} {self.resource_type}"
+
+
+class AIAccountMigrationRecord(BaseModel):
+    """Idempotency marker for the AIAccount → ServicePrincipal conversion.
+
+    One row per AI account ever converted. The management command skips
+    rows whose ``ai_account_id`` already has a record so re-running the
+    command (incl. across a deploy cycle) never produces duplicates.
+
+    Storing the resulting ``service_principal_id`` keeps the audit trail
+    without requiring a back-pointer on the SP model itself.
+    """
+
+    ai_account = models.OneToOneField(
+        AIAccount,
+        on_delete=models.CASCADE,
+        related_name="migration_record",
+    )
+    service_principal = models.ForeignKey(
+        "service_principals.ServicePrincipal",
+        on_delete=models.CASCADE,
+        related_name="ai_account_migrations",
+    )
+    scopes_migrated = models.PositiveIntegerField(default=0)
+    grants_migrated = models.PositiveIntegerField(default=0)
+    tokens_migrated = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "AI Account Migration Record"
+        verbose_name_plural = "AI Account Migration Records"
+        db_table = "ai_account_migration_records"
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        return f"AIAccountMigrationRecord(ai={self.ai_account_id}, sp={self.service_principal_id})"

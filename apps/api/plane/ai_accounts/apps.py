@@ -9,4 +9,7 @@ class AIAccountsConfig(AppConfig):
     name = "plane.ai_accounts"
 
     def ready(self):
-        from . import signals  # noqa: F401
+        # M12 retired the historical AI bot signals and policy hooks; the
+        # app now only persists the ``AIAccount`` table until the cleanup
+        # migration drops it in a follow-up release. Nothing to wire here.
+        pass
