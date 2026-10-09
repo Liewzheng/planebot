@@ -7,6 +7,7 @@
 // plane imports
 import { API_BASE_URL } from "@plane/constants";
 import type {
+  TPrincipalDispatchPayload,
   TProjectGrant,
   TProjectGrantInput,
   TServicePrincipal,
@@ -134,7 +135,7 @@ export class ServicePrincipalService extends APIService {
         // to keep the spread safe.
         throw {
           status_code: error?.response?.status,
-          ...(error?.response?.data ?? {}),
+          ...error?.response?.data,
         };
       });
   }
@@ -151,8 +152,23 @@ export class ServicePrincipalService extends APIService {
         // failure) from a genuine validation error.
         throw {
           status_code: error?.response?.status,
-          ...(error?.response?.data ?? {}),
+          ...error?.response?.data,
         };
+      });
+  }
+
+  /** M10 — fetch the unified principal-dispatch payload.
+   *  Backed by `GET /api/workspaces/<slug>/principal/permissions/`,
+   *  this is the single source of truth the web consumes for member
+   *  visibility (the legacy `is_bot` / `bot_type` predicate was
+   *  removed from `workspace-member.store.ts` in this branch) and
+   *  effective permissions.  See
+   *  `apps/api/plane/app/views/principal/base.py`. */
+  async fetchPrincipalDispatch(workspaceSlug: string): Promise<TPrincipalDispatchPayload> {
+    return this.get(`/api/workspaces/${workspaceSlug}/principal/permissions/`)
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data ?? error;
       });
   }
 }
