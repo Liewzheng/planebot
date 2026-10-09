@@ -30,7 +30,7 @@ export type TBasePage = TPage & {
   // actions
   update: (pageData: Partial<TPage>) => Promise<Partial<TPage> | undefined>;
   updateTitle: (title: string) => void;
-  updateDescription: (document: TDocumentPayload) => Promise<void>;
+  updateDescription: (document: TDocumentPayload) => Promise<{ updated_at?: string } | undefined>;
   makePublic: (params: { shouldSync?: boolean }) => Promise<void>;
   makePrivate: (params: { shouldSync?: boolean }) => Promise<void>;
   lock: (params: { shouldSync?: boolean; recursive?: boolean }) => Promise<void>;
@@ -62,7 +62,7 @@ export type TBasePagePermissions = {
 
 export type TBasePageServices = {
   update: (payload: Partial<TPage>) => Promise<Partial<TPage>>;
-  updateDescription: (document: TDocumentPayload) => Promise<void>;
+  updateDescription: (document: TDocumentPayload) => Promise<{ updated_at?: string } | undefined>;
   updateAccess: (payload: Pick<TPage, "access">) => Promise<void>;
   lock: () => Promise<void>;
   unlock: () => Promise<void>;
@@ -101,7 +101,7 @@ export class BasePage extends ExtendedBasePage implements TBasePage {
   created_by: string | undefined;
   updated_by: string | undefined;
   created_at: Date | undefined;
-  updated_at: Date | undefined;
+  updated_at: string | undefined;
   deleted_at: Date | undefined;
   // helpers
   oldName: string = "";
@@ -316,7 +316,8 @@ export class BasePage extends ExtendedBasePage implements TBasePage {
     });
 
     try {
-      await this.services.updateDescription(document);
+      const response = await this.services.updateDescription(document);
+      return response;
     } catch (error) {
       runInAction(() => {
         this.description_html = currentDescription;

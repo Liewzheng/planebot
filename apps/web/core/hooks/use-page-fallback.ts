@@ -4,59 +4,57 @@
  * See the LICENSE file for details.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { EditorRefApi, CollaborationState } from "@plane/editor";
 // plane editor
-import { convertBinaryDataToBase64String, getBinaryDataFromDocumentEditorHTMLString } from "@plane/editor";
-// plane types
-import type { TDocumentPayload } from "@plane/types";
-// plane utils
-import { isJSONContentEmpty } from "@plane/utils";
+import { getBinaryDataFromDocumentEditorHTMLString } from "@plane/editor";
 // hooks
-import useAutoSave from "@/hooks/use-auto-save";
 import type { TPageInstance } from "@/store/pages/base-page";
 
 type TArgs = {
   editorRef: React.RefObject<EditorRefApi | null>;
   fetchPageDescription: () => Promise<ArrayBuffer>;
   collaborationState: CollaborationState | null;
-  updatePageDescription: (data: TDocumentPayload) => Promise<void>;
   page: TPageInstance;
   /**
-   * When false (e.g. page is open in reading mode), the fallback never writes
-   * to the server: no auto-save on disconnect, no periodic writes.
+   * When false (e.g. the page is open in reading mode), the document is not
+   * seeded from the API copy.
    */
   enabled?: boolean;
 };
 
+/**
+ * Reads a page while the collaborative session is unavailable.
+ *
+ * The document usually arrives over the websocket, so an offline client has no
+ * content at all: the editor renders an empty page even though the page details
+ * (and their html) were fetched over HTTP. When the connection is down and the
+ * document is empty, it is seeded from the API copy instead.
+ *
+ * This used to also write the local document back through the API (on every
+ * disconnect and on a 30s timer). That write pushed a stale local copy over
+ * content written elsewhere and invented revisions nobody made — PLANE-76. Page
+ * content is now saved only on demand (see `usePageSave`); an edit made offline
+ * is kept as a local draft until it is saved.
+ */
 export const usePageFallback = (args: TArgs) => {
-  const { editorRef, fetchPageDescription, collaborationState, updatePageDescription, page, enabled = true } = args;
-  const hasShownFallbackToast = useRef(false);
+  const { editorRef, fetchPageDescription, collaborationState, page, enabled = true } = args;
 
   const [isFetchingFallbackBinary, setIsFetchingFallbackBinary] = useState(false);
 
   // Derive connection failure from collaboration state
   const hasConnectionFailed = collaborationState?.stage.kind === "disconnected";
 
-  const handleUpdateDescription = useCallback(async () => {
+  const seedDocumentFromAPI = useCallback(async () => {
     if (!enabled) return;
     if (!hasConnectionFailed) return;
-    // The document was replaced server-side (API re-upload): our local copy is
-    // stale and the session is being rebuilt from the new content. Writing the
-    // stale editor state back now would clobber the replacement.
-    if (
-      collaborationState?.stage.kind === "disconnected" &&
-      collaborationState.stage.error?.type === "content-replaced"
-    )
-      return;
     const editor = editorRef.current;
     if (!editor) return;
-
-    // Show toast notification when fallback mechanism kicks in (only once)
-    if (!hasShownFallbackToast.current) {
-      console.warn("Websocket Connection lost, your changes are being saved using backup mechanism.");
-      hasShownFallbackToast.current = true;
-    }
+    // an active IME composition owns the editor DOM: a document write now
+    // would make the input method commit its raw text. The seed only matters
+    // while the document is empty, so skipping one attempt is harmless — the
+    // next stage change retries it.
+    if (editor.isComposing()) return;
 
     try {
       setIsFetchingFallbackBinary(true);
@@ -73,51 +71,27 @@ export const usePageFallback = (args: TArgs) => {
         );
       }
 
-      // Only seed the document when the editor has no content yet.
-      // setProviderDocument applies a Yjs update (merge), so seeding a document
-      // that already has content duplicates the whole page on every fallback
-      // run (the frequent cause of a page ballooning to several times its
-      // size). When content is already present we skip the merge and just save.
-      const { json: currentJSON } = editor.getDocument();
-      if (isJSONContentEmpty(currentJSON as Parameters<typeof isJSONContentEmpty>[0])) {
+      // Only seed an empty document: setProviderDocument applies a Yjs update
+      // (merge), so seeding one that already has content duplicates the whole
+      // page. Emptiness is tested on the Y.Doc — the editor's JSON can read as
+      // empty while the document holds content (a render failure, or a client
+      // that has not rendered it yet), and the seed then merges a second copy
+      // of the page in.
+      if (editor.isDocumentEmpty()) {
         editor.setProviderDocument(latestDecodedDescription);
       }
-
-      const { binary, html, json } = editor.getDocument();
-      if (!binary || !json) return;
-      const encodedBinary = convertBinaryDataToBase64String(binary);
-
-      await updatePageDescription({
-        description_binary: encodedBinary,
-        description_html: html,
-        description_json: json,
-      });
-    } catch (error: any) {
+    } catch (error) {
       console.error(error);
     } finally {
       setIsFetchingFallbackBinary(false);
     }
-  }, [
-    editorRef,
-    fetchPageDescription,
-    hasConnectionFailed,
-    updatePageDescription,
-    page.description_html,
-    page.name,
-    enabled,
-    collaborationState,
-  ]);
+  }, [editorRef, fetchPageDescription, page.description_html, page.name, enabled, hasConnectionFailed]);
 
   useEffect(() => {
     if (hasConnectionFailed) {
-      handleUpdateDescription();
-    } else {
-      // Reset toast flag when connection is restored
-      hasShownFallbackToast.current = false;
+      seedDocumentFromAPI();
     }
-  }, [handleUpdateDescription, hasConnectionFailed]);
-
-  useAutoSave(handleUpdateDescription);
+  }, [seedDocumentFromAPI, hasConnectionFailed]);
 
   return { isFetchingFallbackBinary };
 };

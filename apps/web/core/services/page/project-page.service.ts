@@ -161,6 +161,40 @@ export class ProjectPageService extends APIService {
       });
   }
 
+  /** The requesting user's unpublished revision of this page (PLANE-77). */
+  async fetchDraft(
+    workspaceSlug: string,
+    projectId: string,
+    pageId: string
+  ): Promise<{ description_html: string | null } | undefined> {
+    return this.get(`/api/workspaces/${workspaceSlug}/projects/${projectId}/pages/${pageId}/draft/`)
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  async updateDraft(
+    workspaceSlug: string,
+    projectId: string,
+    pageId: string,
+    data: { description_html: string }
+  ): Promise<{ description_html: string } | undefined> {
+    return this.patch(`/api/workspaces/${workspaceSlug}/projects/${projectId}/pages/${pageId}/draft/`, data)
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  async deleteDraft(workspaceSlug: string, projectId: string, pageId: string): Promise<void> {
+    await this.delete(`/api/workspaces/${workspaceSlug}/projects/${projectId}/pages/${pageId}/draft/`).catch(
+      (error) => {
+        throw error?.response?.data;
+      }
+    );
+  }
+
   async updateDescription(
     workspaceSlug: string,
     projectId: string,
