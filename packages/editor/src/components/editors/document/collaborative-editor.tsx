@@ -57,11 +57,12 @@ function CollaborativeDocumentEditorInner(props: ICollaborativeDocumentEditorPro
   } = props;
 
   // Get non-null provider from context
-  const { provider, state, actions } = useCollaboration();
+  const { provider, state, actions, activeDocument, isDraftSession } = useCollaboration();
 
   // Editor initialization with guaranteed non-null provider
   const { editor, titleEditor } = useCollaborativeEditor({
     provider,
+    activeDocument,
     disabledExtensions,
     editable,
     editorClassName,
@@ -139,7 +140,7 @@ function CollaborativeDocumentEditorInner(props: ICollaborativeDocumentEditorPro
 
 // Outer component that provides collaboration context
 function CollaborativeDocumentEditor(props: ICollaborativeDocumentEditorProps) {
-  const { id, realtimeConfig, serverHandler, user } = props;
+  const { id, realtimeConfig, serverHandler, user, draftHtml, contentStamp } = props;
 
   const token = useMemo(() => JSON.stringify(user), [user]);
 
@@ -149,6 +150,8 @@ function CollaborativeDocumentEditor(props: ICollaborativeDocumentEditorProps) {
       serverUrl={realtimeConfig.url}
       authToken={token}
       onStateChange={serverHandler?.onStateChange}
+      draftHtml={draftHtml}
+      contentStamp={contentStamp}
     >
       <CollaborativeDocumentEditorInner {...props} />
     </CollaborationProvider>

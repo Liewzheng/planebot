@@ -156,6 +156,49 @@ export const getBinaryDataFromDocumentEditorHTMLString = (descriptionHTML: strin
 };
 
 /**
+ * @description Convert document-editor HTML into a Yjs update authored by a fresh
+ * (random) client id.
+ *
+ * `getBinaryDataFromDocumentEditorHTMLString` derives the client id from the
+ * content so a repeated conversion is idempotent — applying the same content to
+ * a document that already holds it dedupes by (clientID, clock) and no-ops. The
+ * editing session uses that to keep shared / cached documents from ballooning
+ * when the server reissues the same revision.
+ *
+ * A draft body needs the opposite: when the user stashes a draft that repeats
+ * the published revision (no edits made), the conversion must NOT dedupe — the
+ * editor is starting from a copy of the published revision, and applying the
+ * draft should look like new structs that the editor can take ownership of, not
+ * a no-op that leaves the body empty. This function uses a fresh client id so
+ * the structs carry a (clientID, clock) pair the copy has not integrated yet,
+ * and re-applying identical content still produces visible items.
+ *
+ * The title fragment is handled the same way: it gets its own random client id
+ * when present, again so a repeated "no edit" stash still updates the title
+ * fragment.
+ */
+export const getBinaryDataFromDocumentEditorHTMLStringAsNewClient = (
+  descriptionHTML: string,
+  title?: string
+): Uint8Array => {
+  const contentJSON = generateJSON(descriptionHTML ?? "<p></p>", DOCUMENT_EDITOR_EXTENSIONS);
+
+  // Build the body doc on a brand-new Y.Doc — Y.Doc() picks a random client id,
+  // which is exactly the property we need here.
+  const bodyDoc = new Y.Doc();
+  prosemirrorJSONToYXmlFragment(documentEditorSchema, contentJSON, bodyDoc.getXmlFragment("default"));
+
+  if (title != null) {
+    const titleJSON = generateTitleProsemirrorJson(title);
+    const titleDoc = new Y.Doc();
+    prosemirrorJSONToYXmlFragment(documentEditorSchema, titleJSON, titleDoc.getXmlFragment("title"));
+    Y.applyUpdate(bodyDoc, Y.encodeStateAsUpdate(titleDoc));
+  }
+
+  return Y.encodeStateAsUpdate(bodyDoc);
+};
+
+/**
  * @description this function generates all document formats for the provided binary data for the rich text editor
  * @param {Uint8Array} description
  * @returns
@@ -231,6 +274,15 @@ export const getAllDocumentFormatsFromDocumentEditorBinaryData = (
 type TConvertHTMLDocumentToAllFormatsArgs = {
   document_html: string;
   variant: "rich" | "document";
+  /**
+   * Optional page name. When the variant is "document" and a non-empty name is
+   * given, the conversion embeds it in the title fragment of the binary so the
+   * page carries its name without putting it in the body HTML/JSON (where it
+   * would render as a duplicate heading). An empty string is treated as
+   * absent: callers that pass the page name only when they have one can do so
+   * unconditionally.
+   */
+  document_name?: string;
 };
 
 /**
@@ -238,11 +290,12 @@ type TConvertHTMLDocumentToAllFormatsArgs = {
  * @param {TConvertHTMLDocumentToAllFormatsArgs} args - Arguments containing HTML content and variant type
  * @param {string} args.document_html - The HTML content to convert
  * @param {"rich" | "document"} args.variant - The type of editor variant to use for conversion
+ * @param {string} [args.document_name] - Optional page name written into the title fragment
  * @returns {TDocumentPayload} Object containing the document in all supported formats
  * @throws {Error} If an invalid variant is provided
  */
 export const convertHTMLDocumentToAllFormats = (args: TConvertHTMLDocumentToAllFormatsArgs): TDocumentPayload => {
-  const { document_html, variant } = args;
+  const { document_html, variant, document_name } = args;
 
   let allFormats: TDocumentPayload;
 
@@ -258,8 +311,12 @@ export const convertHTMLDocumentToAllFormats = (args: TConvertHTMLDocumentToAllF
       description_binary: contentBinaryEncoded,
     };
   } else if (variant === "document") {
+    // Treat an empty string as absent: callers that look the name up from a
+    // page that just had its title cleared should not produce an empty title
+    // fragment when there is nothing to write.
+    const trimmedName = document_name?.trim();
     // Convert HTML to binary format for document editor
-    const contentBinary = getBinaryDataFromDocumentEditorHTMLString(document_html);
+    const contentBinary = getBinaryDataFromDocumentEditorHTMLString(document_html, trimmedName || undefined);
     // Generate all document formats from the binary data
     const { contentBinaryEncoded, contentHTML, contentJSON } = getAllDocumentFormatsFromDocumentEditorBinaryData(
       contentBinary,
@@ -283,4 +340,48 @@ export const extractTextFromHTML = (html: string): string => {
   // Note: sanitizeHTML trims whitespace, which is acceptable for title extraction
   const sanitizedText = sanitizeHTML(html); // sanitize the string to remove all HTML tags
   return sanitizedText.trim() || ""; // trim the string to remove leading and trailing whitespaces
+};
+
+/**
+ * @description deterministic content identity for a document-editor body.
+ *
+ * The editor writes block ids (`data-id`) and presentation classes
+ * (`editor-paragraph-block`, `editor-heading-block`, …) that the API's stored
+ * HTML does not carry, so a plain HTML diff between "what the editor sees" and
+ * "what the page stores" reports them as different revisions of the same body.
+ * Strip those editor-only attributes before stringifying, so two copies of one
+ * body — however it was authored — produce the same identity and a draft that
+ * repeats the published revision is recognised and dropped instead of kept as
+ * an "unsaved" copy.
+ *
+ * The identity is intentionally a stable JSON string rather than a hash: a
+ * hash would still tell two bodies apart correctly, but a JSON string keeps the
+ * function dependency-free and makes tests easier to reason about. The body
+ * sizes that reach this function are well under the cost of stringify.
+ *
+ * Returns `undefined` for absent input (`null` / `undefined`) so a missing
+ * revision does not collide with an empty body (`""` / `"<p></p>"`).
+ */
+const stripEditorBodyAttrs = (node: unknown): unknown => {
+  if (!node || typeof node !== "object") return node;
+  const record = node as Record<string, unknown>;
+  if (record.attrs && typeof record.attrs === "object") {
+    const attrs = { ...(record.attrs as Record<string, unknown>) };
+    delete attrs.class;
+    delete attrs["data-id"];
+    record.attrs = attrs;
+  }
+  if (Array.isArray(record.content)) {
+    record.content = record.content.map(stripEditorBodyAttrs);
+  }
+  return record;
+};
+
+export const bodyContentJSON = (html?: string | null): string | undefined => {
+  if (html == null) return undefined;
+  // Empty input is normalized to an empty paragraph: a body that lost its only
+  // block and a body that was never written collapse to the same identity.
+  const json = generateJSON(html || "<p></p>", DOCUMENT_EDITOR_EXTENSIONS);
+  const stripped = stripEditorBodyAttrs(json) as object;
+  return JSON.stringify(stripped);
 };

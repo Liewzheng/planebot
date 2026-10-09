@@ -23,7 +23,7 @@ export type TPage = {
   name: string | undefined;
   owned_by: string | undefined;
   project_ids?: string[] | undefined;
-  updated_at: Date | undefined;
+  updated_at: string | undefined;
   updated_by: string | undefined;
   workspace: string | undefined;
   logo_props: TLogoProps | undefined;
@@ -75,6 +75,21 @@ export type TDocumentPayload = {
   description_binary: string;
   description_html: string;
   description_json: object;
+  /**
+   * Marks a publish written by the editor's save action. The API uses this to
+   * distinguish a content write from a property-only edit (rename, access,
+   * archive) so the version history is not inflated by a property-only
+   * transaction and the first-publisher-wins check on `base_updated_at` is
+   * only armed for real body writes.
+   */
+  save_source?: "editor";
+  /**
+   * The page's `updated_at` at the moment the editor session started. The
+   * API compares it against the current value and refuses the write if a
+   * concurrent edit landed first; the UI surfaces the conflict and the user
+   * resolves it by reloading or accepting.
+   */
+  base_updated_at?: string;
 };
 
 export type TWebhookConnectionQueryParams = {

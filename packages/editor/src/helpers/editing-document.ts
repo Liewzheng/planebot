@@ -41,3 +41,31 @@ export const createEditingDocument = (sharedDocument: Y.Doc, draftHtml?: string 
 
   return document;
 };
+
+/**
+ * Where the editor's keystrokes should land for a draft session.
+ *
+ * A draft body is the author's own unpublished revision (PLANE-77): it must
+ * never reach the live server or any other reader until the user publishes.
+ * The previous attempt wrote the draft straight into `provider.document` so
+ * the editor — bound to that doc — would render the draft, but the
+ * Hocuspocus provider broadcasts every update and the live server's
+ * `storeDocument` then writes the (still-unpublished) body to the database;
+ * a discarded draft would leave a leaked revision behind. Bind the editor
+ * to a side doc instead: a local Y.Doc the side helper builds via
+ * `createEditingDocument`, which copies the published revision state in and
+ * applies the draft with a fresh client id so the user's edits do not
+ * deduplicate with the already-synced published content. The side doc is
+ * dropped when the draft is discarded or the publish lands; the editor
+ * rebinds to `provider.document` for the next session.
+ */
+export const createDraftSideDoc = (providerDocument: Y.Doc, draftHtml: string): Y.Doc | null => {
+  if (!providerDocument) return null;
+  // an empty/whitespace-only draft carries no body, so there is nothing
+  // for the side doc to back the editor with. Treat it as no draft at
+  // all: the editor rebinds to provider.document and the draft flow
+  // stays a no-op rather than spinning up a doc that only ever holds the
+  // title fragment.
+  if (typeof draftHtml !== "string" || draftHtml.trim() === "") return null;
+  return createEditingDocument(providerDocument, draftHtml);
+};

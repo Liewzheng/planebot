@@ -18,6 +18,7 @@
     "check:format": "turbo run check:format",
     "check:types": "turbo run check:types",
     "prepare": "husky",
+    "postinstall": "node patches/apply-y-prosemirror-patch.mjs",
     "doctor": "npx react-doctor@latest"
   },
   "devDependencies": {

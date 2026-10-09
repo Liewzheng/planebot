@@ -11,6 +11,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { IndexeddbPersistence } from "y-indexeddb";
 // yjs
 import * as Y from "yjs";
+// helpers
+import { createDraftSideDoc } from "@/helpers/editing-document";
+import { readDocumentStamp, shouldResetLocalDocument } from "@/helpers/document-stamp";
 // types
 import type { CollaborationState, CollabStage, CollaborationError } from "@/types/collaboration";
 
@@ -35,6 +38,21 @@ const isForcedCloseCode = (code: number | undefined): boolean => {
 const CONTENT_REPLACED_REASON = "content_replaced";
 const CONTENT_REPLACED_CODE = 4004;
 
+/**
+ * FNV-1a over the draft HTML. Used to identify the side doc that backs
+ * the editor when a draft is active: a different draft HTML is a
+ * different identity, so the editor is recreated against a fresh side
+ * doc rather than continuing to edit a stale one.
+ */
+const hashDraft = (html: string): string => {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < html.length; index += 1) {
+    hash ^= html.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${html.length}:${(hash >>> 0).toString(36)}`;
+};
+
 type UseYjsSetupArgs = {
   docId: string;
   serverUrl: string;
@@ -43,11 +61,25 @@ type UseYjsSetupArgs = {
   options?: {
     maxConnectionAttempts?: number;
   };
+  /**
+   * Body HTML for the author's own unpublished draft, set by the page UI when
+   * the user clicks "Load Draft". Applied to the provider document so the
+   * collaborative editor renders the draft instead of the published revision.
+   * Cleared (set back to null) when the draft is discarded or saved.
+   */
+  draftHtml?: string | null;
+  /**
+   * The body stamp the API last served for this page. Used to refuse a
+   * locally cached document that no longer descends from the served
+   * revision (PLANE-76): a stale cache would merge as a duplicate copy of
+   * every block.
+   */
+  contentStamp?: string;
 };
 
 const DEFAULT_MAX_RETRIES = 3;
 
-export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange }: UseYjsSetupArgs) => {
+export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange, draftHtml, contentStamp }: UseYjsSetupArgs) => {
   // Current collaboration stage
   const [stage, setStage] = useState<CollabStage>({ kind: "initial" });
 
@@ -57,6 +89,16 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange }: UseY
 
   // Provider and Y.Doc in state (nullable until effect runs)
   const [yjsSession, setYjsSession] = useState<{ provider: HocuspocusProvider; ydoc: Y.Doc } | null>(null);
+
+  // Side doc for an active draft session. The editor binds to this doc (not
+  // `provider.document`) so the user's unpublished body stays local: the
+  // Hocuspocus provider must never observe a write from the draft or the
+  // live server's `storeDocument` would persist the unpublished body to
+  // the database and a discarded draft would leave a leaked revision
+  // behind (PLANE-77; the prior commit's `applyDraftToProviderDocument`
+  // got this wrong by writing the draft straight into the live doc).
+  // `null` when no draft is active: the editor binds to `provider.document`.
+  const [draftSideDoc, setDraftSideDoc] = useState<Y.Doc | null>(null);
 
   // Bumped when the session must be rebuilt from scratch (e.g. the document
   // was replaced server-side): a new provider + fresh Y.Doc is created and
@@ -70,6 +112,12 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange }: UseY
   const stageRef = useRef<CollabStage>({ kind: "initial" });
   const lastReconnectTimeRef = useRef(0);
   const clearCacheOnNextSessionRef = useRef(false);
+  /**
+   * Identity of the draft the current side doc was built from. Lets the
+   * side-doc effect tell "the same draft is still active" (no-op) apart
+   * from "a fresh draft arrived" (rebuild).
+   */
+  const activeDraftIdentityRef = useRef<string | null>(null);
 
   // Create/destroy provider in effect (not during render)
   useEffect(() => {
@@ -414,6 +462,62 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange }: UseY
     };
   }, [yjsSession, isCacheReady]);
 
+  // Manage the draft side doc: create one whenever a non-null `draftHtml`
+  // arrives, drop it when the draft is cleared (publish landed, draft
+  // discarded). The side doc is local — no Hocuspocus provider is bound
+  // to it — so the user's unpublished body never reaches the live server
+  // or the database. The collaborative editor binds to whichever doc the
+  // hook currently exposes via `activeDocument` and is recreated via a
+  // `key` change whenever the identity flips. The side doc's identity
+  // comes from the draft hash, not the Y.Doc guid, so a content change
+  // while a draft is active still re-binds (a non-null hash but a
+  // different one is a fresh side doc).
+  const draftIdentity = draftHtml ? hashDraft(draftHtml) : null;
+  useEffect(() => {
+    if (!yjsSession) return;
+    if (!draftIdentity) {
+      if (draftSideDoc !== null) {
+        activeDraftIdentityRef.current = null;
+        setDraftSideDoc(null);
+      }
+      return;
+    }
+    if (draftSideDoc && activeDraftIdentityRef.current === draftIdentity) {
+      return;
+    }
+    const sideDoc = createDraftSideDoc(yjsSession.ydoc, draftHtml!);
+    if (!sideDoc) {
+      console.error(`Could not create draft side doc for ${docId}`);
+      activeDraftIdentityRef.current = null;
+      setDraftSideDoc(null);
+      return;
+    }
+    activeDraftIdentityRef.current = draftIdentity;
+    setDraftSideDoc(sideDoc);
+  }, [draftIdentity, yjsSession, docId, draftHtml, draftSideDoc]);
+
+  // Tear down the side doc on unmount so the next session does not see a
+  // stale instance.
+  useEffect(() => {
+    return () => {
+      activeDraftIdentityRef.current = null;
+      setDraftSideDoc(null);
+    };
+  }, []);
+
+  // Refuse a locally cached document that no longer descends from the served
+  // revision (PLANE-76 ballooning defense). The cache writes the served
+  // stamp on every save; on a later visit, if the stamp we have locally
+  // does not match the stamp the API just served, the cache is from an
+  // earlier revision and a merge would duplicate every block. Clear the
+  // cache before the next session binds to it.
+  useEffect(() => {
+    if (!yjsSession) return;
+    const stored = readDocumentStamp(docId);
+    if (!shouldResetLocalDocument(stored, contentStamp)) return;
+    clearCacheOnNextSessionRef.current = true;
+  }, [contentStamp, yjsSession, docId]);
+
   // Notify state changes callback (use ref to avoid dependency on handler)
   const stateChangeCallbackRef = useRef(onStateChange);
   stateChangeCallbackRef.current = onStateChange;
@@ -450,6 +554,19 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange }: UseY
   return {
     provider: yjsSession.provider,
     ydoc: yjsSession.ydoc,
+    /**
+     * The doc the editor should bind to. The side doc when a draft is
+     * active, `provider.document` otherwise. The collaborative editor
+     * re-binds whenever the identity here changes (via `key`).
+     */
+    activeDocument: draftSideDoc ?? yjsSession.ydoc,
+    /**
+     * True while a draft body is being edited on a side doc. The page UI
+     * uses this to know whether the next save is publishing a draft (a
+     * `save_source: "editor"` write, with the side doc as the source) or
+     * an ordinary edit to the live doc.
+     */
+    isDraftSession: draftSideDoc !== null,
     state: {
       stage,
       hasCachedContent,

@@ -29,6 +29,36 @@ export const getEditorAssetSrc = (args: TEditorSrcArgs): string | undefined => {
 };
 
 /**
+ * Which endpoint family an image's src belongs to. Pages authored before V2
+ * shipped carry V1 URLs (`/api/workspaces/file-assets/<ws>/<asset>/`); pages
+ * authored now carry V2 URLs (`/api/assets/v2/workspaces/<slug>/...`). The
+ * two restore / delete endpoints take very different arguments, so callers
+ * that look at an editor image src must route based on this — and "starts
+ * with http" is not a reliable heuristic, because V2 URLs are also absolute
+ * once `getFileURL` adds the API base.
+ */
+export type TEditorAssetApiVersion = "v1" | "v2";
+
+const V1_ASSET_PATH = "/api/workspaces/file-assets/";
+
+/**
+ * True when the image src carries an absolute V1 file-asset URL — the only
+ * shape the legacy `restoreOldEditorAsset` endpoint will accept. Anything
+ * else (a V2 URL, a bare asset id, an empty string, a domain mismatch) routes
+ * to the V2 endpoint.
+ */
+export const isV1EditorAssetSrc = (src: string | null | undefined): boolean => !!src && src.includes(V1_ASSET_PATH);
+
+/**
+ * Pick the API family for an image src. A bare id (the editor's private-bucket
+ * short form) is V2 by construction; an absolute URL that contains the V1
+ * legacy file-asset path is V1; anything else falls back to V2 (the only
+ * active family for new uploads).
+ */
+export const editorAssetApiVersion = (src: string | null | undefined): TEditorAssetApiVersion =>
+  isV1EditorAssetSrc(src) ? "v1" : "v2";
+
+/**
  * @description generate the file source using assetId
  * @param {TEditorSrcArgs} args
  */

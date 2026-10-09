@@ -19,16 +19,24 @@ import { CORE_EDITOR_META } from "@/constants/meta";
 import type { EditorRefApi, IEditorProps, TEditorCommands } from "@/types";
 // local imports
 import { getParagraphCount } from "./common";
+import { waitUntilCompositionEnds } from "./composition";
 import { insertContentAtSavedSelection } from "./insert-content-at-cursor-position";
 import { scrollSummary, scrollToNodeViaDOMCoordinates } from "./scroll-to-node";
 
 type TArgs = Pick<IEditorProps, "getEditorMetaData"> & {
   editor: Editor | null;
   provider: HocuspocusProvider | undefined;
+  /**
+   * The Y.Doc the editor is currently bound to. The save path serializes
+   * from this doc, not `provider.document`, so a draft session publishes
+   * the draft body (and the API's `save_source: "editor"` path then
+   * overwrites the live doc with it).
+   */
+  activeDocument?: Y.Doc | null;
 };
 
 export const getEditorRefHelpers = (args: TArgs): EditorRefApi => {
-  const { editor, getEditorMetaData, provider } = args;
+  const { editor, getEditorMetaData, provider, activeDocument } = args;
 
   return {
     blur: () => editor?.commands.blur(),
@@ -68,7 +76,12 @@ export const getEditorRefHelpers = (args: TArgs): EditorRefApi => {
       }
     },
     getDocument: () => {
-      const documentBinary = provider?.document ? Y.encodeStateAsUpdate(provider?.document) : null;
+      // Serialize the doc the editor is bound to, not `provider.document`.
+      // In a draft session the editor binds to a side doc; reading from
+      // provider.document here would publish the live (published)
+      // revision and lose the draft.
+      const sourceDoc = activeDocument ?? provider?.document ?? null;
+      const documentBinary = sourceDoc ? Y.encodeStateAsUpdate(sourceDoc) : null;
       const documentHTML = editor?.getHTML() ?? "<p></p>";
       const documentJSON = editor?.getJSON() ?? null;
 
@@ -94,6 +107,15 @@ export const getEditorRefHelpers = (args: TArgs): EditorRefApi => {
         metaData,
       });
       return markdown;
+    },
+    isDocumentEmpty: () => {
+      // Empty against the bound doc: in a draft session the editor is
+      // bound to the side doc, not `provider.document`, and a merge
+      // against a non-empty side doc would duplicate the draft.
+      const document = activeDocument ?? provider?.document;
+      if (!document) return true;
+      const fragment = document.getXmlFragment("default");
+      return fragment.length === 0;
     },
     copyMarkdownToClipboard: () => {
       if (!editor) return;
@@ -190,6 +212,7 @@ export const getEditorRefHelpers = (args: TArgs): EditorRefApi => {
         editor.chain().focus().deleteRange({ from, to }).insertContent(contentHTML).run();
       }
     },
+    isComposing: () => !!editor?.view.composing,
     isEditorReadyToDiscard: () => editor?.storage?.utility?.uploadInProgress === false,
     isMenuItemActive: (props) => {
       const { itemKey } = props;
@@ -284,5 +307,9 @@ export const getEditorRefHelpers = (args: TArgs): EditorRefApi => {
       Y.applyUpdate(document, value);
     },
     undo: () => editor?.commands.undo(),
+    waitUntilCompositionEnds: async () => {
+      if (!editor) return;
+      await waitUntilCompositionEnds(editor);
+    },
   };
 };
