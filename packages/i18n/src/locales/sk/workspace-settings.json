@@ -150,129 +150,6 @@
           }
         }
       },
-      "ai_accounts": {
-        "title": "AI účty",
-        "description": "Vytvárajte a spravujte účty botov, ktoré umožňujú AI agentom pristupovať k vášmu workspace s oprávneniami s obmedzeným rozsahom.",
-        "add_account": "Pridať AI účet",
-        "modal": {
-          "create_title": "Vytvoriť AI účet",
-          "edit_title": "Upraviť AI účet",
-          "name": "Názov",
-          "name_required": "Názov je povinný",
-          "description": "Popis",
-          "create": "Vytvoriť účet",
-          "update": "Aktualizovať účet",
-          "creating": "Vytváranie",
-          "updating": "Aktualizácia"
-        },
-        "token": {
-          "title": "Účet vytvorený",
-          "rotated_title": "Token rotovaný",
-          "copy_warning": "Skopírujte a uložte si tento token teraz. Po zatvorení tohto dialógu ho už nebudete môcť zobraziť.",
-          "copied": "Token skopírovaný do schránky.",
-          "not_copied": "Token sa nepodarilo skopírovať. Skúste to znova."
-        },
-        "list": {
-          "created_on": "Vytvorené dňa",
-          "edit": "Upraviť",
-          "delete": "Zmazať",
-          "manage_scopes": "Spravovať rozsahy",
-          "rotate_token": "Rotovať token"
-        },
-        "avatar": {
-          "label": "Profilový obrázok",
-          "upload": "Nahrať",
-          "remove": "Odstrániť"
-        },
-        "delete": {
-          "title": "Zmazať AI účet",
-          "description": "Žiadna integrácia používajúca tento účet už nebude mať prístup k vášmu workspace. Túto akciu nemožno vrátiť späť.",
-          "success": {
-            "title": "Úspech!",
-            "message": "AI účet bol úspešne zmazaný"
-          },
-          "error": {
-            "title": "Chyba!",
-            "message": "AI účet sa nepodarilo zmazať"
-          }
-        },
-        "rotate": {
-          "title": "Rotovať token",
-          "description": "Aktuálny token bude okamžite zneplatnený a integrácie, ktoré ho používajú, prestanú fungovať. Nový token sa zobrazí iba raz.",
-          "confirm": "Rotovať token",
-          "rotating": "Rotovanie",
-          "success": {
-            "title": "Token rotovaný",
-            "message": "Token AI účtu bol rotovaný. Predchádzajúci token už nie je platný."
-          },
-          "error": {
-            "title": "Chyba!",
-            "message": "Token sa nepodarilo rotovať"
-          }
-        },
-        "scopes": {
-          "title": "Spravovať rozsahy",
-          "description": "Rozsahy určujú, k čomu má tento účet prístup. Uložením nahradíte všetky existujúce rozsahy.",
-          "project": "Projekt",
-          "all_projects": "Všetky projekty",
-          "resource_type": "Prostriedok",
-          "action": "Akcia",
-          "resources": {
-            "all": "Všetko",
-            "project": "Projekt",
-            "member": "Člen",
-            "user": "Používateľ",
-            "asset": "Súbor",
-            "estimate": "Odhad",
-            "cycle": "Cyklus",
-            "module": "Modul",
-            "sticky": "Sticky",
-            "label": "Štítok",
-            "intake": "Intake",
-            "work_item": "Pracovná položka",
-            "comment": "Komentár",
-            "state": "Stav",
-            "page": "Stránka",
-            "invite": "Pozvánka"
-          },
-          "actions": {
-            "all": "Všetko",
-            "read": "Čítanie",
-            "create": "Vytvoriť",
-            "update": "Aktualizovať",
-            "delete": "Zmazať"
-          },
-          "add_scope": "Pridať rozsah",
-          "save": "Uložiť rozsahy",
-          "saving": "Ukladanie",
-          "success": {
-            "title": "Úspech!",
-            "message": "Rozsahy boli úspešne aktualizované"
-          },
-          "error": {
-            "title": "Chyba!",
-            "message": "Rozsahy sa nepodarilo aktualizovať"
-          }
-        },
-        "toasts": {
-          "created": {
-            "title": "AI účet vytvorený",
-            "message": "AI účet bol úspešne vytvorený"
-          },
-          "not_created": {
-            "title": "AI účet nevytvorený",
-            "message": "AI účet sa nepodarilo vytvoriť"
-          },
-          "updated": {
-            "title": "AI účet aktualizovaný",
-            "message": "AI účet bol úspešne aktualizovaný"
-          },
-          "not_updated": {
-            "title": "AI účet neaktualizovaný",
-            "message": "AI účet sa nepodarilo aktualizovať"
-          }
-        }
-      },
       "api_tokens": {
         "heading": "API Tokeny",
         "description": "Generujte bezpečné API tokeny na integráciu vašich dát s externými systémami a aplikáciami.",
@@ -607,6 +484,180 @@
         "heading": "Skripty",
         "new_script": "Nový skript",
         "description": "Automatizujte svoje pracovné postupy pomocou vlastných skriptov a automatizačných pravidiel."
+      },
+      "service_principals": {
+        "title": "Service principals",
+        "description": "Vytvárajte a spravujte service principals, ktoré umožňujú automatizovaným agentom a integráciám pristupovať k vášmu workspace s vymedzenými oprávneniami.",
+        "add_principal": "Pridať service principal",
+        "assignable": {
+          "label": "Service principals sú priraditeľní",
+          "description": "Keď je táto možnosť zapnutá, service principals sa zobrazujú vo výberoch priradenia a filtrov v celom workspace. Predvolene vypnuté — opt-in drží principals mimo selektorov pre ľudí, kým administrátor workspace nerozhodne inak.",
+          "not_persisted": "Backendový endpoint pre tento prepínač ešte nie je pripojený. Zmeny sa uchovávajú iba v tejto relácii.",
+          "toast_updated": "Nastavenie priraditeľnosti service principal aktualizované",
+          "toast_update_failed": "Nastavenie priraditeľnosti service principal sa nepodarilo aktualizovať"
+        },
+        "step_up": {
+          "hint": "Táto operácia ovplyvňuje bezpečnosť tokenu. Zadajte 6-miestny kód z vašej autentifikačnej aplikácie.",
+          "code_required": "Zadajte 6-miestny kód",
+          "code_invalid": "Kód je neplatný alebo vypršal. Skúste to znova."
+        },
+        "modal": {
+          "create_title": "Vytvoriť service principal",
+          "edit_title": "Upraviť service principal",
+          "name": "Názov",
+          "name_required": "Názov je povinný",
+          "description": "Popis",
+          "create": "Vytvoriť principal",
+          "update": "Aktualizovať principal",
+          "creating": "Vytvára sa",
+          "updating": "Aktualizuje sa"
+        },
+        "token": {
+          "title": "Service principal vytvorený",
+          "rotated_title": "Token rotovaný",
+          "copy_warning": "Skopírujte si a uložte tento token teraz. Po zatvorení tohto dialógu ho už neuvidíte.",
+          "copied": "Token skopírovaný do schránky.",
+          "not_copied": "Token sa nepodarilo skopírovať. Skúste to prosím znova."
+        },
+        "list": {
+          "created_on": "Vytvorené",
+          "edit": "Upraviť",
+          "delete": "Zmazať",
+          "manage_scopes": "Spravovať scopes",
+          "manage_grants": "Spravovať grants",
+          "rotate_token": "Rotovať token"
+        },
+        "avatar": {
+          "label": "Avatar",
+          "upload": "Nahrať",
+          "remove": "Odstrániť"
+        },
+        "delete": {
+          "title": "Zmazať service principal",
+          "description": "Akákoľvek integrácia používajúca tento principal už nebude mať prístup k vášmu workspace. Túto akciu nie je možné vrátiť späť.",
+          "success": {
+            "title": "Úspech!",
+            "message": "Service principal bol úspešne zmazaný"
+          },
+          "error": {
+            "title": "Chyba!",
+            "message": "Service principal sa nepodarilo zmazať"
+          }
+        },
+        "rotate": {
+          "title": "Rotovať token",
+          "description": "Aktuálny token bude okamžite odvolaný a integrácie, ktoré ho používajú, prestanú fungovať. Nový token sa zobrazí iba raz.",
+          "confirm": "Rotovať token",
+          "rotating": "Rotuje sa",
+          "success": {
+            "title": "Token rotovaný",
+            "message": "Token service principal bol rotovaný. Predchádzajúci token už nie je platný."
+          },
+          "error": {
+            "title": "Chyba!",
+            "message": "Token sa nepodarilo rotovať"
+          }
+        },
+        "scopes": {
+          "title": "Spravovať scopes",
+          "description": "Scopes definujú, k čomu tento principal môže pristupovať. Uloženie nahradí všetky existujúce scopes.",
+          "project": "Projekt",
+          "all_projects": "Všetky projekty",
+          "resource_type": "Zdroj",
+          "action": "Akcia",
+          "resources": {
+            "all": "Všetko",
+            "project": "Projekt",
+            "member": "Člen",
+            "user": "Používateľ",
+            "asset": "Asset",
+            "estimate": "Odhad",
+            "cycle": "Cyklus",
+            "module": "Modul",
+            "sticky": "Sticky",
+            "label": "Štítok",
+            "intake": "Intake",
+            "work_item": "Pracovná položka",
+            "comment": "Komentár",
+            "state": "Stav",
+            "page": "Stránka",
+            "invite": "Pozvánka"
+          },
+          "actions": {
+            "all": "Všetko",
+            "read": "Čítanie",
+            "create": "Vytvoriť",
+            "update": "Aktualizovať",
+            "delete": "Zmazať"
+          },
+          "add_scope": "Pridať scope",
+          "save": "Uložiť scopes",
+          "saving": "Ukladá sa",
+          "clear_confirm": {
+            "title": "Odstrániť všetky scopes?",
+            "message": "Uloženie bez scopes odstráni všetky oprávnenia tohto principal. Principal je predvolene odmietaný, kým sa nepridajú nové scopes.",
+            "confirm": "Odstrániť všetky scopes"
+          },
+          "success": {
+            "title": "Úspech!",
+            "message": "Scopes boli úspešne aktualizované"
+          },
+          "error": {
+            "title": "Chyba!",
+            "message": "Scopes sa nepodarilo aktualizovať"
+          }
+        },
+        "grants": {
+          "title": "Spravovať grants projektov",
+          "description": "Grants rozhodujú, ku ktorým projektom tento principal môže pristupovať a akú najvyššiu rolu tam môže mať. Uloženie nahradí všetky existujúce grants.",
+          "project": "Projekt",
+          "role_cap": "Limit roly",
+          "status": "Stav",
+          "add_grant": "Pridať grant",
+          "save": "Uložiť grants",
+          "saving": "Ukladá sa",
+          "role_caps": {
+            "5": "Hosť",
+            "15": "Člen",
+            "20": "Administrátor"
+          },
+          "statuses": {
+            "active": "Aktívny",
+            "inactive": "Neaktívny"
+          },
+          "clear_confirm": {
+            "title": "Odstrániť všetky grants?",
+            "message": "Uloženie bez grants odstráni tohto principal zo všetkých projektov. Nebude členom žiadneho projektu, kým sa nepridajú nové grants.",
+            "confirm": "Odstrániť všetky grants"
+          },
+          "success": {
+            "title": "Úspech!",
+            "message": "Grants boli úspešne aktualizované"
+          },
+          "error": {
+            "title": "Chyba!",
+            "message": "Grants sa nepodarilo aktualizovať",
+            "missing_project": "Každý grant musí odkazovať na projekt."
+          }
+        },
+        "toasts": {
+          "created": {
+            "title": "Service principal vytvorený",
+            "message": "Service principal bol úspešne vytvorený"
+          },
+          "not_created": {
+            "title": "Service principal nebol vytvorený",
+            "message": "Service principal sa nepodarilo vytvoriť"
+          },
+          "updated": {
+            "title": "Service principal aktualizovaný",
+            "message": "Service principal bol úspešne aktualizovaný"
+          },
+          "not_updated": {
+            "title": "Service principal nebol aktualizovaný",
+            "message": "Service principal sa nepodarilo aktualizovať"
+          }
+        }
       }
     },
     "empty_state": {

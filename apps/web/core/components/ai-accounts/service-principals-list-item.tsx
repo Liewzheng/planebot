@@ -13,28 +13,30 @@ import { EditIcon, TrashIcon } from "@plane/propel/icons";
 import { Button } from "@plane/propel/button";
 import { Switch } from "@makeplane/propel/components/switch";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
-import type { TAIAccount } from "@plane/types";
+import type { TServicePrincipal } from "@plane/types";
 import { getFileURL, renderFormattedDate, calculateTimeAgo } from "@plane/utils";
 // hooks
-import { aiAccountService } from "@/services/ai-account.service";
+import { servicePrincipalService } from "@/services/ai-account.service";
 // local imports
-import { AI_ACCOUNTS_LIST } from "./constants";
-import { DeleteAIAccountModal } from "./delete-account-modal";
-import { EditAIAccountModal } from "./edit-account-modal";
-import { RotateAIAccountTokenModal } from "./rotate-token-modal";
-import { AIScopesModal } from "./scopes-modal";
+import { SERVICE_PRINCIPALS_LIST } from "./constants";
+import { DeleteServicePrincipalModal } from "./delete-service-principal-modal";
+import { EditServicePrincipalModal } from "./edit-service-principal-modal";
+import { RotateServicePrincipalTokenModal } from "./rotate-token-modal";
+import { ServicePrincipalGrantsModal } from "./grants-modal";
+import { ServicePrincipalScopesModal } from "./scopes-modal";
 
 type Props = {
-  account: TAIAccount;
+  principal: TServicePrincipal;
   workspaceSlug: string;
 };
 
-export function AIAccountsListItem(props: Props) {
-  const { account, workspaceSlug } = props;
+export function ServicePrincipalsListItem(props: Props) {
+  const { principal, workspaceSlug } = props;
   // states
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showScopesModal, setShowScopesModal] = useState(false);
+  const [showGrantsModal, setShowGrantsModal] = useState(false);
   const [showRotateTokenModal, setShowRotateTokenModal] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
   // hooks
@@ -44,13 +46,15 @@ export function AIAccountsListItem(props: Props) {
     if (isToggling) return;
     setIsToggling(true);
     try {
-      await aiAccountService.updateAIAccount(workspaceSlug, account.id, { is_active: !account.is_active });
-      mutate<TAIAccount[]>(AI_ACCOUNTS_LIST(workspaceSlug));
+      await servicePrincipalService.updateServicePrincipal(workspaceSlug, principal.id, {
+        is_active: !principal.is_active,
+      });
+      mutate<TServicePrincipal[]>(SERVICE_PRINCIPALS_LIST(workspaceSlug));
     } catch {
       setToast({
         type: TOAST_TYPE.ERROR,
-        title: t("workspace_settings.settings.ai_accounts.toasts.not_updated.title"),
-        message: t("workspace_settings.settings.ai_accounts.toasts.not_updated.message"),
+        title: t("workspace_settings.settings.service_principals.toasts.not_updated.title"),
+        message: t("workspace_settings.settings.service_principals.toasts.not_updated.message"),
       });
     } finally {
       setIsToggling(false);
@@ -59,26 +63,32 @@ export function AIAccountsListItem(props: Props) {
 
   return (
     <>
-      <DeleteAIAccountModal
-        account={account}
+      <DeleteServicePrincipalModal
+        principal={principal}
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         workspaceSlug={workspaceSlug}
       />
-      <EditAIAccountModal
-        account={account}
+      <EditServicePrincipalModal
+        principal={principal}
         isOpen={showEditModal}
         onClose={() => setShowEditModal(false)}
         workspaceSlug={workspaceSlug}
       />
-      <AIScopesModal
-        account={account}
+      <ServicePrincipalScopesModal
+        principal={principal}
         isOpen={showScopesModal}
         onClose={() => setShowScopesModal(false)}
         workspaceSlug={workspaceSlug}
       />
-      <RotateAIAccountTokenModal
-        account={account}
+      <ServicePrincipalGrantsModal
+        principal={principal}
+        isOpen={showGrantsModal}
+        onClose={() => setShowGrantsModal(false)}
+        workspaceSlug={workspaceSlug}
+      />
+      <RotateServicePrincipalTokenModal
+        principal={principal}
         isOpen={showRotateTokenModal}
         onClose={() => setShowRotateTokenModal(false)}
         workspaceSlug={workspaceSlug}
@@ -86,50 +96,53 @@ export function AIAccountsListItem(props: Props) {
       <div className="flex items-center justify-between gap-4 rounded-lg border border-subtle bg-layer-2 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <Avatar
-            src={getFileURL(account.bot_user.avatar_url)}
-            alt={account.bot_user.display_name}
-            fallback={account.bot_user.display_name.charAt(0)}
+            src={getFileURL(principal.avatar)}
+            alt={principal.name}
+            fallback={principal.name.charAt(0)}
             size="md"
             tooltip
           />
           <div className="min-w-0">
-            <h5 className="truncate text-body-sm-medium">{account.name}</h5>
-            <p className="truncate text-11 text-tertiary">{account.bot_user.email}</p>
-            {account.description && <p className="truncate text-11 text-placeholder">{account.description}</p>}
+            <h5 className="truncate text-body-sm-medium">{principal.name}</h5>
+            {principal.description && <p className="truncate text-11 text-placeholder">{principal.description}</p>}
             <p className="text-11 text-placeholder">
-              {t("workspace_settings.settings.ai_accounts.list.created_on")} {renderFormattedDate(account.created_at)}
+              {t("workspace_settings.settings.service_principals.list.created_on")}{" "}
+              {renderFormattedDate(principal.created_at)}
             </p>
             <p className="text-11 text-placeholder">
-              {account.token_last_used
-                ? t("token_last_used", { time: calculateTimeAgo(account.token_last_used, currentLocale) })
+              {principal.token_last_used
+                ? t("token_last_used", { time: calculateTimeAgo(principal.token_last_used, currentLocale) })
                 : t("token_never_used")}
             </p>
           </div>
         </div>
         <div className="flex flex-shrink-0 items-center gap-3">
           <Button variant="secondary" size="sm" onClick={() => setShowScopesModal(true)}>
-            {t("workspace_settings.settings.ai_accounts.list.manage_scopes")}
+            {t("workspace_settings.settings.service_principals.list.manage_scopes")}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => setShowGrantsModal(true)}>
+            {t("workspace_settings.settings.service_principals.list.manage_grants")}
           </Button>
           <Button variant="secondary" size="sm" onClick={() => setShowEditModal(true)}>
             <EditIcon className="size-3" />
-            {t("workspace_settings.settings.ai_accounts.list.edit")}
+            {t("workspace_settings.settings.service_principals.list.edit")}
           </Button>
-          {account.is_active && (
+          {principal.is_active && (
             <Button variant="secondary" size="sm" onClick={() => setShowRotateTokenModal(true)}>
-              {t("workspace_settings.settings.ai_accounts.list.rotate_token")}
+              {t("workspace_settings.settings.service_principals.list.rotate_token")}
             </Button>
           )}
           <Button variant="error-outline" size="sm" onClick={() => setShowDeleteModal(true)}>
             <TrashIcon className="size-3" />
-            {t("workspace_settings.settings.ai_accounts.list.delete")}
+            {t("workspace_settings.settings.service_principals.list.delete")}
           </Button>
           <Switch
             size="sm"
-            checked={account.is_active}
+            checked={principal.is_active}
             onCheckedChange={() => {
               void handleToggle();
             }}
-            aria-label={account.name}
+            aria-label={principal.name}
           />
         </div>
       </div>

@@ -156,134 +156,6 @@
           }
         }
       },
-      "ai_accounts": {
-        "title": "AI 账户",
-        "description": "创建和管理机器人账户，让 AI 代理以限定范围的权限访问您的工作空间。",
-        "add_account": "添加 AI 账户",
-        "step_up": {
-          "hint": "此操作涉及令牌安全，需要输入身份验证器的 6 位验证码。",
-          "code_required": "请输入 6 位验证码",
-          "code_invalid": "验证码错误或已过期，请重试"
-        },
-        "modal": {
-          "create_title": "创建 AI 账户",
-          "edit_title": "编辑 AI 账户",
-          "name": "名称",
-          "name_required": "名称为必填项",
-          "description": "描述",
-          "create": "创建账户",
-          "update": "更新账户",
-          "creating": "创建中",
-          "updating": "更新中"
-        },
-        "token": {
-          "title": "账户已创建",
-          "rotated_title": "令牌已轮换",
-          "copy_warning": "请立即复制并保存此令牌。关闭此对话框后，您将无法再次查看它。",
-          "copied": "令牌已复制到剪贴板。",
-          "not_copied": "令牌复制失败，请重试。"
-        },
-        "list": {
-          "created_on": "创建于",
-          "edit": "编辑",
-          "delete": "删除",
-          "manage_scopes": "管理权限范围",
-          "rotate_token": "轮换令牌"
-        },
-        "avatar": {
-          "label": "头像",
-          "upload": "上传头像",
-          "remove": "移除"
-        },
-        "delete": {
-          "title": "删除 AI 账户",
-          "description": "使用此账户的任何集成都将无法再访问您的工作空间。此操作无法撤消。",
-          "success": {
-            "title": "成功!",
-            "message": "AI 账户已成功删除"
-          },
-          "error": {
-            "title": "错误!",
-            "message": "无法删除 AI 账户"
-          }
-        },
-        "rotate": {
-          "title": "轮换令牌",
-          "description": "当前令牌将立即被吊销，使用它的集成将停止工作。新令牌仅会显示一次。",
-          "confirm": "轮换令牌",
-          "rotating": "轮换中",
-          "success": {
-            "title": "令牌已轮换",
-            "message": "AI 账户令牌已轮换。旧令牌不再有效。"
-          },
-          "error": {
-            "title": "错误!",
-            "message": "无法轮换令牌"
-          }
-        },
-        "scopes": {
-          "title": "管理权限范围",
-          "description": "权限范围定义此账户可以访问的内容。保存将替换所有现有权限范围。",
-          "project": "项目",
-          "all_projects": "所有项目",
-          "resource_type": "资源",
-          "action": "操作",
-          "resources": {
-            "all": "所有资源",
-            "project": "项目",
-            "member": "成员",
-            "user": "用户",
-            "asset": "附件",
-            "estimate": "估算",
-            "cycle": "周期",
-            "module": "模块",
-            "sticky": "便签",
-            "label": "标签",
-            "intake": "接收",
-            "work_item": "工作项",
-            "comment": "评论",
-            "state": "状态",
-            "page": "页面",
-            "invite": "邀请"
-          },
-          "actions": {
-            "all": "所有操作",
-            "read": "读取",
-            "create": "创建",
-            "update": "更新",
-            "delete": "删除"
-          },
-          "add_scope": "添加权限范围",
-          "save": "保存权限范围",
-          "saving": "保存中",
-          "success": {
-            "title": "成功!",
-            "message": "权限范围已成功更新"
-          },
-          "error": {
-            "title": "错误!",
-            "message": "无法更新权限范围"
-          }
-        },
-        "toasts": {
-          "created": {
-            "title": "AI 账户已创建",
-            "message": "AI 账户已成功创建"
-          },
-          "not_created": {
-            "title": "AI 账户未创建",
-            "message": "无法创建 AI 账户"
-          },
-          "updated": {
-            "title": "AI 账户已更新",
-            "message": "AI 账户已成功更新"
-          },
-          "not_updated": {
-            "title": "AI 账户未更新",
-            "message": "无法更新 AI 账户"
-          }
-        }
-      },
       "api_tokens": {
         "heading": "API 令牌",
         "description": "生成安全的 API 令牌，将您的数据与外部系统和应用程序集成。",
@@ -618,6 +490,180 @@
         "heading": "脚本",
         "new_script": "新建脚本",
         "description": "使用自定义脚本和自动化规则自动化您的工作流程。"
+      },
+      "service_principals": {
+        "title": "服务主体",
+        "description": "创建并管理服务主体，让自动化代理和集成以限定权限访问您的工作区。",
+        "add_principal": "添加服务主体",
+        "assignable": {
+          "label": "服务主体可分配",
+          "description": "启用后，服务主体会出现在整个工作区的分配和筛选选择器中。默认关闭 — 选择性加入可让主体在工作区管理员决定之前不出现在面向人类的选择器中。",
+          "not_persisted": "此开关的后端端点尚未接通。所做的更改仅在本会话中保留。",
+          "toast_updated": "服务主体可分配设置已更新",
+          "toast_update_failed": "无法更新服务主体可分配设置"
+        },
+        "step_up": {
+          "hint": "此操作会影响令牌安全。请输入身份验证器应用中的 6 位数代码。",
+          "code_required": "请输入 6 位数代码",
+          "code_invalid": "代码无效或已过期。请重试。"
+        },
+        "modal": {
+          "create_title": "创建服务主体",
+          "edit_title": "编辑服务主体",
+          "name": "名称",
+          "name_required": "名称为必填项",
+          "description": "描述",
+          "create": "创建主体",
+          "update": "更新主体",
+          "creating": "正在创建",
+          "updating": "正在更新"
+        },
+        "token": {
+          "title": "服务主体已创建",
+          "rotated_title": "令牌已轮换",
+          "copy_warning": "请立即复制并保存此令牌。关闭此对话框后将无法再次查看。",
+          "copied": "令牌已复制到剪贴板。",
+          "not_copied": "无法复制令牌。请重试。"
+        },
+        "list": {
+          "created_on": "创建于",
+          "edit": "编辑",
+          "delete": "删除",
+          "manage_scopes": "管理范围",
+          "manage_grants": "管理授权",
+          "rotate_token": "轮换令牌"
+        },
+        "avatar": {
+          "label": "头像",
+          "upload": "上传",
+          "remove": "移除"
+        },
+        "delete": {
+          "title": "删除服务主体",
+          "description": "任何使用此主体的集成将无法再访问您的工作区。此操作不可撤销。",
+          "success": {
+            "title": "成功！",
+            "message": "服务主体已成功删除"
+          },
+          "error": {
+            "title": "错误！",
+            "message": "无法删除服务主体"
+          }
+        },
+        "rotate": {
+          "title": "轮换令牌",
+          "description": "当前令牌将立即撤销，使用它的集成将停止工作。新令牌仅显示一次。",
+          "confirm": "轮换令牌",
+          "rotating": "正在轮换",
+          "success": {
+            "title": "令牌已轮换",
+            "message": "服务主体令牌已轮换。先前的令牌不再有效。"
+          },
+          "error": {
+            "title": "错误！",
+            "message": "无法轮换令牌"
+          }
+        },
+        "scopes": {
+          "title": "管理范围",
+          "description": "范围定义此主体可访问的内容。保存将替换所有现有范围。",
+          "project": "项目",
+          "all_projects": "所有项目",
+          "resource_type": "资源",
+          "action": "操作",
+          "resources": {
+            "all": "全部",
+            "project": "项目",
+            "member": "成员",
+            "user": "用户",
+            "asset": "资产",
+            "estimate": "估算",
+            "cycle": "周期",
+            "module": "模块",
+            "sticky": "Sticky",
+            "label": "标签",
+            "intake": "Intake",
+            "work_item": "工作项",
+            "comment": "评论",
+            "state": "状态",
+            "page": "页面",
+            "invite": "邀请"
+          },
+          "actions": {
+            "all": "全部",
+            "read": "读取",
+            "create": "创建",
+            "update": "更新",
+            "delete": "删除"
+          },
+          "add_scope": "添加范围",
+          "save": "保存范围",
+          "saving": "正在保存",
+          "clear_confirm": {
+            "title": "移除所有范围？",
+            "message": "保存时无范围会移除此主体的所有权限。在添加新范围之前，默认拒绝该主体。",
+            "confirm": "移除所有范围"
+          },
+          "success": {
+            "title": "成功！",
+            "message": "范围更新成功"
+          },
+          "error": {
+            "title": "错误！",
+            "message": "无法更新范围"
+          }
+        },
+        "grants": {
+          "title": "管理项目授权",
+          "description": "授权决定此主体可访问哪些项目以及在该项目中可担任的最高角色。保存将替换所有现有授权。",
+          "project": "项目",
+          "role_cap": "角色上限",
+          "status": "状态",
+          "add_grant": "添加授权",
+          "save": "保存授权",
+          "saving": "正在保存",
+          "role_caps": {
+            "5": "访客",
+            "15": "成员",
+            "20": "管理员"
+          },
+          "statuses": {
+            "active": "启用",
+            "inactive": "停用"
+          },
+          "clear_confirm": {
+            "title": "移除所有授权？",
+            "message": "保存时无授权会将此主体从所有项目中移除。在添加新授权之前，它不会是任何项目的成员。",
+            "confirm": "移除所有授权"
+          },
+          "success": {
+            "title": "成功！",
+            "message": "授权更新成功"
+          },
+          "error": {
+            "title": "错误！",
+            "message": "无法更新授权",
+            "missing_project": "每个授权必须引用一个项目。"
+          }
+        },
+        "toasts": {
+          "created": {
+            "title": "服务主体已创建",
+            "message": "服务主体已成功创建"
+          },
+          "not_created": {
+            "title": "服务主体未创建",
+            "message": "无法创建服务主体"
+          },
+          "updated": {
+            "title": "服务主体已更新",
+            "message": "服务主体已成功更新"
+          },
+          "not_updated": {
+            "title": "服务主体未更新",
+            "message": "无法更新服务主体"
+          }
+        }
       }
     },
     "empty_state": {

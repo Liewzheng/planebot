@@ -14,12 +14,12 @@ import { BreadcrumbLink } from "@/components/common/breadcrumb-link";
 import { SettingsPageHeader } from "@/components/settings/page-header";
 import { WORKSPACE_SETTINGS_ICONS } from "@/components/settings/workspace/sidebar/item-icon";
 
-export const AIAccountsWorkspaceSettingsHeader = observer(function AIAccountsWorkspaceSettingsHeader() {
+export const ServicePrincipalsWorkspaceSettingsHeader = observer(function ServicePrincipalsWorkspaceSettingsHeader() {
   // translation
   const { t } = useTranslation();
   // derived values
-  const settingsDetails = WORKSPACE_SETTINGS["ai-accounts"];
-  const Icon = WORKSPACE_SETTINGS_ICONS["ai-accounts"];
+  const settingsDetails = WORKSPACE_SETTINGS["service-principals"];
+  const Icon = WORKSPACE_SETTINGS_ICONS["service-principals"];
 
   return (
     <SettingsPageHeader

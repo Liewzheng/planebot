@@ -150,129 +150,6 @@
           }
         }
       },
-      "ai_accounts": {
-        "title": "Tài khoản AI",
-        "description": "Tạo và quản lý tài khoản bot cho phép tác tử AI truy cập workspace của bạn với quyền theo phạm vi.",
-        "add_account": "Thêm tài khoản AI",
-        "modal": {
-          "create_title": "Tạo tài khoản AI",
-          "edit_title": "Chỉnh sửa tài khoản AI",
-          "name": "Tên",
-          "name_required": "Tên là bắt buộc",
-          "description": "Mô tả",
-          "create": "Tạo tài khoản",
-          "update": "Cập nhật tài khoản",
-          "creating": "Đang tạo",
-          "updating": "Đang cập nhật"
-        },
-        "token": {
-          "title": "Đã tạo tài khoản",
-          "rotated_title": "Đã xoay vòng token",
-          "copy_warning": "Hãy sao chép và lưu token này ngay. Bạn sẽ không thể xem lại sau khi đóng hộp thoại này.",
-          "copied": "Đã sao chép token vào clipboard.",
-          "not_copied": "Không thể sao chép token. Vui lòng thử lại."
-        },
-        "list": {
-          "created_on": "Được tạo vào",
-          "edit": "Chỉnh sửa",
-          "delete": "Xóa",
-          "manage_scopes": "Quản lý phạm vi",
-          "rotate_token": "Xoay vòng token"
-        },
-        "avatar": {
-          "label": "Ảnh đại diện",
-          "upload": "Tải lên",
-          "remove": "Xóa"
-        },
-        "delete": {
-          "title": "Xóa tài khoản AI",
-          "description": "Bất kỳ tích hợp nào sử dụng tài khoản này sẽ không còn truy cập được workspace của bạn. Hành động này không thể hoàn tác.",
-          "success": {
-            "title": "Thành công!",
-            "message": "Tài khoản AI đã được xóa thành công"
-          },
-          "error": {
-            "title": "Lỗi!",
-            "message": "Không thể xóa tài khoản AI"
-          }
-        },
-        "rotate": {
-          "title": "Xoay vòng token",
-          "description": "Token hiện tại sẽ bị thu hồi ngay lập tức và các tích hợp đang dùng nó sẽ ngừng hoạt động. Token mới chỉ được hiển thị một lần.",
-          "confirm": "Xoay vòng token",
-          "rotating": "Đang xoay vòng",
-          "success": {
-            "title": "Đã xoay vòng token",
-            "message": "Token của tài khoản AI đã được xoay vòng. Token trước đó không còn hợp lệ."
-          },
-          "error": {
-            "title": "Lỗi!",
-            "message": "Không thể xoay vòng token"
-          }
-        },
-        "scopes": {
-          "title": "Quản lý phạm vi",
-          "description": "Phạm vi xác định những gì tài khoản này có thể truy cập. Lưu sẽ thay thế tất cả phạm vi hiện có.",
-          "project": "Dự án",
-          "all_projects": "Tất cả dự án",
-          "resource_type": "Tài nguyên",
-          "action": "Hành động",
-          "resources": {
-            "all": "Tất cả",
-            "project": "Dự án",
-            "member": "Thành viên",
-            "user": "Người dùng",
-            "asset": "Tệp",
-            "estimate": "Ước tính",
-            "cycle": "Chu kỳ",
-            "module": "Mô-đun",
-            "sticky": "Sticky",
-            "label": "Nhãn",
-            "intake": "Intake",
-            "work_item": "Mục công việc",
-            "comment": "Bình luận",
-            "state": "Trạng thái",
-            "page": "Trang",
-            "invite": "Lời mời"
-          },
-          "actions": {
-            "all": "Tất cả",
-            "read": "Đọc",
-            "create": "Tạo",
-            "update": "Cập nhật",
-            "delete": "Xóa"
-          },
-          "add_scope": "Thêm phạm vi",
-          "save": "Lưu phạm vi",
-          "saving": "Đang lưu",
-          "success": {
-            "title": "Thành công!",
-            "message": "Đã cập nhật phạm vi thành công"
-          },
-          "error": {
-            "title": "Lỗi!",
-            "message": "Không thể cập nhật phạm vi"
-          }
-        },
-        "toasts": {
-          "created": {
-            "title": "Đã tạo tài khoản AI",
-            "message": "Tài khoản AI đã được tạo thành công"
-          },
-          "not_created": {
-            "title": "Chưa tạo tài khoản AI",
-            "message": "Không thể tạo tài khoản AI"
-          },
-          "updated": {
-            "title": "Đã cập nhật tài khoản AI",
-            "message": "Tài khoản AI đã được cập nhật thành công"
-          },
-          "not_updated": {
-            "title": "Chưa cập nhật tài khoản AI",
-            "message": "Không thể cập nhật tài khoản AI"
-          }
-        }
-      },
       "api_tokens": {
         "heading": "Token API",
         "description": "Tạo token API bảo mật để tích hợp dữ liệu của bạn với các hệ thống và ứng dụng bên ngoài.",
@@ -607,6 +484,180 @@
         "heading": "Script",
         "new_script": "Script mới",
         "description": "Tự động hóa quy trình làm việc của bạn với các script và quy tắc tự động hóa tùy chỉnh."
+      },
+      "service_principals": {
+        "title": "Service principals",
+        "description": "Tạo và quản lý service principals cho phép các tác nhân tự động và tích hợp truy cập workspace của bạn với quyền được phân định.",
+        "add_principal": "Thêm service principal",
+        "assignable": {
+          "label": "Service principals có thể gán",
+          "description": "Khi bật, service principals xuất hiện trong bộ chọn gán và bộ lọc trên toàn workspace. Mặc định tắt — opt-in giữ các principal tránh khỏi bộ chọn dành cho người cho đến khi quản trị viên workspace quyết định khác.",
+          "not_persisted": "Endpoint backend cho công tắc này chưa được kết nối. Thay đổi chỉ được giữ trong phiên này.",
+          "toast_updated": "Đã cập nhật cài đặt khả năng gán của service principal",
+          "toast_update_failed": "Không thể cập nhật cài đặt khả năng gán của service principal"
+        },
+        "step_up": {
+          "hint": "Thao tác này ảnh hưởng đến bảo mật token. Nhập mã 6 chữ số từ ứng dụng xác thực của bạn.",
+          "code_required": "Nhập mã 6 chữ số",
+          "code_invalid": "Mã không hợp lệ hoặc đã hết hạn. Thử lại."
+        },
+        "modal": {
+          "create_title": "Tạo service principal",
+          "edit_title": "Chỉnh sửa service principal",
+          "name": "Tên",
+          "name_required": "Tên là bắt buộc",
+          "description": "Mô tả",
+          "create": "Tạo principal",
+          "update": "Cập nhật principal",
+          "creating": "Đang tạo",
+          "updating": "Đang cập nhật"
+        },
+        "token": {
+          "title": "Service principal đã tạo",
+          "rotated_title": "Token đã xoay",
+          "copy_warning": "Sao chép và lưu token này ngay bây giờ. Bạn sẽ không thể xem lại sau khi đóng hộp thoại này.",
+          "copied": "Token đã được sao chép vào bộ nhớ tạm.",
+          "not_copied": "Không thể sao chép token. Vui lòng thử lại."
+        },
+        "list": {
+          "created_on": "Đã tạo vào",
+          "edit": "Chỉnh sửa",
+          "delete": "Xóa",
+          "manage_scopes": "Quản lý scopes",
+          "manage_grants": "Quản lý grants",
+          "rotate_token": "Xoay token"
+        },
+        "avatar": {
+          "label": "Ảnh đại diện",
+          "upload": "Tải lên",
+          "remove": "Xóa"
+        },
+        "delete": {
+          "title": "Xóa service principal",
+          "description": "Bất kỳ tích hợp nào sử dụng principal này sẽ không thể truy cập workspace của bạn nữa. Hành động này không thể hoàn tác.",
+          "success": {
+            "title": "Thành công!",
+            "message": "Service principal đã được xóa thành công"
+          },
+          "error": {
+            "title": "Lỗi!",
+            "message": "Không thể xóa service principal"
+          }
+        },
+        "rotate": {
+          "title": "Xoay token",
+          "description": "Token hiện tại sẽ bị thu hồi ngay lập tức và các tích hợp sử dụng nó sẽ ngừng hoạt động. Token mới chỉ hiển thị một lần.",
+          "confirm": "Xoay token",
+          "rotating": "Đang xoay",
+          "success": {
+            "title": "Token đã xoay",
+            "message": "Token của service principal đã được xoay. Token trước đó không còn hợp lệ."
+          },
+          "error": {
+            "title": "Lỗi!",
+            "message": "Không thể xoay token"
+          }
+        },
+        "scopes": {
+          "title": "Quản lý scopes",
+          "description": "Scopes xác định những gì principal này có thể truy cập. Lưu sẽ thay thế tất cả các scopes hiện có.",
+          "project": "Dự án",
+          "all_projects": "Tất cả dự án",
+          "resource_type": "Tài nguyên",
+          "action": "Hành động",
+          "resources": {
+            "all": "Tất cả",
+            "project": "Dự án",
+            "member": "Thành viên",
+            "user": "Người dùng",
+            "asset": "Tài sản",
+            "estimate": "Ước lượng",
+            "cycle": "Chu kỳ",
+            "module": "Mô-đun",
+            "sticky": "Sticky",
+            "label": "Nhãn",
+            "intake": "Intake",
+            "work_item": "Mục công việc",
+            "comment": "Bình luận",
+            "state": "Trạng thái",
+            "page": "Trang",
+            "invite": "Lời mời"
+          },
+          "actions": {
+            "all": "Tất cả",
+            "read": "Đọc",
+            "create": "Tạo",
+            "update": "Cập nhật",
+            "delete": "Xóa"
+          },
+          "add_scope": "Thêm scope",
+          "save": "Lưu scopes",
+          "saving": "Đang lưu",
+          "clear_confirm": {
+            "title": "Xóa tất cả scopes?",
+            "message": "Lưu mà không có scopes sẽ xóa mọi quyền của principal này. Principal bị từ chối theo mặc định cho đến khi thêm scopes mới.",
+            "confirm": "Xóa tất cả scopes"
+          },
+          "success": {
+            "title": "Thành công!",
+            "message": "Scopes đã được cập nhật thành công"
+          },
+          "error": {
+            "title": "Lỗi!",
+            "message": "Không thể cập nhật scopes"
+          }
+        },
+        "grants": {
+          "title": "Quản lý grants dự án",
+          "description": "Grants quyết định dự án nào principal này có thể truy cập và vai trò cao nhất mà nó có thể giữ ở đó. Lưu sẽ thay thế tất cả các grants hiện có.",
+          "project": "Dự án",
+          "role_cap": "Giới hạn vai trò",
+          "status": "Trạng thái",
+          "add_grant": "Thêm grant",
+          "save": "Lưu grants",
+          "saving": "Đang lưu",
+          "role_caps": {
+            "5": "Khách",
+            "15": "Thành viên",
+            "20": "Quản trị viên"
+          },
+          "statuses": {
+            "active": "Hoạt động",
+            "inactive": "Không hoạt động"
+          },
+          "clear_confirm": {
+            "title": "Xóa tất cả grants?",
+            "message": "Lưu mà không có grants sẽ xóa principal này khỏi mọi dự án. Nó sẽ không phải là thành viên của bất kỳ dự án nào cho đến khi thêm grants mới.",
+            "confirm": "Xóa tất cả grants"
+          },
+          "success": {
+            "title": "Thành công!",
+            "message": "Grants đã được cập nhật thành công"
+          },
+          "error": {
+            "title": "Lỗi!",
+            "message": "Không thể cập nhật grants",
+            "missing_project": "Mỗi grant phải tham chiếu đến một dự án."
+          }
+        },
+        "toasts": {
+          "created": {
+            "title": "Service principal đã tạo",
+            "message": "Service principal đã được tạo thành công"
+          },
+          "not_created": {
+            "title": "Service principal chưa được tạo",
+            "message": "Không thể tạo service principal"
+          },
+          "updated": {
+            "title": "Service principal đã cập nhật",
+            "message": "Service principal đã được cập nhật thành công"
+          },
+          "not_updated": {
+            "title": "Service principal chưa được cập nhật",
+            "message": "Không thể cập nhật service principal"
+          }
+        }
       }
     },
     "empty_state": {

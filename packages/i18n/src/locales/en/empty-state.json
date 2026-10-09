@@ -226,10 +226,10 @@
       "description": "Automate notifications to external services when project events occur.",
       "cta_primary": "Add webhook"
     },
-    "ai_accounts": {
-      "title": "No AI accounts yet",
-      "description": "Create AI accounts to let AI agents access your workspace with scoped permissions.",
-      "cta_primary": "Add AI account"
+    "service_principals": {
+      "title": "No service principals yet",
+      "description": "Create service principals to let automated agents and integrations access your workspace with scoped permissions.",
+      "cta_primary": "Add service principal"
     },
     "work_item_types": {
       "title": "Create and customize work item types",

@@ -150,129 +150,6 @@
           }
         }
       },
-      "ai_accounts": {
-        "title": "AI-акаунти",
-        "description": "Створюйте та керуйте акаунтами ботів, які дозволяють AI-агентам отримувати доступ до вашого воркспейсу з обмеженими правами.",
-        "add_account": "Додати AI-акаунт",
-        "modal": {
-          "create_title": "Створити AI-акаунт",
-          "edit_title": "Редагувати AI-акаунт",
-          "name": "Назва",
-          "name_required": "Назва обов'язкова",
-          "description": "Опис",
-          "create": "Створити акаунт",
-          "update": "Оновити акаунт",
-          "creating": "Створення",
-          "updating": "Оновлення"
-        },
-        "token": {
-          "title": "Акаунт створено",
-          "rotated_title": "Токен замінено",
-          "copy_warning": "Скопіюйте та збережіть цей токен зараз. Після закриття цього діалогу ви більше не зможете його побачити.",
-          "copied": "Токен скопійовано в буфер обміну.",
-          "not_copied": "Не вдалося скопіювати токен. Спробуйте ще раз."
-        },
-        "list": {
-          "created_on": "Створено",
-          "edit": "Редагувати",
-          "delete": "Видалити",
-          "manage_scopes": "Керування областями",
-          "rotate_token": "Ротація токена"
-        },
-        "avatar": {
-          "label": "Аватар",
-          "upload": "Завантажити",
-          "remove": "Вилучити"
-        },
-        "delete": {
-          "title": "Видалити AI-акаунт",
-          "description": "Будь-яка інтеграція, що використовує цей акаунт, більше не зможе отримати доступ до вашого воркспейсу. Цю дію неможливо скасувати.",
-          "success": {
-            "title": "Успіх!",
-            "message": "AI-акаунт успішно видалено"
-          },
-          "error": {
-            "title": "Помилка!",
-            "message": "Не вдалося видалити AI-акаунт"
-          }
-        },
-        "rotate": {
-          "title": "Ротація токена",
-          "description": "Поточний токен буде негайно відкликано, і інтеграції, які його використовують, перестануть працювати. Новий токен відображається лише один раз.",
-          "confirm": "Ротація токена",
-          "rotating": "Ротація",
-          "success": {
-            "title": "Токен замінено",
-            "message": "Токен AI-акаунта замінено. Попередній токен більше не дійсний."
-          },
-          "error": {
-            "title": "Помилка!",
-            "message": "Не вдалося замінити токен"
-          }
-        },
-        "scopes": {
-          "title": "Керування областями",
-          "description": "Області визначають, до чого цей акаунт має доступ. Збереження замінює всі наявні області.",
-          "project": "Проєкт",
-          "all_projects": "Усі проєкти",
-          "resource_type": "Ресурс",
-          "action": "Дія",
-          "resources": {
-            "all": "Усе",
-            "project": "Проєкт",
-            "member": "Учасник",
-            "user": "Користувач",
-            "asset": "Файл",
-            "estimate": "Оцінка",
-            "cycle": "Цикл",
-            "module": "Модуль",
-            "sticky": "Sticky",
-            "label": "Мітка",
-            "intake": "Intake",
-            "work_item": "Робоча одиниця",
-            "comment": "Коментар",
-            "state": "Стан",
-            "page": "Сторінка",
-            "invite": "Запрошення"
-          },
-          "actions": {
-            "all": "Усе",
-            "read": "Читання",
-            "create": "Створити",
-            "update": "Оновити",
-            "delete": "Видалити"
-          },
-          "add_scope": "Додати область",
-          "save": "Зберегти області",
-          "saving": "Збереження",
-          "success": {
-            "title": "Успіх!",
-            "message": "Області успішно оновлено"
-          },
-          "error": {
-            "title": "Помилка!",
-            "message": "Не вдалося оновити області"
-          }
-        },
-        "toasts": {
-          "created": {
-            "title": "AI-акаунт створено",
-            "message": "AI-акаунт успішно створено"
-          },
-          "not_created": {
-            "title": "AI-акаунт не створено",
-            "message": "Не вдалося створити AI-акаунт"
-          },
-          "updated": {
-            "title": "AI-акаунт оновлено",
-            "message": "AI-акаунт успішно оновлено"
-          },
-          "not_updated": {
-            "title": "AI-акаунт не оновлено",
-            "message": "Не вдалося оновити AI-акаунт"
-          }
-        }
-      },
       "api_tokens": {
         "heading": "API токени",
         "description": "Створюйте безпечні API токени для інтеграції ваших даних із зовнішніми системами та додатками.",
@@ -607,6 +484,180 @@
         "heading": "Скрипти",
         "new_script": "Новий скрипт",
         "description": "Автоматизуйте свої робочі процеси за допомогою користувацьких скриптів і правил автоматизації."
+      },
+      "service_principals": {
+        "title": "Service principals",
+        "description": "Створюйте та керуйте service principals, які дозволяють автоматизованим агентам та інтеграціям отримувати доступ до вашого workspace з обмеженими дозволами.",
+        "add_principal": "Додати service principal",
+        "assignable": {
+          "label": "Service principals призначаються",
+          "description": "Коли увімкнено, service principals відображаються у селекторах призначення та фільтрації у всьому workspace. За замовчуванням вимкнено — opt-in тримає principals поза селекторами для людей, поки адміністратор workspace не вирішить інакше.",
+          "not_persisted": "Backend endpoint для цього перемикача ще не підключено. Зміни зберігаються лише в цій сесії.",
+          "toast_updated": "Налаштування призначуваності service principal оновлено",
+          "toast_update_failed": "Не вдалося оновити налаштування призначуваності service principal"
+        },
+        "step_up": {
+          "hint": "Ця операція впливає на безпеку токена. Введіть 6-значний код з вашого додатку автентифікації.",
+          "code_required": "Введіть 6-значний код",
+          "code_invalid": "Код недійсний або минув. Спробуйте ще раз."
+        },
+        "modal": {
+          "create_title": "Створити service principal",
+          "edit_title": "Редагувати service principal",
+          "name": "Назва",
+          "name_required": "Назва є обов'язковою",
+          "description": "Опис",
+          "create": "Створити principal",
+          "update": "Оновити principal",
+          "creating": "Створення",
+          "updating": "Оновлення"
+        },
+        "token": {
+          "title": "Service principal створено",
+          "rotated_title": "Токен ротовано",
+          "copy_warning": "Скопіюйте та збережіть цей токен зараз. Після закриття цього діалогу ви більше не зможете його побачити.",
+          "copied": "Токен скопійовано до буфера обміну.",
+          "not_copied": "Не вдалося скопіювати токен. Спробуйте ще раз."
+        },
+        "list": {
+          "created_on": "Створено",
+          "edit": "Редагувати",
+          "delete": "Видалити",
+          "manage_scopes": "Керувати scopes",
+          "manage_grants": "Керувати grants",
+          "rotate_token": "Ротувати токен"
+        },
+        "avatar": {
+          "label": "Аватар",
+          "upload": "Завантажити",
+          "remove": "Видалити"
+        },
+        "delete": {
+          "title": "Видалити service principal",
+          "description": "Будь-яка інтеграція, що використовує цей principal, більше не зможе отримати доступ до вашого workspace. Цю дію не можна скасувати.",
+          "success": {
+            "title": "Успіх!",
+            "message": "Service principal успішно видалено"
+          },
+          "error": {
+            "title": "Помилка!",
+            "message": "Не вдалося видалити service principal"
+          }
+        },
+        "rotate": {
+          "title": "Ротувати токен",
+          "description": "Поточний токен буде негайно відкликано, а інтеграції, що його використовують, перестануть працювати. Новий токен показується лише один раз.",
+          "confirm": "Ротувати токен",
+          "rotating": "Ротація",
+          "success": {
+            "title": "Токен ротовано",
+            "message": "Токен service principal ротовано. Попередній токен більше недійсний."
+          },
+          "error": {
+            "title": "Помилка!",
+            "message": "Не вдалося ротувати токен"
+          }
+        },
+        "scopes": {
+          "title": "Керувати scopes",
+          "description": "Scopes визначають, до чого цей principal має доступ. Збереження замінює всі наявні scopes.",
+          "project": "Проєкт",
+          "all_projects": "Усі проєкти",
+          "resource_type": "Ресурс",
+          "action": "Дія",
+          "resources": {
+            "all": "Усі",
+            "project": "Проєкт",
+            "member": "Учасник",
+            "user": "Користувач",
+            "asset": "Актив",
+            "estimate": "Оцінка",
+            "cycle": "Цикл",
+            "module": "Модуль",
+            "sticky": "Sticky",
+            "label": "Мітка",
+            "intake": "Intake",
+            "work_item": "Робочий елемент",
+            "comment": "Коментар",
+            "state": "Стан",
+            "page": "Сторінка",
+            "invite": "Запрошення"
+          },
+          "actions": {
+            "all": "Усі",
+            "read": "Читання",
+            "create": "Створення",
+            "update": "Оновлення",
+            "delete": "Видалення"
+          },
+          "add_scope": "Додати scope",
+          "save": "Зберегти scopes",
+          "saving": "Збереження",
+          "clear_confirm": {
+            "title": "Видалити всі scopes?",
+            "message": "Збереження без scopes видаляє всі дозволи цього principal. Principal відхиляється за замовчуванням, поки не будуть додані нові scopes.",
+            "confirm": "Видалити всі scopes"
+          },
+          "success": {
+            "title": "Успіх!",
+            "message": "Scopes успішно оновлено"
+          },
+          "error": {
+            "title": "Помилка!",
+            "message": "Не вдалося оновити scopes"
+          }
+        },
+        "grants": {
+          "title": "Керувати grants проєктів",
+          "description": "Grants визначають, до яких проєктів цей principal має доступ і яку максимальну роль може там мати. Збереження замінює всі наявні grants.",
+          "project": "Проєкт",
+          "role_cap": "Ліміт ролі",
+          "status": "Статус",
+          "add_grant": "Додати grant",
+          "save": "Зберегти grants",
+          "saving": "Збереження",
+          "role_caps": {
+            "5": "Гість",
+            "15": "Учасник",
+            "20": "Адміністратор"
+          },
+          "statuses": {
+            "active": "Активний",
+            "inactive": "Неактивний"
+          },
+          "clear_confirm": {
+            "title": "Видалити всі grants?",
+            "message": "Збереження без grants видаляє цього principal з усіх проєктів. Він не буде учасником жодного проєкту, поки не будуть додані нові grants.",
+            "confirm": "Видалити всі grants"
+          },
+          "success": {
+            "title": "Успіх!",
+            "message": "Grants успішно оновлено"
+          },
+          "error": {
+            "title": "Помилка!",
+            "message": "Не вдалося оновити grants",
+            "missing_project": "Кожен grant має посилатися на проєкт."
+          }
+        },
+        "toasts": {
+          "created": {
+            "title": "Service principal створено",
+            "message": "Service principal успішно створено"
+          },
+          "not_created": {
+            "title": "Service principal не створено",
+            "message": "Не вдалося створити service principal"
+          },
+          "updated": {
+            "title": "Service principal оновлено",
+            "message": "Service principal успішно оновлено"
+          },
+          "not_updated": {
+            "title": "Service principal не оновлено",
+            "message": "Не вдалося оновити service principal"
+          }
+        }
       }
     },
     "empty_state": {

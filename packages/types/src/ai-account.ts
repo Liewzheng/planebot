@@ -4,16 +4,7 @@
  * See the LICENSE file for details.
  */
 
-export type TAIAccountBotUser = {
-  id: string;
-  display_name: string;
-  email: string;
-  avatar_url: string;
-  is_bot: boolean;
-  bot_type: string;
-};
-
-export type TAIScopeResourceType =
+export type TServiceScopeResourceType =
   | "all"
   | "project"
   | "member"
@@ -31,45 +22,66 @@ export type TAIScopeResourceType =
   | "page"
   | "invite";
 
-export type TAIScopeAction = "all" | "read" | "create" | "update" | "delete";
+export type TServiceScopeAction = "all" | "read" | "create" | "update" | "delete";
 
-export type TAIScopePolicy = {
+export type TServiceScope = {
   id: string;
   project: string | null;
-  resource_type: TAIScopeResourceType;
-  action: TAIScopeAction;
+  resource_type: TServiceScopeResourceType;
+  action: TServiceScopeAction;
 };
 
-export type TAIAccount = {
+export type TServiceScopeInput = {
+  project: string | null;
+  resource_type: TServiceScopeResourceType;
+  action: TServiceScopeAction;
+};
+
+export type TServicePrincipalRoleCap = 20 | 15 | 5;
+
+export type TProjectGrant = {
+  id: string;
+  project: string;
+  role_cap: TServicePrincipalRoleCap;
+  is_active: boolean;
+};
+
+export type TProjectGrantInput = {
+  project: string;
+  role_cap: TServicePrincipalRoleCap;
+  is_active: boolean;
+};
+
+export type TServicePrincipal = {
   id: string;
   name: string;
   description: string;
+  avatar: string;
   is_active: boolean;
   workspace: string;
   owner: string;
-  bot_user: TAIAccountBotUser;
-  scope_policies: TAIScopePolicy[];
+  scopes: TServiceScope[];
+  grants: TProjectGrant[];
   token_last_used: string | null;
   created_at: string;
   updated_at: string;
 };
 
-export type TAIAccountCreatePayload = {
+export type TServicePrincipalCreatePayload = {
   name: string;
   description?: string;
-  role?: 15 | 5;
+  avatar?: string;
   totp_code?: string;
 };
 
-export type TAIAccountUpdatePayload = {
+export type TServicePrincipalUpdatePayload = {
   name?: string;
   description?: string;
-  is_active?: boolean;
   avatar?: string;
+  is_active?: boolean;
 };
 
-export type TAIScopePolicyInput = {
-  project: string | null;
-  resource_type: TAIScopeResourceType;
-  action: TAIScopeAction;
+export type TWorkspaceSPSettings = {
+  workspace: string;
+  sp_assignable: boolean;
 };

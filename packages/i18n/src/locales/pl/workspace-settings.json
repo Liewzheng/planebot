@@ -150,129 +150,6 @@
           }
         }
       },
-      "ai_accounts": {
-        "title": "Konta AI",
-        "description": "Twórz i zarządzaj kontami botów, które umożliwiają agentom AI dostęp do Twojego workspace z uprawnieniami o ograniczonym zakresie.",
-        "add_account": "Dodaj konto AI",
-        "modal": {
-          "create_title": "Utwórz konto AI",
-          "edit_title": "Edytuj konto AI",
-          "name": "Nazwa",
-          "name_required": "Nazwa jest wymagana",
-          "description": "Opis",
-          "create": "Utwórz konto",
-          "update": "Aktualizuj konto",
-          "creating": "Tworzenie",
-          "updating": "Aktualizowanie"
-        },
-        "token": {
-          "title": "Konto utworzone",
-          "rotated_title": "Token rotowany",
-          "copy_warning": "Skopiuj i zapisz ten token teraz. Po zamknięciu tego okna nie będzie można go ponownie wyświetlić.",
-          "copied": "Token skopiowany do schowka.",
-          "not_copied": "Nie udało się skopiować tokenu. Spróbuj ponownie."
-        },
-        "list": {
-          "created_on": "Utworzono dnia",
-          "edit": "Edytuj",
-          "delete": "Usuń",
-          "manage_scopes": "Zarządzaj zakresami",
-          "rotate_token": "Rotuj token"
-        },
-        "avatar": {
-          "label": "Zdjęcie profilowe",
-          "upload": "Prześlij",
-          "remove": "Usuń"
-        },
-        "delete": {
-          "title": "Usuń konto AI",
-          "description": "Żadna integracja korzystająca z tego konta nie będzie już mieć dostępu do Twojego workspace. Tej akcji nie można cofnąć.",
-          "success": {
-            "title": "Sukces!",
-            "message": "Konto AI zostało pomyślnie usunięte"
-          },
-          "error": {
-            "title": "Błąd!",
-            "message": "Nie można usunąć konta AI"
-          }
-        },
-        "rotate": {
-          "title": "Rotuj token",
-          "description": "Bieżący token zostanie natychmiast unieważniony, a integracje, które go używają, przestaną działać. Nowy token zostanie wyświetlony tylko raz.",
-          "confirm": "Rotuj token",
-          "rotating": "Rotowanie",
-          "success": {
-            "title": "Token rotowany",
-            "message": "Token konta AI został rotowany. Poprzedni token nie jest już ważny."
-          },
-          "error": {
-            "title": "Błąd!",
-            "message": "Nie można rotować tokenu"
-          }
-        },
-        "scopes": {
-          "title": "Zarządzaj zakresami",
-          "description": "Zakresy określają, do czego to konto ma dostęp. Zapisanie zastępuje wszystkie istniejące zakresy.",
-          "project": "Projekt",
-          "all_projects": "Wszystkie projekty",
-          "resource_type": "Zasób",
-          "action": "Akcja",
-          "resources": {
-            "all": "Wszystko",
-            "project": "Projekt",
-            "member": "Członek",
-            "user": "Użytkownik",
-            "asset": "Plik",
-            "estimate": "Szacowanie",
-            "cycle": "Cykl",
-            "module": "Moduł",
-            "sticky": "Sticky",
-            "label": "Etykieta",
-            "intake": "Intake",
-            "work_item": "Element pracy",
-            "comment": "Komentarz",
-            "state": "Stan",
-            "page": "Strona",
-            "invite": "Zaproszenie"
-          },
-          "actions": {
-            "all": "Wszystko",
-            "read": "Odczyt",
-            "create": "Utwórz",
-            "update": "Aktualizuj",
-            "delete": "Usuń"
-          },
-          "add_scope": "Dodaj zakres",
-          "save": "Zapisz zakresy",
-          "saving": "Zapisywanie",
-          "success": {
-            "title": "Sukces!",
-            "message": "Zakresy zaktualizowane pomyślnie"
-          },
-          "error": {
-            "title": "Błąd!",
-            "message": "Nie można zaktualizować zakresów"
-          }
-        },
-        "toasts": {
-          "created": {
-            "title": "Konto AI utworzone",
-            "message": "Konto AI zostało pomyślnie utworzone"
-          },
-          "not_created": {
-            "title": "Konto AI nie utworzone",
-            "message": "Nie można utworzyć konta AI"
-          },
-          "updated": {
-            "title": "Konto AI zaktualizowane",
-            "message": "Konto AI zostało pomyślnie zaktualizowane"
-          },
-          "not_updated": {
-            "title": "Konto AI nie zaktualizowane",
-            "message": "Nie można zaktualizować konta AI"
-          }
-        }
-      },
       "api_tokens": {
         "heading": "Tokeny API",
         "description": "Generuj bezpieczne tokeny API, aby integrować swoje dane z zewnętrznymi systemami i aplikacjami.",
@@ -607,6 +484,180 @@
         "heading": "Skrypty",
         "new_script": "Nowy skrypt",
         "description": "Automatyzuj swoje przepływy pracy za pomocą niestandardowych skryptów i reguł automatyzacji."
+      },
+      "service_principals": {
+        "title": "Service principals",
+        "description": "Twórz i zarządzaj service principals, które pozwalają zautomatyzowanym agentom i integracjom uzyskać dostęp do Twojego workspace'u z ograniczonymi uprawnieniami.",
+        "add_principal": "Dodaj service principal",
+        "assignable": {
+          "label": "Service principals są przypisywalne",
+          "description": "Po włączeniu service principals pojawiają się w selektorach przypisań i filtrów w całym workspace'ie. Domyślnie wyłączone — opt-in utrzymuje principals poza selektorami dla ludzi, dopóki administrator workspace'u nie zdecyduje inaczej.",
+          "not_persisted": "Backendowy endpoint tego przełącznika nie jest jeszcze podłączony. Zmiany są utrzymywane tylko w tej sesji.",
+          "toast_updated": "Ustawienie przypisywalności service principal zaktualizowane",
+          "toast_update_failed": "Nie udało się zaktualizować ustawienia przypisywalności service principal"
+        },
+        "step_up": {
+          "hint": "Ta operacja wpływa na bezpieczeństwo tokenu. Wprowadź 6-cyfrowy kod z aplikacji uwierzytelniającej.",
+          "code_required": "Wprowadź 6-cyfrowy kod",
+          "code_invalid": "Kod jest nieprawidłowy lub wygasł. Spróbuj ponownie."
+        },
+        "modal": {
+          "create_title": "Utwórz service principal",
+          "edit_title": "Edytuj service principal",
+          "name": "Nazwa",
+          "name_required": "Nazwa jest wymagana",
+          "description": "Opis",
+          "create": "Utwórz principal",
+          "update": "Zaktualizuj principal",
+          "creating": "Tworzenie",
+          "updating": "Aktualizowanie"
+        },
+        "token": {
+          "title": "Service principal utworzony",
+          "rotated_title": "Token zrotowany",
+          "copy_warning": "Skopiuj i zapisz ten token teraz. Po zamknięciu tego okna nie będziesz mógł go ponownie zobaczyć.",
+          "copied": "Token skopiowany do schowka.",
+          "not_copied": "Nie udało się skopiować tokenu. Spróbuj ponownie."
+        },
+        "list": {
+          "created_on": "Utworzono",
+          "edit": "Edytuj",
+          "delete": "Usuń",
+          "manage_scopes": "Zarządzaj scopes",
+          "manage_grants": "Zarządzaj grants",
+          "rotate_token": "Rotuj token"
+        },
+        "avatar": {
+          "label": "Awatar",
+          "upload": "Prześlij",
+          "remove": "Usuń"
+        },
+        "delete": {
+          "title": "Usuń service principal",
+          "description": "Każda integracja korzystająca z tego principal nie będzie mogła uzyskać dostępu do Twojego workspace'u. Tej operacji nie można cofnąć.",
+          "success": {
+            "title": "Sukces!",
+            "message": "Service principal został pomyślnie usunięty"
+          },
+          "error": {
+            "title": "Błąd!",
+            "message": "Nie udało się usunąć service principal"
+          }
+        },
+        "rotate": {
+          "title": "Rotuj token",
+          "description": "Bieżący token zostanie natychmiast unieważniony, a integracje z niego korzystające przestaną działać. Nowy token jest wyświetlany tylko raz.",
+          "confirm": "Rotuj token",
+          "rotating": "Rotowanie",
+          "success": {
+            "title": "Token zrotowany",
+            "message": "Token service principal został zrotowany. Poprzedni token jest już nieważny."
+          },
+          "error": {
+            "title": "Błąd!",
+            "message": "Nie udało się zrotować tokenu"
+          }
+        },
+        "scopes": {
+          "title": "Zarządzaj scopes",
+          "description": "Scopes definiują, do czego ten principal ma dostęp. Zapisanie zastępuje wszystkie istniejące scopes.",
+          "project": "Projekt",
+          "all_projects": "Wszystkie projekty",
+          "resource_type": "Zasób",
+          "action": "Akcja",
+          "resources": {
+            "all": "Wszystko",
+            "project": "Projekt",
+            "member": "Członek",
+            "user": "Użytkownik",
+            "asset": "Zasób",
+            "estimate": "Wycen",
+            "cycle": "Cykl",
+            "module": "Moduł",
+            "sticky": "Sticky",
+            "label": "Etykieta",
+            "intake": "Intake",
+            "work_item": "Element roboczy",
+            "comment": "Komentarz",
+            "state": "Stan",
+            "page": "Strona",
+            "invite": "Zaproszenie"
+          },
+          "actions": {
+            "all": "Wszystko",
+            "read": "Odczyt",
+            "create": "Utwórz",
+            "update": "Zaktualizuj",
+            "delete": "Usuń"
+          },
+          "add_scope": "Dodaj scope",
+          "save": "Zapisz scopes",
+          "saving": "Zapisywanie",
+          "clear_confirm": {
+            "title": "Usunąć wszystkie scopes?",
+            "message": "Zapisanie bez scopes usuwa wszystkie uprawnienia tego principal. Principal jest domyślnie odmawiany do momentu dodania nowych scopes.",
+            "confirm": "Usuń wszystkie scopes"
+          },
+          "success": {
+            "title": "Sukces!",
+            "message": "Scopes zaktualizowane pomyślnie"
+          },
+          "error": {
+            "title": "Błąd!",
+            "message": "Nie udało się zaktualizować scopes"
+          }
+        },
+        "grants": {
+          "title": "Zarządzaj grantami projektów",
+          "description": "Grants decydują, do których projektów ten principal ma dostęp i jaką najwyższą rolę może tam mieć. Zapisanie zastępuje wszystkie istniejące grants.",
+          "project": "Projekt",
+          "role_cap": "Limit roli",
+          "status": "Status",
+          "add_grant": "Dodaj grant",
+          "save": "Zapisz grants",
+          "saving": "Zapisywanie",
+          "role_caps": {
+            "5": "Gość",
+            "15": "Członek",
+            "20": "Administrator"
+          },
+          "statuses": {
+            "active": "Aktywny",
+            "inactive": "Nieaktywny"
+          },
+          "clear_confirm": {
+            "title": "Usunąć wszystkie grants?",
+            "message": "Zapisanie bez grants usuwa tego principal ze wszystkich projektów. Nie będzie członkiem żadnego projektu do momentu dodania nowych grants.",
+            "confirm": "Usuń wszystkie grants"
+          },
+          "success": {
+            "title": "Sukces!",
+            "message": "Grants zaktualizowane pomyślnie"
+          },
+          "error": {
+            "title": "Błąd!",
+            "message": "Nie udało się zaktualizować grants",
+            "missing_project": "Każdy grant musi odwoływać się do projektu."
+          }
+        },
+        "toasts": {
+          "created": {
+            "title": "Service principal utworzony",
+            "message": "Service principal został pomyślnie utworzony"
+          },
+          "not_created": {
+            "title": "Service principal nie utworzony",
+            "message": "Nie udało się utworzyć service principal"
+          },
+          "updated": {
+            "title": "Service principal zaktualizowany",
+            "message": "Service principal został pomyślnie zaktualizowany"
+          },
+          "not_updated": {
+            "title": "Service principal nie zaktualizowany",
+            "message": "Nie udało się zaktualizować service principal"
+          }
+        }
       }
     },
     "empty_state": {

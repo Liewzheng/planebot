@@ -8,27 +8,27 @@ import { useState } from "react";
 import { mutate } from "swr";
 // plane imports
 import { useTranslation } from "@plane/i18n";
-import type { TAIAccount } from "@plane/types";
+import type { TServicePrincipal } from "@plane/types";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 // ui
 import { AlertModalCore } from "@plane/ui";
 // hooks
 import { useUser } from "@/hooks/store/user";
 // services
-import { aiAccountService } from "@/services/ai-account.service";
+import { servicePrincipalService } from "@/services/ai-account.service";
 // local imports
-import { AI_ACCOUNTS_LIST, getMfaStepUpError } from "./constants";
+import { SERVICE_PRINCIPALS_LIST, getMfaStepUpError } from "./constants";
 import { MfaCodeField } from "./mfa-code-field";
 
 type Props = {
-  account: TAIAccount;
+  principal: TServicePrincipal;
   isOpen: boolean;
   onClose: () => void;
   workspaceSlug: string;
 };
 
-export function DeleteAIAccountModal(props: Props) {
-  const { account, isOpen, onClose, workspaceSlug } = props;
+export function DeleteServicePrincipalModal(props: Props) {
+  const { principal, isOpen, onClose, workspaceSlug } = props;
   // states
   const [isDeleting, setIsDeleting] = useState(false);
   const [totpCode, setTotpCode] = useState("");
@@ -48,19 +48,23 @@ export function DeleteAIAccountModal(props: Props) {
 
   const handleDeletion = async () => {
     if (isMFAEnabled && !totpCode.trim()) {
-      setTotpError(t("workspace_settings.settings.ai_accounts.step_up.code_required"));
+      setTotpError(t("workspace_settings.settings.service_principals.step_up.code_required"));
       return;
     }
     setIsDeleting(true);
     setTotpError(undefined);
     try {
-      await aiAccountService.deleteAIAccount(workspaceSlug, account.id, isMFAEnabled ? totpCode.trim() : undefined);
+      await servicePrincipalService.deleteServicePrincipal(
+        workspaceSlug,
+        principal.id,
+        isMFAEnabled ? totpCode.trim() : undefined
+      );
       setToast({
         type: TOAST_TYPE.SUCCESS,
-        title: t("workspace_settings.settings.ai_accounts.delete.success.title"),
-        message: t("workspace_settings.settings.ai_accounts.delete.success.message"),
+        title: t("workspace_settings.settings.service_principals.delete.success.title"),
+        message: t("workspace_settings.settings.service_principals.delete.success.message"),
       });
-      mutate<TAIAccount[]>(AI_ACCOUNTS_LIST(workspaceSlug));
+      mutate<TServicePrincipal[]>(SERVICE_PRINCIPALS_LIST(workspaceSlug));
       handleClose();
     } catch (err) {
       const mfaError = getMfaStepUpError(err, t);
@@ -70,9 +74,10 @@ export function DeleteAIAccountModal(props: Props) {
       } else {
         setToast({
           type: TOAST_TYPE.ERROR,
-          title: t("workspace_settings.settings.ai_accounts.delete.error.title"),
+          title: t("workspace_settings.settings.service_principals.delete.error.title"),
           message:
-            (err as { message?: string })?.message ?? t("workspace_settings.settings.ai_accounts.delete.error.message"),
+            (err as { message?: string })?.message ??
+            t("workspace_settings.settings.service_principals.delete.error.message"),
         });
       }
       setIsDeleting(false);
@@ -85,13 +90,15 @@ export function DeleteAIAccountModal(props: Props) {
       handleSubmit={handleDeletion}
       isSubmitting={isDeleting}
       isOpen={isOpen}
-      title={t("workspace_settings.settings.ai_accounts.delete.title")}
+      title={t("workspace_settings.settings.service_principals.delete.title")}
       content={
         <div className="space-y-3">
-          <p>{t("workspace_settings.settings.ai_accounts.delete.description")}</p>
+          <p>{t("workspace_settings.settings.service_principals.delete.description")}</p>
           {isMFAEnabled && (
             <>
-              <p className="text-11 text-tertiary">{t("workspace_settings.settings.ai_accounts.step_up.hint")}</p>
+              <p className="text-11 text-tertiary">
+                {t("workspace_settings.settings.service_principals.step_up.hint")}
+              </p>
               <MfaCodeField value={totpCode} onChange={setTotpCode} error={totpError} />
             </>
           )}

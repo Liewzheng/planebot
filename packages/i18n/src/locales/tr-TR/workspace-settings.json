@@ -150,129 +150,6 @@
           }
         }
       },
-      "ai_accounts": {
-        "title": "AI hesapları",
-        "description": "AI ajanlarının kapsamlı izinlerle çalışma alanınıza erişmesini sağlayan bot hesapları oluşturun ve yönetin.",
-        "add_account": "AI hesabı ekle",
-        "modal": {
-          "create_title": "AI hesabı oluştur",
-          "edit_title": "AI hesabını düzenle",
-          "name": "Ad",
-          "name_required": "Ad gerekli",
-          "description": "Açıklama",
-          "create": "Hesap oluştur",
-          "update": "Hesabı güncelle",
-          "creating": "Oluşturuluyor",
-          "updating": "Güncelleniyor"
-        },
-        "token": {
-          "title": "Hesap oluşturuldu",
-          "rotated_title": "Belirteç döndürüldü",
-          "copy_warning": "Bu belirteci şimdi kopyalayıp kaydedin. Bu iletişim kutusunu kapattıktan sonra bir daha göremeyeceksiniz.",
-          "copied": "Belirteç panoya kopyalandı.",
-          "not_copied": "Belirteç kopyalanamadı. Lütfen tekrar deneyin."
-        },
-        "list": {
-          "created_on": "Oluşturulma tarihi",
-          "edit": "Düzenle",
-          "delete": "Sil",
-          "manage_scopes": "Kapsamları yönet",
-          "rotate_token": "Belirteci döndür"
-        },
-        "avatar": {
-          "label": "Profil resmi",
-          "upload": "Yükle",
-          "remove": "Kaldır"
-        },
-        "delete": {
-          "title": "AI hesabını sil",
-          "description": "Bu hesabı kullanan hiçbir entegrasyon artık çalışma alanınıza erişemeyecek. Bu işlem geri alınamaz.",
-          "success": {
-            "title": "Başarılı!",
-            "message": "AI hesabı başarıyla silindi"
-          },
-          "error": {
-            "title": "Hata!",
-            "message": "AI hesabı silinemedi"
-          }
-        },
-        "rotate": {
-          "title": "Belirteci döndür",
-          "description": "Mevcut belirteç anında iptal edilecek ve onu kullanan entegrasyonlar çalışmayı durduracaktır. Yeni belirteç yalnızca bir kez gösterilir.",
-          "confirm": "Belirteci döndür",
-          "rotating": "Döndürülüyor",
-          "success": {
-            "title": "Belirteç döndürüldü",
-            "message": "AI hesabı belirteci döndürüldü. Önceki belirteç artık geçerli değil."
-          },
-          "error": {
-            "title": "Hata!",
-            "message": "Belirteç döndürülemedi"
-          }
-        },
-        "scopes": {
-          "title": "Kapsamları yönet",
-          "description": "Kapsamlar bu hesabın nelere erişebileceğini tanımlar. Kaydetmek mevcut tüm kapsamları değiştirir.",
-          "project": "Proje",
-          "all_projects": "Tüm projeler",
-          "resource_type": "Kaynak",
-          "action": "Eylem",
-          "resources": {
-            "all": "Tümü",
-            "project": "Proje",
-            "member": "Üye",
-            "user": "Kullanıcı",
-            "asset": "Dosya",
-            "estimate": "Tahmin",
-            "cycle": "Döngü",
-            "module": "Modül",
-            "sticky": "Sticky",
-            "label": "Etiket",
-            "intake": "Intake",
-            "work_item": "İş öğesi",
-            "comment": "Yorum",
-            "state": "Durum",
-            "page": "Sayfa",
-            "invite": "Davet"
-          },
-          "actions": {
-            "all": "Tümü",
-            "read": "Okuma",
-            "create": "Oluştur",
-            "update": "Güncelle",
-            "delete": "Sil"
-          },
-          "add_scope": "Kapsam ekle",
-          "save": "Kapsamları kaydet",
-          "saving": "Kaydediliyor",
-          "success": {
-            "title": "Başarılı!",
-            "message": "Kapsamlar başarıyla güncellendi"
-          },
-          "error": {
-            "title": "Hata!",
-            "message": "Kapsamlar güncellenemedi"
-          }
-        },
-        "toasts": {
-          "created": {
-            "title": "AI hesabı oluşturuldu",
-            "message": "AI hesabı başarıyla oluşturuldu"
-          },
-          "not_created": {
-            "title": "AI hesabı oluşturulmadı",
-            "message": "AI hesabı oluşturulamadı"
-          },
-          "updated": {
-            "title": "AI hesabı güncellendi",
-            "message": "AI hesabı başarıyla güncellendi"
-          },
-          "not_updated": {
-            "title": "AI hesabı güncellenmedi",
-            "message": "AI hesabı güncellenemedi"
-          }
-        }
-      },
       "api_tokens": {
         "heading": "API Token'ları",
         "description": "Verilerinizi harici sistemler ve uygulamalarla entegre etmek için güvenli API token'ları oluşturun.",
@@ -607,6 +484,180 @@
         "heading": "Komut Dosyaları",
         "new_script": "Yeni Komut Dosyası",
         "description": "İş akışlarınızı özel komut dosyaları ve otomasyon kurallarıyla otomatikleştirin."
+      },
+      "service_principals": {
+        "title": "Service principal'lar",
+        "description": "Otomatikleştirilmiş agent'ların ve entegrasyonların workspace'inize kapsamlı izinlerle erişmesini sağlayan service principal'lar oluşturun ve yönetin.",
+        "add_principal": "Service principal ekle",
+        "assignable": {
+          "label": "Service principal'lar atanabilir",
+          "description": "Etkinleştirildiğinde, service principal'lar workspace genelinde atama ve filtre seçicilerinde görünür. Varsayılan olarak kapalıdır — opt-in, bir workspace yöneticisi aksini kararlaştırana kadar principal'ları insanlara yönelik seçicilerden uzak tutar.",
+          "not_persisted": "Bu anahtar için backend endpoint'i henüz bağlanmadı. Değişiklikler yalnızca bu oturumda saklanır.",
+          "toast_updated": "Service principal atanabilirlik ayarı güncellendi",
+          "toast_update_failed": "Service principal atanabilirlik ayarı güncellenemedi"
+        },
+        "step_up": {
+          "hint": "Bu işlem token güvenliğini etkiler. Kimlik doğrulama uygulamanızdaki 6 haneli kodu girin.",
+          "code_required": "6 haneli kodu girin",
+          "code_invalid": "Kod geçersiz veya süresi dolmuş. Tekrar deneyin."
+        },
+        "modal": {
+          "create_title": "Service principal oluştur",
+          "edit_title": "Service principal'ı düzenle",
+          "name": "Ad",
+          "name_required": "Ad zorunludur",
+          "description": "Açıklama",
+          "create": "Principal oluştur",
+          "update": "Principal'ı güncelle",
+          "creating": "Oluşturuluyor",
+          "updating": "Güncelleniyor"
+        },
+        "token": {
+          "title": "Service principal oluşturuldu",
+          "rotated_title": "Token döndürüldü",
+          "copy_warning": "Bu token'ı şimdi kopyalayıp kaydedin. Bu diyaloğu kapattıktan sonra tekrar göremezsiniz.",
+          "copied": "Token panoya kopyalandı.",
+          "not_copied": "Token kopyalanamadı. Lütfen tekrar deneyin."
+        },
+        "list": {
+          "created_on": "Oluşturulma tarihi",
+          "edit": "Düzenle",
+          "delete": "Sil",
+          "manage_scopes": "Scope'ları yönet",
+          "manage_grants": "Grant'ları yönet",
+          "rotate_token": "Token'ı döndür"
+        },
+        "avatar": {
+          "label": "Avatar",
+          "upload": "Yükle",
+          "remove": "Kaldır"
+        },
+        "delete": {
+          "title": "Service principal'ı sil",
+          "description": "Bu principal'ı kullanan tüm entegrasyonlar artık workspace'inize erişemeyecek. Bu işlem geri alınamaz.",
+          "success": {
+            "title": "Başarılı!",
+            "message": "Service principal başarıyla silindi"
+          },
+          "error": {
+            "title": "Hata!",
+            "message": "Service principal silinemedi"
+          }
+        },
+        "rotate": {
+          "title": "Token'ı döndür",
+          "description": "Mevcut token hemen iptal edilecek ve onu kullanan entegrasyonlar çalışmayı durduracak. Yeni token yalnızca bir kez gösterilir.",
+          "confirm": "Token'ı döndür",
+          "rotating": "Döndürülüyor",
+          "success": {
+            "title": "Token döndürüldü",
+            "message": "Service principal token'ı döndürüldü. Önceki token artık geçerli değil."
+          },
+          "error": {
+            "title": "Hata!",
+            "message": "Token döndürülemedi"
+          }
+        },
+        "scopes": {
+          "title": "Scope'ları yönet",
+          "description": "Scope'lar bu principal'ın nereye erişebileceğini tanımlar. Kaydetmek mevcut tüm scope'ları değiştirir.",
+          "project": "Proje",
+          "all_projects": "Tüm projeler",
+          "resource_type": "Kaynak",
+          "action": "Eylem",
+          "resources": {
+            "all": "Tümü",
+            "project": "Proje",
+            "member": "Üye",
+            "user": "Kullanıcı",
+            "asset": "Varlık",
+            "estimate": "Tahmin",
+            "cycle": "Döngü",
+            "module": "Modül",
+            "sticky": "Sticky",
+            "label": "Etiket",
+            "intake": "Intake",
+            "work_item": "İş öğesi",
+            "comment": "Yorum",
+            "state": "Durum",
+            "page": "Sayfa",
+            "invite": "Davet"
+          },
+          "actions": {
+            "all": "Tümü",
+            "read": "Oku",
+            "create": "Oluştur",
+            "update": "Güncelle",
+            "delete": "Sil"
+          },
+          "add_scope": "Scope ekle",
+          "save": "Scope'ları kaydet",
+          "saving": "Kaydediliyor",
+          "clear_confirm": {
+            "title": "Tüm scope'lar kaldırılsın mı?",
+            "message": "Scope olmadan kaydetmek bu principal'ın tüm izinlerini kaldırır. Yeni scope'lar eklenene kadar principal varsayılan olarak reddedilir.",
+            "confirm": "Tüm scope'ları kaldır"
+          },
+          "success": {
+            "title": "Başarılı!",
+            "message": "Scope'lar başarıyla güncellendi"
+          },
+          "error": {
+            "title": "Hata!",
+            "message": "Scope'lar güncellenemedi"
+          }
+        },
+        "grants": {
+          "title": "Proje grant'larını yönet",
+          "description": "Grant'lar bu principal'ın hangi projelere erişebileceğini ve orada sahip olabileceği en yüksek rolü belirler. Kaydetmek mevcut tüm grant'ları değiştirir.",
+          "project": "Proje",
+          "role_cap": "Rol sınırı",
+          "status": "Durum",
+          "add_grant": "Grant ekle",
+          "save": "Grant'ları kaydet",
+          "saving": "Kaydediliyor",
+          "role_caps": {
+            "5": "Misafir",
+            "15": "Üye",
+            "20": "Yönetici"
+          },
+          "statuses": {
+            "active": "Aktif",
+            "inactive": "Pasif"
+          },
+          "clear_confirm": {
+            "title": "Tüm grant'lar kaldırılsın mı?",
+            "message": "Grant olmadan kaydetmek bu principal'ı tüm projelerden kaldırır. Yeni grant'lar eklenene kadar hiçbir projenin üyesi olmayacak.",
+            "confirm": "Tüm grant'ları kaldır"
+          },
+          "success": {
+            "title": "Başarılı!",
+            "message": "Grant'lar başarıyla güncellendi"
+          },
+          "error": {
+            "title": "Hata!",
+            "message": "Grant'lar güncellenemedi",
+            "missing_project": "Her grant bir projeye referans vermelidir."
+          }
+        },
+        "toasts": {
+          "created": {
+            "title": "Service principal oluşturuldu",
+            "message": "Service principal başarıyla oluşturuldu"
+          },
+          "not_created": {
+            "title": "Service principal oluşturulmadı",
+            "message": "Service principal oluşturulamadı"
+          },
+          "updated": {
+            "title": "Service principal güncellendi",
+            "message": "Service principal başarıyla güncellendi"
+          },
+          "not_updated": {
+            "title": "Service principal güncellenmedi",
+            "message": "Service principal güncellenemedi"
+          }
+        }
       }
     },
     "empty_state": {

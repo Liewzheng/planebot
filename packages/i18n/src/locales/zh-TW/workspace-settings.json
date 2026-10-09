@@ -150,129 +150,6 @@
           }
         }
       },
-      "ai_accounts": {
-        "title": "AI 帳戶",
-        "description": "建立和管理機器人帳戶，讓 AI 代理以限定範圍的權限存取您的工作區。",
-        "add_account": "新增 AI 帳戶",
-        "modal": {
-          "create_title": "建立 AI 帳戶",
-          "edit_title": "編輯 AI 帳戶",
-          "name": "名稱",
-          "name_required": "名稱為必填項",
-          "description": "描述",
-          "create": "建立帳戶",
-          "update": "更新帳戶",
-          "creating": "建立中",
-          "updating": "更新中"
-        },
-        "token": {
-          "title": "帳戶已建立",
-          "rotated_title": "權杖已輪換",
-          "copy_warning": "請立即複製並儲存此權杖。關閉此對話框後，您將無法再次查看它。",
-          "copied": "權杖已複製到剪貼簿。",
-          "not_copied": "權杖複製失敗，請重試。"
-        },
-        "list": {
-          "created_on": "建立於",
-          "edit": "編輯",
-          "delete": "刪除",
-          "manage_scopes": "管理範圍",
-          "rotate_token": "輪換權杖"
-        },
-        "avatar": {
-          "label": "大頭貼",
-          "upload": "上傳",
-          "remove": "移除"
-        },
-        "delete": {
-          "title": "刪除 AI 帳戶",
-          "description": "使用此帳戶的任何整合都將無法再存取您的工作區。此操作無法復原。",
-          "success": {
-            "title": "成功！",
-            "message": "AI 帳戶已成功刪除"
-          },
-          "error": {
-            "title": "錯誤！",
-            "message": "無法刪除 AI 帳戶"
-          }
-        },
-        "rotate": {
-          "title": "輪換權杖",
-          "description": "目前權杖將立即被吊銷，使用它的整合將停止運作。新權杖僅會顯示一次。",
-          "confirm": "輪換權杖",
-          "rotating": "輪換中",
-          "success": {
-            "title": "權杖已輪換",
-            "message": "AI 帳戶權杖已輪換。舊權杖不再有效。"
-          },
-          "error": {
-            "title": "錯誤！",
-            "message": "無法輪換權杖"
-          }
-        },
-        "scopes": {
-          "title": "管理範圍",
-          "description": "範圍定義此帳戶可以存取的內容。儲存將取代所有現有範圍。",
-          "project": "專案",
-          "all_projects": "所有專案",
-          "resource_type": "資源",
-          "action": "操作",
-          "resources": {
-            "all": "全部",
-            "project": "專案",
-            "member": "成員",
-            "user": "使用者",
-            "asset": "附件",
-            "estimate": "評估",
-            "cycle": "週期",
-            "module": "模組",
-            "sticky": "Sticky",
-            "label": "標籤",
-            "intake": "Intake",
-            "work_item": "工作事項",
-            "comment": "留言",
-            "state": "狀態",
-            "page": "頁面",
-            "invite": "邀請"
-          },
-          "actions": {
-            "all": "全部",
-            "read": "讀取",
-            "create": "建立",
-            "update": "更新",
-            "delete": "刪除"
-          },
-          "add_scope": "新增範圍",
-          "save": "儲存範圍",
-          "saving": "儲存中",
-          "success": {
-            "title": "成功！",
-            "message": "範圍已成功更新"
-          },
-          "error": {
-            "title": "錯誤！",
-            "message": "無法更新範圍"
-          }
-        },
-        "toasts": {
-          "created": {
-            "title": "AI 帳戶已建立",
-            "message": "AI 帳戶已成功建立"
-          },
-          "not_created": {
-            "title": "AI 帳戶未建立",
-            "message": "無法建立 AI 帳戶"
-          },
-          "updated": {
-            "title": "AI 帳戶已更新",
-            "message": "AI 帳戶已成功更新"
-          },
-          "not_updated": {
-            "title": "AI 帳戶未更新",
-            "message": "無法更新 AI 帳戶"
-          }
-        }
-      },
       "api_tokens": {
         "heading": "API 權杖",
         "description": "產生安全的 API 權杖，將您的資料與外部系統和應用程式整合。",
@@ -607,6 +484,180 @@
         "heading": "指令碼",
         "new_script": "新指令碼",
         "description": "使用自訂指令碼和自動化規則，自動化您的工作流程。"
+      },
+      "service_principals": {
+        "title": "服務主體",
+        "description": "建立並管理服務主體，讓自動化代理與整合以限定權限存取您的工作區。",
+        "add_principal": "新增服務主體",
+        "assignable": {
+          "label": "服務主體可指派",
+          "description": "啟用後，服務主體會出現在整個工作區的指派與篩選選擇器中。預設為關閉 — 選擇性加入可讓主體在工作區管理員決定之前不出現在面向人類的選擇器中。",
+          "not_persisted": "此開關的後端端點尚未接通。更改僅保留在本次工作階段中。",
+          "toast_updated": "服務主體可指派設定已更新",
+          "toast_update_failed": "無法更新服務主體可指派設定"
+        },
+        "step_up": {
+          "hint": "此操作會影響權杖安全性。請輸入驗證器應用程式中的 6 位數代碼。",
+          "code_required": "請輸入 6 位數代碼",
+          "code_invalid": "代碼無效或已過期。請重試。"
+        },
+        "modal": {
+          "create_title": "建立服務主體",
+          "edit_title": "編輯服務主體",
+          "name": "名稱",
+          "name_required": "名稱為必填",
+          "description": "描述",
+          "create": "建立主體",
+          "update": "更新主體",
+          "creating": "正在建立",
+          "updating": "正在更新"
+        },
+        "token": {
+          "title": "服務主體已建立",
+          "rotated_title": "權杖已輪換",
+          "copy_warning": "請立即複製並儲存此權杖。關閉此對話框後將無法再次查看。",
+          "copied": "權杖已複製到剪貼簿。",
+          "not_copied": "無法複製權杖。請重試。"
+        },
+        "list": {
+          "created_on": "建立於",
+          "edit": "編輯",
+          "delete": "刪除",
+          "manage_scopes": "管理範圍",
+          "manage_grants": "管理授權",
+          "rotate_token": "輪換權杖"
+        },
+        "avatar": {
+          "label": "大頭貼",
+          "upload": "上傳",
+          "remove": "移除"
+        },
+        "delete": {
+          "title": "刪除服務主體",
+          "description": "任何使用此主體的整合將無法再存取您的工作區。此操作無法復原。",
+          "success": {
+            "title": "成功！",
+            "message": "服務主體已成功刪除"
+          },
+          "error": {
+            "title": "錯誤！",
+            "message": "無法刪除服務主體"
+          }
+        },
+        "rotate": {
+          "title": "輪換權杖",
+          "description": "目前的權杖將立即撤銷，使用它的整合將停止運作。新權杖僅顯示一次。",
+          "confirm": "輪換權杖",
+          "rotating": "正在輪換",
+          "success": {
+            "title": "權杖已輪換",
+            "message": "服務主體權杖已輪換。先前的權杖不再有效。"
+          },
+          "error": {
+            "title": "錯誤！",
+            "message": "無法輪換權杖"
+          }
+        },
+        "scopes": {
+          "title": "管理範圍",
+          "description": "範圍定義此主體可存取的內容。儲存將取代所有現有的範圍。",
+          "project": "專案",
+          "all_projects": "所有專案",
+          "resource_type": "資源",
+          "action": "動作",
+          "resources": {
+            "all": "全部",
+            "project": "專案",
+            "member": "成員",
+            "user": "使用者",
+            "asset": "資產",
+            "estimate": "估算",
+            "cycle": "週期",
+            "module": "模組",
+            "sticky": "Sticky",
+            "label": "標籤",
+            "intake": "Intake",
+            "work_item": "工作項目",
+            "comment": "留言",
+            "state": "狀態",
+            "page": "頁面",
+            "invite": "邀請"
+          },
+          "actions": {
+            "all": "全部",
+            "read": "讀取",
+            "create": "建立",
+            "update": "更新",
+            "delete": "刪除"
+          },
+          "add_scope": "新增範圍",
+          "save": "儲存範圍",
+          "saving": "正在儲存",
+          "clear_confirm": {
+            "title": "移除所有範圍？",
+            "message": "儲存時無範圍會移除此主體的所有權限。在新增範圍之前，預設會拒絕該主體。",
+            "confirm": "移除所有範圍"
+          },
+          "success": {
+            "title": "成功！",
+            "message": "範圍更新成功"
+          },
+          "error": {
+            "title": "錯誤！",
+            "message": "無法更新範圍"
+          }
+        },
+        "grants": {
+          "title": "管理專案授權",
+          "description": "授權決定此主體可存取哪些專案以及在該專案中可擔任的最高角色。儲存將取代所有現有的授權。",
+          "project": "專案",
+          "role_cap": "角色上限",
+          "status": "狀態",
+          "add_grant": "新增授權",
+          "save": "儲存授權",
+          "saving": "正在儲存",
+          "role_caps": {
+            "5": "訪客",
+            "15": "成員",
+            "20": "管理員"
+          },
+          "statuses": {
+            "active": "啟用",
+            "inactive": "停用"
+          },
+          "clear_confirm": {
+            "title": "移除所有授權？",
+            "message": "儲存時無授權會將此主體從所有專案中移除。在新增授權之前，它不會是任何專案的成員。",
+            "confirm": "移除所有授權"
+          },
+          "success": {
+            "title": "成功！",
+            "message": "授權更新成功"
+          },
+          "error": {
+            "title": "錯誤！",
+            "message": "無法更新授權",
+            "missing_project": "每個授權必須引用一個專案。"
+          }
+        },
+        "toasts": {
+          "created": {
+            "title": "服務主體已建立",
+            "message": "服務主體已成功建立"
+          },
+          "not_created": {
+            "title": "服務主體未建立",
+            "message": "無法建立服務主體"
+          },
+          "updated": {
+            "title": "服務主體已更新",
+            "message": "服務主體已成功更新"
+          },
+          "not_updated": {
+            "title": "服務主體未更新",
+            "message": "無法更新服務主體"
+          }
+        }
       }
     },
     "empty_state": {

@@ -12,23 +12,13 @@ import { useTranslation } from "@plane/i18n";
 import { ChevronDownIcon, PlusIcon, TrashIcon } from "@plane/propel/icons";
 import { Button } from "@plane/propel/button";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
-import type {
-  TServicePrincipal,
-  TServiceScopeAction,
-  TServiceScopeInput,
-  TServiceScopeResourceType,
-} from "@plane/types";
+import type { TProjectGrant, TProjectGrantInput, TServicePrincipal, TServicePrincipalRoleCap } from "@plane/types";
 import { CustomSelect, EModalPosition, EModalWidth, ModalCore, AlertModalCore } from "@plane/ui";
 // hooks
 import { useProject } from "@/hooks/store/use-project";
 import { servicePrincipalService } from "@/services/ai-account.service";
 // local imports
-import {
-  SERVICE_PRINCIPALS_LIST,
-  SERVICE_PRINCIPAL_SCOPES,
-  SERVICE_PRINCIPAL_SCOPE_ACTIONS,
-  SERVICE_PRINCIPAL_SCOPE_RESOURCE_TYPES,
-} from "./constants";
+import { SERVICE_PRINCIPALS_LIST, SERVICE_PRINCIPAL_GRANTS, SERVICE_PRINCIPAL_GRANT_ROLE_CAPS } from "./constants";
 
 type Props = {
   principal: TServicePrincipal;
@@ -37,19 +27,19 @@ type Props = {
   workspaceSlug: string;
 };
 
-type TScopeRow = TServiceScopeInput & { key: string };
+type TGrantRow = TProjectGrantInput & { key: string };
 
-const getScopeRowKey = () => `scope-row-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const getGrantRowKey = () => `grant-row-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-const createScopeRow = (data: TServiceScopeInput): TScopeRow => ({
+const createGrantRow = (data: TProjectGrantInput): TGrantRow => ({
   ...data,
-  key: getScopeRowKey(),
+  key: getGrantRowKey(),
 });
 
-export const ServicePrincipalScopesModal = observer(function ServicePrincipalScopesModal(props: Props) {
+export const ServicePrincipalGrantsModal = observer(function ServicePrincipalGrantsModal(props: Props) {
   const { principal, isOpen, onClose, workspaceSlug } = props;
   // states
-  const [scopeRows, setScopeRows] = useState<TScopeRow[]>([]);
+  const [grantRows, setGrantRows] = useState<TGrantRow[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
   // hooks
@@ -66,39 +56,47 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
     workspaceSlug ? () => fetchProjects(workspaceSlug) : null,
     { revalidateIfStale: false, revalidateOnFocus: false }
   );
-  // fetching principal scopes
-  const { data: scopes, isLoading } = useSWR(
-    isOpen ? SERVICE_PRINCIPAL_SCOPES(workspaceSlug, principal.id) : null,
-    () => servicePrincipalService.fetchServicePrincipalScopes(workspaceSlug, principal.id)
+  // fetching principal grants
+  const { data: grants, isLoading } = useSWR(
+    isOpen ? SERVICE_PRINCIPAL_GRANTS(workspaceSlug, principal.id) : null,
+    () => servicePrincipalService.fetchServicePrincipalGrants(workspaceSlug, principal.id)
   );
 
   useEffect(() => {
-    if (!scopes) return;
-    setScopeRows(
-      scopes.map((scope) =>
-        createScopeRow({
-          project: scope.project,
-          resource_type: scope.resource_type,
-          action: scope.action,
+    if (!grants) return;
+    setGrantRows(
+      grants.map((grant: TProjectGrant) =>
+        createGrantRow({
+          project: grant.project,
+          role_cap: grant.role_cap,
+          is_active: grant.is_active,
         })
       )
     );
-  }, [scopes]);
+  }, [grants]);
 
   const workspaceProjects = (workspaceProjectIds ?? [])
     .map((projectId) => projectMap?.[projectId])
     .filter((project) => project !== undefined);
 
-  const updateScopeRow = (rowKey: string, data: Partial<TServiceScopeInput>) =>
-    setScopeRows((prevRows) => prevRows.map((row) => (row.key === rowKey ? { ...row, ...data } : row)));
+  const updateGrantRow = (rowKey: string, data: Partial<TProjectGrantInput>) =>
+    setGrantRows((prevRows) => prevRows.map((row) => (row.key === rowKey ? { ...row, ...data } : row)));
 
-  const removeScopeRow = (rowKey: string) => setScopeRows((prevRows) => prevRows.filter((row) => row.key !== rowKey));
+  const removeGrantRow = (rowKey: string) => setGrantRows((prevRows) => prevRows.filter((row) => row.key !== rowKey));
+
+  // Per-row filter: each row's project dropdown must not list a project
+  // another row has already picked. The backend's PUT replaces the grant
+  // set but does NOT deduplicate rows on (project), so two grants for the
+  // same project would coexist with conflicting role_caps. The current
+  // row's own project stays in the list so it still shows as selected.
+  const getAvailableProjectsForRow = (rowKey: string) => {
+    const takenByOtherRows = new Set(grantRows.filter((row) => row.key !== rowKey).map((row) => row.project));
+    return workspaceProjects.filter((project) => !takenByOtherRows.has(project.id));
+  };
 
   // Reopening before the delayed reset fires must cancel the timer and clear
   // the submitting lock — but NOT the rows: closing nulls the SWR key, so the
-  // hydration effect above always repopulates scopeRows on reopen (and it runs
-  // before this effect), wiping them here could send an empty save that
-  // deletes all existing policies
+  // hydration effect above always repopulates grantRows on reopen
   useEffect(() => {
     if (isOpen && resetTimerRef.current) {
       clearTimeout(resetTimerRef.current);
@@ -118,40 +116,48 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
     onClose();
     requestGenerationRef.current += 1;
     resetTimerRef.current = setTimeout(() => {
-      setScopeRows([]);
+      setGrantRows([]);
       setIsSubmitting(false);
       resetTimerRef.current = null;
     }, 350);
   };
 
-  const handleUpdateScopes = async () => {
+  const handleUpdateGrants = async () => {
+    // Backend requires project on every grant row; refuse incomplete rows
+    // rather than silently sending bad payloads.
+    if (grantRows.some((row) => !row.project)) {
+      setToast({
+        type: TOAST_TYPE.ERROR,
+        title: t("workspace_settings.settings.service_principals.grants.error.title"),
+        message: t("workspace_settings.settings.service_principals.grants.error.missing_project"),
+      });
+      return;
+    }
     const generation = ++requestGenerationRef.current;
     setIsSubmitting(true);
     try {
-      await servicePrincipalService.updateServicePrincipalScopes(
+      await servicePrincipalService.updateServicePrincipalGrants(
         workspaceSlug,
         principal.id,
-        scopeRows.map(({ project, resource_type, action }) => ({ project, resource_type, action }))
+        grantRows.map(({ project, role_cap, is_active }) => ({ project, role_cap, is_active }))
       );
-      // Stale completion: the modal was closed (and maybe reopened) while the
-      // request was in flight — never touch the new session's state
       if (generation !== requestGenerationRef.current) return;
       setToast({
         type: TOAST_TYPE.SUCCESS,
-        title: t("workspace_settings.settings.service_principals.scopes.success.title"),
-        message: t("workspace_settings.settings.service_principals.scopes.success.message"),
+        title: t("workspace_settings.settings.service_principals.grants.success.title"),
+        message: t("workspace_settings.settings.service_principals.grants.success.message"),
       });
       mutate(SERVICE_PRINCIPALS_LIST(workspaceSlug));
-      mutate(SERVICE_PRINCIPAL_SCOPES(workspaceSlug, principal.id));
+      mutate(SERVICE_PRINCIPAL_GRANTS(workspaceSlug, principal.id));
       handleClose();
     } catch (err) {
       if (generation !== requestGenerationRef.current) return;
       setToast({
         type: TOAST_TYPE.ERROR,
-        title: t("workspace_settings.settings.service_principals.scopes.error.title"),
+        title: t("workspace_settings.settings.service_principals.grants.error.title"),
         message:
           (err as { message?: string })?.message ??
-          t("workspace_settings.settings.service_principals.scopes.error.message"),
+          t("workspace_settings.settings.service_principals.grants.error.message"),
       });
     } finally {
       if (generation === requestGenerationRef.current) setIsSubmitting(false);
@@ -163,21 +169,21 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
       <div className="flex max-h-[70vh] flex-col">
         <div className="space-y-3 overflow-y-auto p-5">
           <h3 className="text-18 font-medium text-secondary">
-            {t("workspace_settings.settings.service_principals.scopes.title")}
+            {t("workspace_settings.settings.service_principals.grants.title")}
           </h3>
           <p className="text-13 text-placeholder">
-            {t("workspace_settings.settings.service_principals.scopes.description")}
+            {t("workspace_settings.settings.service_principals.grants.description")}
           </p>
           <div className="space-y-1.5">
             <div className="grid grid-cols-[1fr_1fr_1fr_2rem] gap-2 text-11 text-tertiary">
-              <div>{t("workspace_settings.settings.service_principals.scopes.project")}</div>
-              <div>{t("workspace_settings.settings.service_principals.scopes.resource_type")}</div>
-              <div>{t("workspace_settings.settings.service_principals.scopes.action")}</div>
+              <div>{t("workspace_settings.settings.service_principals.grants.project")}</div>
+              <div>{t("workspace_settings.settings.service_principals.grants.role_cap")}</div>
+              <div>{t("workspace_settings.settings.service_principals.grants.status")}</div>
             </div>
             {isLoading ? (
               <div className="py-4 text-13 text-placeholder">{t("loading")}</div>
             ) : (
-              scopeRows.map((row) => (
+              grantRows.map((row) => (
                 <div key={row.key} className="grid grid-cols-[1fr_1fr_1fr_2rem] items-center gap-2">
                   <div>
                     <CustomSelect
@@ -186,21 +192,16 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
                       customButton={
                         <div className="flex h-8 w-full items-center justify-between gap-2 rounded-md border-[0.5px] border-subtle px-2 text-13">
                           <span className="truncate">
-                            {row.project
-                              ? (projectMap?.[row.project]?.name ?? row.project)
-                              : t("workspace_settings.settings.service_principals.scopes.all_projects")}
+                            {row.project ? (projectMap?.[row.project]?.name ?? row.project) : "—"}
                           </span>
                           <ChevronDownIcon className="size-3 flex-shrink-0 text-tertiary" aria-hidden="true" />
                         </div>
                       }
                       optionsClassName="max-h-60 overflow-y-auto"
-                      value={row.project ?? "all"}
-                      onChange={(val: string) => updateScopeRow(row.key, { project: val === "all" ? null : val })}
+                      value={row.project ?? ""}
+                      onChange={(val: string) => updateGrantRow(row.key, { project: val })}
                     >
-                      <CustomSelect.Option value="all">
-                        {t("workspace_settings.settings.service_principals.scopes.all_projects")}
-                      </CustomSelect.Option>
-                      {workspaceProjects.map((project) => (
+                      {getAvailableProjectsForRow(row.key).map((project) => (
                         <CustomSelect.Option key={project.id} value={project.id}>
                           {project.name}
                         </CustomSelect.Option>
@@ -214,18 +215,18 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
                       customButton={
                         <div className="flex h-8 w-full items-center justify-between gap-2 rounded-md border-[0.5px] border-subtle px-2 text-13">
                           <span className="truncate">
-                            {t(`workspace_settings.settings.service_principals.scopes.resources.${row.resource_type}`)}
+                            {t(`workspace_settings.settings.service_principals.grants.role_caps.${row.role_cap}`)}
                           </span>
                           <ChevronDownIcon className="size-3 flex-shrink-0 text-tertiary" aria-hidden="true" />
                         </div>
                       }
                       optionsClassName="max-h-60 overflow-y-auto"
-                      value={row.resource_type}
-                      onChange={(val: TServiceScopeResourceType) => updateScopeRow(row.key, { resource_type: val })}
+                      value={row.role_cap}
+                      onChange={(val: TServicePrincipalRoleCap) => updateGrantRow(row.key, { role_cap: val })}
                     >
-                      {SERVICE_PRINCIPAL_SCOPE_RESOURCE_TYPES.map((resourceType) => (
-                        <CustomSelect.Option key={resourceType} value={resourceType}>
-                          {t(`workspace_settings.settings.service_principals.scopes.resources.${resourceType}`)}
+                      {SERVICE_PRINCIPAL_GRANT_ROLE_CAPS.map((roleCap) => (
+                        <CustomSelect.Option key={roleCap} value={roleCap}>
+                          {t(`workspace_settings.settings.service_principals.grants.role_caps.${roleCap}`)}
                         </CustomSelect.Option>
                       ))}
                     </CustomSelect>
@@ -237,26 +238,31 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
                       customButton={
                         <div className="flex h-8 w-full items-center justify-between gap-2 rounded-md border-[0.5px] border-subtle px-2 text-13">
                           <span className="truncate">
-                            {t(`workspace_settings.settings.service_principals.scopes.actions.${row.action}`)}
+                            {t(
+                              `workspace_settings.settings.service_principals.grants.statuses.${row.is_active ? "active" : "inactive"}`
+                            )}
                           </span>
                           <ChevronDownIcon className="size-3 flex-shrink-0 text-tertiary" aria-hidden="true" />
                         </div>
                       }
                       optionsClassName="max-h-60 overflow-y-auto"
-                      value={row.action}
-                      onChange={(val: TServiceScopeAction) => updateScopeRow(row.key, { action: val })}
+                      value={row.is_active ? "active" : "inactive"}
+                      onChange={(val: "active" | "inactive") =>
+                        updateGrantRow(row.key, { is_active: val === "active" })
+                      }
                     >
-                      {SERVICE_PRINCIPAL_SCOPE_ACTIONS.map((action) => (
-                        <CustomSelect.Option key={action} value={action}>
-                          {t(`workspace_settings.settings.service_principals.scopes.actions.${action}`)}
-                        </CustomSelect.Option>
-                      ))}
+                      <CustomSelect.Option value="active">
+                        {t("workspace_settings.settings.service_principals.grants.statuses.active")}
+                      </CustomSelect.Option>
+                      <CustomSelect.Option value="inactive">
+                        {t("workspace_settings.settings.service_principals.grants.statuses.inactive")}
+                      </CustomSelect.Option>
                     </CustomSelect>
                   </div>
                   <div className="flex justify-end">
                     <button
                       type="button"
-                      onClick={() => removeScopeRow(row.key)}
+                      onClick={() => removeGrantRow(row.key)}
                       className="rounded p-1 text-tertiary hover:text-danger-primary"
                     >
                       <TrashIcon className="size-3.5" />
@@ -269,14 +275,14 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
               variant="secondary"
               size="sm"
               onClick={() =>
-                setScopeRows((prevRows) => [
+                setGrantRows((prevRows) => [
                   ...prevRows,
-                  createScopeRow({ project: null, resource_type: "all", action: "all" }),
+                  createGrantRow({ project: "", role_cap: 15, is_active: true }),
                 ])
               }
             >
               <PlusIcon className="size-3" />
-              {t("workspace_settings.settings.service_principals.scopes.add_scope")}
+              {t("workspace_settings.settings.service_principals.grants.add_grant")}
             </Button>
           </div>
         </div>
@@ -286,15 +292,15 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
           </Button>
           <Button
             variant="primary"
-            // Saving an empty list wipes every scope this principal has, and
-            // the principal then denies everything by default: ask first.
-            onClick={() => (scopeRows.length === 0 ? setIsClearConfirmOpen(true) : handleUpdateScopes())}
+            // Saving an empty list removes the SP from every project, which
+            // the operator may not have intended: ask first.
+            onClick={() => (grantRows.length === 0 ? setIsClearConfirmOpen(true) : handleUpdateGrants())}
             loading={isSubmitting}
             disabled={isSubmitting}
           >
             {isSubmitting
-              ? t("workspace_settings.settings.service_principals.scopes.saving")
-              : t("workspace_settings.settings.service_principals.scopes.save")}
+              ? t("workspace_settings.settings.service_principals.grants.saving")
+              : t("workspace_settings.settings.service_principals.grants.save")}
           </Button>
         </div>
       </div>
@@ -303,16 +309,16 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
         handleClose={() => setIsClearConfirmOpen(false)}
         handleSubmit={() => {
           setIsClearConfirmOpen(false);
-          void handleUpdateScopes();
+          void handleUpdateGrants();
         }}
         isSubmitting={isSubmitting}
         primaryButtonText={{
-          loading: t("workspace_settings.settings.service_principals.scopes.saving"),
-          default: t("workspace_settings.settings.service_principals.scopes.clear_confirm.confirm"),
+          loading: t("workspace_settings.settings.service_principals.grants.saving"),
+          default: t("workspace_settings.settings.service_principals.grants.clear_confirm.confirm"),
         }}
         secondaryButtonText={t("cancel")}
-        title={t("workspace_settings.settings.service_principals.scopes.clear_confirm.title")}
-        content={t("workspace_settings.settings.service_principals.scopes.clear_confirm.message")}
+        title={t("workspace_settings.settings.service_principals.grants.clear_confirm.title")}
+        content={t("workspace_settings.settings.service_principals.grants.clear_confirm.message")}
       />
     </ModalCore>
   );

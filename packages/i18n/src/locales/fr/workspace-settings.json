@@ -150,129 +150,6 @@
           }
         }
       },
-      "ai_accounts": {
-        "title": "Comptes AI",
-        "description": "Créez et gérez des comptes de bot qui permettent aux agents AI d'accéder à votre workspace avec des autorisations à portée limitée.",
-        "add_account": "Ajouter un compte AI",
-        "modal": {
-          "create_title": "Créer un compte AI",
-          "edit_title": "Modifier le compte AI",
-          "name": "Nom",
-          "name_required": "Le nom est requis",
-          "description": "Description",
-          "create": "Créer un compte",
-          "update": "Mettre à jour le compte",
-          "creating": "Création",
-          "updating": "Mise à jour"
-        },
-        "token": {
-          "title": "Compte créé",
-          "rotated_title": "Jeton renouvelé",
-          "copy_warning": "Copiez et enregistrez ce jeton maintenant. Vous ne pourrez plus le voir après avoir fermé cette boîte de dialogue.",
-          "copied": "Jeton copié dans le presse-papiers.",
-          "not_copied": "Le jeton n'a pas pu être copié. Veuillez réessayer."
-        },
-        "list": {
-          "created_on": "Créé le",
-          "edit": "Modifier",
-          "delete": "Supprimer",
-          "manage_scopes": "Gérer les portées",
-          "rotate_token": "Renouveler le jeton"
-        },
-        "avatar": {
-          "label": "Avatar",
-          "upload": "Téléverser",
-          "remove": "Supprimer"
-        },
-        "delete": {
-          "title": "Supprimer le compte AI",
-          "description": "Toute intégration utilisant ce compte ne pourra plus accéder à votre workspace. Cette action est irréversible.",
-          "success": {
-            "title": "Succès !",
-            "message": "Le compte AI a été supprimé avec succès"
-          },
-          "error": {
-            "title": "Erreur !",
-            "message": "Le compte AI n'a pas pu être supprimé"
-          }
-        },
-        "rotate": {
-          "title": "Renouveler le jeton",
-          "description": "Le jeton actuel sera révoqué immédiatement et les intégrations qui l'utilisent cesseront de fonctionner. Le nouveau jeton n'est affiché qu'une seule fois.",
-          "confirm": "Renouveler le jeton",
-          "rotating": "Renouvellement",
-          "success": {
-            "title": "Jeton renouvelé",
-            "message": "Le jeton du compte AI a été renouvelé. Le jeton précédent n'est plus valide."
-          },
-          "error": {
-            "title": "Erreur !",
-            "message": "Le jeton n'a pas pu être renouvelé"
-          }
-        },
-        "scopes": {
-          "title": "Gérer les portées",
-          "description": "Les portées définissent ce à quoi ce compte peut accéder. L'enregistrement remplace toutes les portées existantes.",
-          "project": "Projet",
-          "all_projects": "Tous les projets",
-          "resource_type": "Ressource",
-          "action": "Action",
-          "resources": {
-            "all": "Tout",
-            "project": "Projet",
-            "member": "Membre",
-            "user": "Utilisateur",
-            "asset": "Fichier",
-            "estimate": "Estimation",
-            "cycle": "Cycle",
-            "module": "Module",
-            "sticky": "Sticky",
-            "label": "Étiquette",
-            "intake": "Intake",
-            "work_item": "Élément de travail",
-            "comment": "Commentaire",
-            "state": "État",
-            "page": "Page",
-            "invite": "Invitation"
-          },
-          "actions": {
-            "all": "Tout",
-            "read": "Lecture",
-            "create": "Créer",
-            "update": "Mettre à jour",
-            "delete": "Supprimer"
-          },
-          "add_scope": "Ajouter une portée",
-          "save": "Enregistrer les portées",
-          "saving": "Enregistrement",
-          "success": {
-            "title": "Succès !",
-            "message": "Portées mises à jour avec succès"
-          },
-          "error": {
-            "title": "Erreur !",
-            "message": "Les portées n'ont pas pu être mises à jour"
-          }
-        },
-        "toasts": {
-          "created": {
-            "title": "Compte AI créé",
-            "message": "Le compte AI a été créé avec succès"
-          },
-          "not_created": {
-            "title": "Compte AI non créé",
-            "message": "Le compte AI n'a pas pu être créé"
-          },
-          "updated": {
-            "title": "Compte AI mis à jour",
-            "message": "Le compte AI a été mis à jour avec succès"
-          },
-          "not_updated": {
-            "title": "Compte AI non mis à jour",
-            "message": "Le compte AI n'a pas pu être mis à jour"
-          }
-        }
-      },
       "api_tokens": {
         "heading": "Jetons API",
         "description": "Générez des jetons API sécurisés pour intégrer vos données avec des systèmes et applications externes.",
@@ -607,6 +484,180 @@
         "heading": "Scripts",
         "new_script": "Nouveau script",
         "description": "Automatisez vos flux de travail avec des scripts personnalisés et des règles d’automatisation."
+      },
+      "service_principals": {
+        "title": "Service principals",
+        "description": "Créez et gérez des service principals qui permettent aux agents automatisés et aux intégrations d'accéder à votre workspace avec des autorisations délimitées.",
+        "add_principal": "Ajouter un service principal",
+        "assignable": {
+          "label": "Les service principals sont assignables",
+          "description": "Lorsqu'il est activé, les service principals apparaissent dans les sélecteurs d'assignation et de filtre dans tout le workspace. Désactivé par défaut — l'opt-in garde les principals hors des sélecteurs humains jusqu'à ce qu'un administrateur en décide autrement.",
+          "not_persisted": "L'endpoint backend pour ce commutateur n'est pas encore câblé. Les modifications restent uniquement dans cette session.",
+          "toast_updated": "Paramètre d'assignabilité du service principal mis à jour",
+          "toast_update_failed": "Impossible de mettre à jour le paramètre d'assignabilité du service principal"
+        },
+        "step_up": {
+          "hint": "Cette opération affecte la sécurité du jeton. Saisissez le code à 6 chiffres de votre application d'authentification.",
+          "code_required": "Saisissez le code à 6 chiffres",
+          "code_invalid": "Le code est invalide ou expiré. Réessayez."
+        },
+        "modal": {
+          "create_title": "Créer un service principal",
+          "edit_title": "Modifier le service principal",
+          "name": "Nom",
+          "name_required": "Le nom est requis",
+          "description": "Description",
+          "create": "Créer le principal",
+          "update": "Mettre à jour le principal",
+          "creating": "Création",
+          "updating": "Mise à jour"
+        },
+        "token": {
+          "title": "Service principal créé",
+          "rotated_title": "Jeton renouvelé",
+          "copy_warning": "Copiez et enregistrez ce jeton maintenant. Vous ne pourrez plus le voir après avoir fermé cette boîte de dialogue.",
+          "copied": "Jeton copié dans le presse-papiers.",
+          "not_copied": "Le jeton n'a pas pu être copié. Veuillez réessayer."
+        },
+        "list": {
+          "created_on": "Créé le",
+          "edit": "Modifier",
+          "delete": "Supprimer",
+          "manage_scopes": "Gérer les portées",
+          "manage_grants": "Gérer les grants",
+          "rotate_token": "Renouveler le jeton"
+        },
+        "avatar": {
+          "label": "Avatar",
+          "upload": "Téléverser",
+          "remove": "Supprimer"
+        },
+        "delete": {
+          "title": "Supprimer le service principal",
+          "description": "Toute intégration utilisant ce principal ne pourra plus accéder à votre workspace. Cette action est irréversible.",
+          "success": {
+            "title": "Succès !",
+            "message": "Le service principal a été supprimé avec succès"
+          },
+          "error": {
+            "title": "Erreur !",
+            "message": "Le service principal n'a pas pu être supprimé"
+          }
+        },
+        "rotate": {
+          "title": "Renouveler le jeton",
+          "description": "Le jeton actuel sera révoqué immédiatement et les intégrations qui l'utilisent cesseront de fonctionner. Le nouveau jeton n'est affiché qu'une seule fois.",
+          "confirm": "Renouveler le jeton",
+          "rotating": "Renouvellement",
+          "success": {
+            "title": "Jeton renouvelé",
+            "message": "Le jeton du service principal a été renouvelé. Le jeton précédent n'est plus valide."
+          },
+          "error": {
+            "title": "Erreur !",
+            "message": "Le jeton n'a pas pu être renouvelé"
+          }
+        },
+        "scopes": {
+          "title": "Gérer les portées",
+          "description": "Les portées définissent ce à quoi ce principal peut accéder. L'enregistrement remplace toutes les portées existantes.",
+          "project": "Projet",
+          "all_projects": "Tous les projets",
+          "resource_type": "Ressource",
+          "action": "Action",
+          "resources": {
+            "all": "Tout",
+            "project": "Projet",
+            "member": "Membre",
+            "user": "Utilisateur",
+            "asset": "Fichier",
+            "estimate": "Estimation",
+            "cycle": "Cycle",
+            "module": "Module",
+            "sticky": "Sticky",
+            "label": "Étiquette",
+            "intake": "Intake",
+            "work_item": "Élément de travail",
+            "comment": "Commentaire",
+            "state": "État",
+            "page": "Page",
+            "invite": "Invitation"
+          },
+          "actions": {
+            "all": "Tout",
+            "read": "Lecture",
+            "create": "Créer",
+            "update": "Mettre à jour",
+            "delete": "Supprimer"
+          },
+          "add_scope": "Ajouter une portée",
+          "save": "Enregistrer les portées",
+          "saving": "Enregistrement",
+          "clear_confirm": {
+            "title": "Supprimer toutes les portées ?",
+            "message": "L'enregistrement sans portées supprime toutes les autorisations de ce principal. Le principal est refusé par défaut jusqu'à l'ajout de nouvelles portées.",
+            "confirm": "Supprimer toutes les portées"
+          },
+          "success": {
+            "title": "Succès !",
+            "message": "Portées mises à jour avec succès"
+          },
+          "error": {
+            "title": "Erreur !",
+            "message": "Les portées n'ont pas pu être mises à jour"
+          }
+        },
+        "grants": {
+          "title": "Gérer les grants de projet",
+          "description": "Les grants déterminent les projets auxquels ce principal peut accéder et le rôle maximal qu'il peut y avoir. L'enregistrement remplace tous les grants existants.",
+          "project": "Projet",
+          "role_cap": "Plafond de rôle",
+          "status": "Statut",
+          "add_grant": "Ajouter un grant",
+          "save": "Enregistrer les grants",
+          "saving": "Enregistrement",
+          "role_caps": {
+            "5": "Invité",
+            "15": "Membre",
+            "20": "Administrateur"
+          },
+          "statuses": {
+            "active": "Actif",
+            "inactive": "Inactif"
+          },
+          "clear_confirm": {
+            "title": "Supprimer tous les grants ?",
+            "message": "L'enregistrement sans grants retire ce principal de tous les projets. Il ne sera membre d'aucun projet jusqu'à l'ajout de nouveaux grants.",
+            "confirm": "Supprimer tous les grants"
+          },
+          "success": {
+            "title": "Succès !",
+            "message": "Grants mis à jour avec succès"
+          },
+          "error": {
+            "title": "Erreur !",
+            "message": "Les grants n'ont pas pu être mis à jour",
+            "missing_project": "Chaque grant doit faire référence à un projet."
+          }
+        },
+        "toasts": {
+          "created": {
+            "title": "Service principal créé",
+            "message": "Le service principal a été créé avec succès"
+          },
+          "not_created": {
+            "title": "Service principal non créé",
+            "message": "Le service principal n'a pas pu être créé"
+          },
+          "updated": {
+            "title": "Service principal mis à jour",
+            "message": "Le service principal a été mis à jour avec succès"
+          },
+          "not_updated": {
+            "title": "Service principal non mis à jour",
+            "message": "Le service principal n'a pas pu être mis à jour"
+          }
+        }
       }
     },
     "empty_state": {

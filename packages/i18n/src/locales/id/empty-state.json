@@ -226,11 +226,6 @@
       "description": "Otomatisasi notifikasi ke layanan eksternal ketika peristiwa proyek terjadi.",
       "cta_primary": "Tambahkan webhook"
     },
-    "ai_accounts": {
-      "title": "Belum ada akun AI",
-      "description": "Buat akun AI untuk memungkinkan agen AI mengakses workspace Anda dengan izin tercakup.",
-      "cta_primary": "Tambah akun AI"
-    },
     "work_item_types": {
       "title": "Buat dan sesuaikan jenis item kerja",
       "description": "Tentukan jenis item kerja unik untuk proyek Anda. Setiap jenis dapat memiliki properti, alur kerja, dan bidangnya sendiri - disesuaikan dengan kebutuhan proyek dan tim Anda.",
@@ -270,6 +265,11 @@
         "title": "Tambah status",
         "description": "Pilih status yang dilalui item kerja."
       }
+    },
+    "service_principals": {
+      "title": "Belum ada service principal",
+      "description": "Buat service principal agar agen otomatis dan integrasi dapat mengakses workspace Anda dengan izin terbatas.",
+      "cta_primary": "Tambah service principal"
     }
   }
 }

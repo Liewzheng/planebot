@@ -8,19 +8,19 @@ import { useEffect, useRef, useState } from "react";
 import { mutate } from "swr";
 // plane imports
 import { useTranslation } from "@plane/i18n";
-import type { TAIAccount } from "@plane/types";
+import type { TServicePrincipal } from "@plane/types";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import { EModalPosition, EModalWidth, ModalCore } from "@plane/ui";
 // hooks
 import { useUser } from "@/hooks/store/user";
 // services
-import { aiAccountService } from "@/services/ai-account.service";
+import { servicePrincipalService } from "@/services/ai-account.service";
 // local imports
-import { AIAccountForm, type TAIAccountFormValues } from "./account-form";
-import { AI_ACCOUNTS_LIST, getMfaStepUpError } from "./constants";
+import { ServicePrincipalForm, type TServicePrincipalFormValues } from "./service-principal-form";
+import { SERVICE_PRINCIPALS_LIST, getMfaStepUpError } from "./constants";
 import { GeneratedTokenDetails } from "./generated-token-details";
 
-type TCreatedAIAccount = TAIAccount & { token: string };
+type TCreatedServicePrincipal = TServicePrincipal & { token: string };
 
 type Props = {
   isOpen: boolean;
@@ -28,11 +28,11 @@ type Props = {
   workspaceSlug: string;
 };
 
-export function CreateAIAccountModal(props: Props) {
+export function CreateServicePrincipalModal(props: Props) {
   const { isOpen, onClose, workspaceSlug } = props;
   // states
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [createdAccount, setCreatedAccount] = useState<TCreatedAIAccount | null>(null);
+  const [createdPrincipal, setCreatedPrincipal] = useState<TCreatedServicePrincipal | null>(null);
   const [totpCode, setTotpCode] = useState("");
   const [totpError, setTotpError] = useState<string | undefined>(undefined);
   // hooks
@@ -54,7 +54,7 @@ export function CreateAIAccountModal(props: Props) {
       clearTimeout(resetTimerRef.current);
       resetTimerRef.current = null;
       setIsSubmitting(false);
-      setCreatedAccount(null);
+      setCreatedPrincipal(null);
       setTotpCode("");
       setTotpError(undefined);
     }
@@ -72,38 +72,38 @@ export function CreateAIAccountModal(props: Props) {
     requestGenerationRef.current += 1;
     resetTimerRef.current = setTimeout(() => {
       setIsSubmitting(false);
-      setCreatedAccount(null);
+      setCreatedPrincipal(null);
       setTotpCode("");
       setTotpError(undefined);
       resetTimerRef.current = null;
     }, 350);
   };
 
-  const handleCreateAccount = async (data: TAIAccountFormValues) => {
+  const handleCreate = async (data: TServicePrincipalFormValues) => {
     if (isMFAEnabled && !totpCode.trim()) {
-      setTotpError(t("workspace_settings.settings.ai_accounts.step_up.code_required"));
+      setTotpError(t("workspace_settings.settings.service_principals.step_up.code_required"));
       return;
     }
     const generation = ++requestGenerationRef.current;
     setIsSubmitting(true);
     setTotpError(undefined);
     try {
-      const res = await aiAccountService.createAIAccount(workspaceSlug, {
+      const res = await servicePrincipalService.createServicePrincipal(workspaceSlug, {
         name: data.name,
         description: data.description,
         ...(isMFAEnabled && { totp_code: totpCode.trim() }),
       });
-      // The account is created either way, but only show the token screen
+      // The principal is created either way, but only show the token screen
       // when the modal is still on this same request
       if (generation === requestGenerationRef.current) {
-        setCreatedAccount(res);
+        setCreatedPrincipal(res);
       }
       setToast({
         type: TOAST_TYPE.SUCCESS,
-        title: t("workspace_settings.settings.ai_accounts.toasts.created.title"),
-        message: t("workspace_settings.settings.ai_accounts.toasts.created.message"),
+        title: t("workspace_settings.settings.service_principals.toasts.created.title"),
+        message: t("workspace_settings.settings.service_principals.toasts.created.message"),
       });
-      mutate<TAIAccount[]>(AI_ACCOUNTS_LIST(workspaceSlug));
+      mutate<TServicePrincipal[]>(SERVICE_PRINCIPALS_LIST(workspaceSlug));
     } catch (err) {
       const mfaError = getMfaStepUpError(err, t);
       if (mfaError) {
@@ -112,10 +112,10 @@ export function CreateAIAccountModal(props: Props) {
       } else {
         setToast({
           type: TOAST_TYPE.ERROR,
-          title: t("workspace_settings.settings.ai_accounts.toasts.not_created.title"),
+          title: t("workspace_settings.settings.service_principals.toasts.not_created.title"),
           message:
             (err as { message?: string })?.message ??
-            t("workspace_settings.settings.ai_accounts.toasts.not_created.message"),
+            t("workspace_settings.settings.service_principals.toasts.not_created.message"),
         });
       }
     } finally {
@@ -128,17 +128,17 @@ export function CreateAIAccountModal(props: Props) {
 
   return (
     <ModalCore isOpen={isOpen} handleClose={() => {}} position={EModalPosition.TOP} width={EModalWidth.XXL}>
-      {createdAccount ? (
-        <GeneratedTokenDetails account={createdAccount} handleClose={handleClose} />
+      {createdPrincipal ? (
+        <GeneratedTokenDetails principal={createdPrincipal} handleClose={handleClose} />
       ) : (
-        <AIAccountForm
+        <ServicePrincipalForm
           defaultValues={{ name: "", description: "" }}
           handleClose={handleClose}
           isSubmitting={isSubmitting}
-          loadingLabel={t("workspace_settings.settings.ai_accounts.modal.creating")}
-          submitLabel={t("workspace_settings.settings.ai_accounts.modal.create")}
-          title={t("workspace_settings.settings.ai_accounts.modal.create_title")}
-          onSubmit={handleCreateAccount}
+          loadingLabel={t("workspace_settings.settings.service_principals.modal.creating")}
+          submitLabel={t("workspace_settings.settings.service_principals.modal.create")}
+          title={t("workspace_settings.settings.service_principals.modal.create_title")}
+          onSubmit={handleCreate}
           totp={isMFAEnabled ? { value: totpCode, onChange: setTotpCode, error: totpError } : undefined}
         />
       )}

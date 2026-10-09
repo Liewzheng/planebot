@@ -11,29 +11,29 @@ import { Avatar } from "@makeplane/propel/components/avatar";
 import { useTranslation } from "@plane/i18n";
 import { Button } from "@plane/propel/button";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
-import { EFileAssetType, type TAIAccount } from "@plane/types";
+import { EFileAssetType, type TServicePrincipal } from "@plane/types";
 import { EModalPosition, EModalWidth, ModalCore } from "@plane/ui";
-import { getAssetIdFromUrl, getFileURL } from "@plane/utils";
+import { getFileURL } from "@plane/utils";
 // components
 import { UserImageUploadModal } from "@/components/core/modals/user-image-upload-modal";
 // hooks
-import { aiAccountService } from "@/services/ai-account.service";
+import { servicePrincipalService } from "@/services/ai-account.service";
 import { FileService } from "@/services/file.service";
 // local imports
-import { AIAccountForm, type TAIAccountFormValues } from "./account-form";
-import { AI_ACCOUNTS_LIST } from "./constants";
+import { ServicePrincipalForm, type TServicePrincipalFormValues } from "./service-principal-form";
+import { SERVICE_PRINCIPALS_LIST } from "./constants";
 
 const fileService = new FileService();
 
 type Props = {
-  account: TAIAccount;
+  principal: TServicePrincipal;
   isOpen: boolean;
   onClose: () => void;
   workspaceSlug: string;
 };
 
-export function EditAIAccountModal(props: Props) {
-  const { account, isOpen, onClose, workspaceSlug } = props;
+export function EditServicePrincipalModal(props: Props) {
+  const { principal, isOpen, onClose, workspaceSlug } = props;
   // states
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAvatarUploadModalOpen, setIsAvatarUploadModalOpen] = useState(false);
@@ -46,38 +46,24 @@ export function EditAIAccountModal(props: Props) {
     setTimeout(() => setIsSubmitting(false), 350);
   };
 
-  const deleteBotAvatarAsset = async (avatarUrl: string) => {
-    const assetId = getAssetIdFromUrl(avatarUrl);
-    await fileService.deleteWorkspaceAsset(workspaceSlug, assetId);
-  };
-
   const handleAvatarChange = async (avatar: string) => {
     setIsAvatarUpdating(true);
-    const previousAvatar = account.bot_user.avatar_url;
     try {
-      await aiAccountService.updateAIAccount(workspaceSlug, account.id, { avatar });
-      // the account no longer references the previous asset — it is safe to delete
-      if (previousAvatar && previousAvatar !== avatar) {
-        try {
-          await deleteBotAvatarAsset(previousAvatar);
-        } catch (cleanupError) {
-          console.error("Failed to delete the previous bot avatar asset:", cleanupError);
-        }
-      }
+      await servicePrincipalService.updateServicePrincipal(workspaceSlug, principal.id, { avatar });
       setToast({
         type: TOAST_TYPE.SUCCESS,
-        title: t("workspace_settings.settings.ai_accounts.toasts.updated.title"),
-        message: t("workspace_settings.settings.ai_accounts.toasts.updated.message"),
+        title: t("workspace_settings.settings.service_principals.toasts.updated.title"),
+        message: t("workspace_settings.settings.service_principals.toasts.updated.message"),
       });
-      mutate<TAIAccount[]>(AI_ACCOUNTS_LIST(workspaceSlug));
+      mutate<TServicePrincipal[]>(SERVICE_PRINCIPALS_LIST(workspaceSlug));
       setIsAvatarUploadModalOpen(false);
     } catch (err) {
       setToast({
         type: TOAST_TYPE.ERROR,
-        title: t("workspace_settings.settings.ai_accounts.toasts.not_updated.title"),
+        title: t("workspace_settings.settings.service_principals.toasts.not_updated.title"),
         message:
           (err as { message?: string })?.message ??
-          t("workspace_settings.settings.ai_accounts.toasts.not_updated.message"),
+          t("workspace_settings.settings.service_principals.toasts.not_updated.message"),
       });
       // propagate so the upload modal can roll back the freshly uploaded asset
       throw err;
@@ -86,27 +72,27 @@ export function EditAIAccountModal(props: Props) {
     }
   };
 
-  const handleUpdateAccount = async (data: TAIAccountFormValues) => {
+  const handleUpdate = async (data: TServicePrincipalFormValues) => {
     setIsSubmitting(true);
     try {
-      await aiAccountService.updateAIAccount(workspaceSlug, account.id, {
+      await servicePrincipalService.updateServicePrincipal(workspaceSlug, principal.id, {
         name: data.name,
         description: data.description,
       });
       setToast({
         type: TOAST_TYPE.SUCCESS,
-        title: t("workspace_settings.settings.ai_accounts.toasts.updated.title"),
-        message: t("workspace_settings.settings.ai_accounts.toasts.updated.message"),
+        title: t("workspace_settings.settings.service_principals.toasts.updated.title"),
+        message: t("workspace_settings.settings.service_principals.toasts.updated.message"),
       });
-      mutate<TAIAccount[]>(AI_ACCOUNTS_LIST(workspaceSlug));
+      mutate<TServicePrincipal[]>(SERVICE_PRINCIPALS_LIST(workspaceSlug));
       handleClose();
     } catch (err) {
       setToast({
         type: TOAST_TYPE.ERROR,
-        title: t("workspace_settings.settings.ai_accounts.toasts.not_updated.title"),
+        title: t("workspace_settings.settings.service_principals.toasts.not_updated.title"),
         message:
           (err as { message?: string })?.message ??
-          t("workspace_settings.settings.ai_accounts.toasts.not_updated.message"),
+          t("workspace_settings.settings.service_principals.toasts.not_updated.message"),
       });
     } finally {
       setIsSubmitting(false);
@@ -120,36 +106,36 @@ export function EditAIAccountModal(props: Props) {
         isOpen={isAvatarUploadModalOpen}
         onClose={() => setIsAvatarUploadModalOpen(false)}
         onSuccess={handleAvatarChange}
-        value={account.bot_user.avatar_url || null}
-        // Bot avatars are uploaded as workspace assets bound to the bot user,
-        // so the current user's own avatar is never clobbered or GC'd
+        value={principal.avatar || null}
         uploadAsset={async (image) => {
           const { asset_url } = await fileService.uploadWorkspaceAsset(
             workspaceSlug,
             {
               entity_type: EFileAssetType.USER_AVATAR,
-              entity_identifier: account.bot_user.id,
+              // SPs are not Users; tag the asset against the SP id so the
+              // current user's avatar is never clobbered
+              entity_identifier: principal.id,
             },
             image
           );
           return asset_url;
         }}
-        removeAsset={async (value) => {
-          const assetId = getAssetIdFromUrl(value);
-          await fileService.deleteWorkspaceAsset(workspaceSlug, assetId);
+        removeAsset={async (_value) => {
+          // The avatar string is just a URL/path on the SP; no separate
+          // asset cleanup pipeline to invoke here.
         }}
       />
       <div className="flex items-center gap-4 border-b-[0.5px] border-subtle px-5 py-4">
         <Avatar
-          src={getFileURL(account.bot_user.avatar_url)}
-          alt={account.bot_user.display_name}
-          fallback={account.bot_user.display_name.charAt(0)}
+          src={getFileURL(principal.avatar)}
+          alt={principal.name}
+          fallback={principal.name.charAt(0)}
           size="lg"
           tooltip
         />
         <div className="flex flex-col gap-2">
           <span className="text-13 font-medium text-secondary">
-            {t("workspace_settings.settings.ai_accounts.avatar.label")}
+            {t("workspace_settings.settings.service_principals.avatar.label")}
           </span>
           <div className="flex items-center gap-2">
             <Button
@@ -158,29 +144,29 @@ export function EditAIAccountModal(props: Props) {
               loading={isAvatarUpdating}
               onClick={() => setIsAvatarUploadModalOpen(true)}
             >
-              {t("workspace_settings.settings.ai_accounts.avatar.upload")}
+              {t("workspace_settings.settings.service_principals.avatar.upload")}
             </Button>
-            {account.bot_user.avatar_url && (
+            {principal.avatar && (
               <Button
                 variant="error-outline"
                 size="sm"
                 loading={isAvatarUpdating}
                 onClick={() => handleAvatarChange("")}
               >
-                {t("workspace_settings.settings.ai_accounts.avatar.remove")}
+                {t("workspace_settings.settings.service_principals.avatar.remove")}
               </Button>
             )}
           </div>
         </div>
       </div>
-      <AIAccountForm
-        defaultValues={{ name: account.name, description: account.description }}
+      <ServicePrincipalForm
+        defaultValues={{ name: principal.name, description: principal.description }}
         handleClose={handleClose}
         isSubmitting={isSubmitting}
-        loadingLabel={t("workspace_settings.settings.ai_accounts.modal.updating")}
-        submitLabel={t("workspace_settings.settings.ai_accounts.modal.update")}
-        title={t("workspace_settings.settings.ai_accounts.modal.edit_title")}
-        onSubmit={handleUpdateAccount}
+        loadingLabel={t("workspace_settings.settings.service_principals.modal.updating")}
+        submitLabel={t("workspace_settings.settings.service_principals.modal.update")}
+        title={t("workspace_settings.settings.service_principals.modal.edit_title")}
+        onSubmit={handleUpdate}
       />
     </ModalCore>
   );

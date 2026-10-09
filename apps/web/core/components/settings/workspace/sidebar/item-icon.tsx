@@ -16,5 +16,5 @@ export const WORKSPACE_SETTINGS_ICONS: Record<TWorkspaceSettingsTabs, LucideIcon
   members: MembersOutline,
   export: ExportOutline,
   webhooks: WebhooksOutline,
-  "ai-accounts": Bot,
+  "service-principals": Bot,
 };
