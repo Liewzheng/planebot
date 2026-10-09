@@ -25,6 +25,7 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 # Module imports
+from plane.app.middleware.api_authentication import APIKeyAuthentication
 from plane.authentication.session import BaseSessionAuthentication
 from plane.utils.exception_logger import log_exception
 from plane.utils.paginator import BasePaginator
@@ -39,7 +40,12 @@ class TimezoneMixin:
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
-        if request.user.is_authenticated:
+        # SP proxy requests do not have a user_timezone attribute; the
+        # authz layer carries their workspace context, not their UI prefs.
+        if (
+            request.user.is_authenticated
+            and not getattr(request.user, "_is_service_principal_proxy", False)
+        ):
             timezone.activate(zoneinfo.ZoneInfo(request.user.user_timezone))
         else:
             timezone.deactivate()
@@ -52,7 +58,11 @@ class BaseViewSet(TimezoneMixin, ReadReplicaControlMixin, ModelViewSet, BasePagi
 
     filter_backends = (DjangoFilterBackend, SearchFilter)
 
-    authentication_classes = [BaseSessionAuthentication]
+    # Session first so a logged-in browser wins over a stale API key;
+    # APIKeyAuthentication handles user and service tokens and rejects
+    # service-principal tokens as anonymous-by-role (their permissions
+    # flow through ``plane.core.authz.authorize``).
+    authentication_classes = [BaseSessionAuthentication, APIKeyAuthentication]
 
     filterset_fields = []
 
@@ -151,7 +161,11 @@ class BaseAPIView(TimezoneMixin, ReadReplicaControlMixin, APIView, BasePaginator
 
     filter_backends = (DjangoFilterBackend, SearchFilter)
 
-    authentication_classes = [BaseSessionAuthentication]
+    # Session first so a logged-in browser wins over a stale API key;
+    # APIKeyAuthentication handles user and service tokens and rejects
+    # service-principal tokens as anonymous-by-role (their permissions
+    # flow through ``plane.core.authz.authorize``).
+    authentication_classes = [BaseSessionAuthentication, APIKeyAuthentication]
 
     filterset_fields = []
 

@@ -46,6 +46,7 @@ from .decision import (
 )
 from .engine import AuthzContext, authorize
 from .exceptions import enforce, ensure_allowed
+from .integration import principal_from_request
 from .permissions import (
     ActionPermission,
     STANDARD_ACTIONS,
@@ -80,6 +81,7 @@ __all__ = [
     "authorize",
     "enforce",
     "ensure_allowed",
+    "principal_from_request",
     "Decision",
     "Principal",
     "ServicePrincipal_",

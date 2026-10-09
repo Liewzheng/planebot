@@ -245,3 +245,5 @@ from .user.mfa import (
 )
 
 from .timezone.base import TimezoneEndpoint
+
+from .principal.base import PrincipalDispatchEndpoint
