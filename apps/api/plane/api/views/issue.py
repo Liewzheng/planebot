@@ -34,6 +34,10 @@ from plane.api.middleware.api_authentication import APIKeyAuthentication
 from django.utils import timezone
 from django.conf import settings
 
+# Sentinel for the by-identifier project_id lookup cache: distinguishes a
+# freshly instantiated view (no cached value) from one that resolved to None.
+_UNSET_SENTINEL = object()
+
 # Third party imports
 from rest_framework import status
 from rest_framework.response import Response
@@ -200,6 +204,47 @@ class WorkspaceIssueAPIEndpoint(BaseAPIView):
     @property
     def project_identifier(self):
         return self.kwargs.get("project_identifier", None)
+
+    @property
+    def project_id(self):
+        """Resolve the project UUID from the URL's ``project_identifier``.
+
+        Override of :attr:`BaseAPIView.project_id` — the by-identifier URL
+        carries ``project_identifier``, not ``project_id``, so the inherited
+        property would return ``None`` and ``AuthzContext.project_id``
+        would skip the ProjectGrant step in ``core.authz.engine``. That
+        would let an SP holding only a workspace-wide
+        ``work_item:read`` scope read any project's issues here, broader
+        than either the human ProjectMember gate or the legacy
+        ``AIScopeEnforcementMixin`` allowed on the same endpoint (reviewer
+        P1-1).
+
+        Result is cached on the instance via a unique sentinel so repeated
+        lookups during the same request share one query. Returns
+        ``None`` when the identifier does not resolve to a project in
+        the URL's workspace — the engine then default-deny's the SP at
+        the ProjectGrant step (no row matches).
+        """
+        cache_key = "_workspace_issue_resolved_project_id"
+        sentinel = _UNSET_SENTINEL
+        cached = getattr(self, cache_key, sentinel)
+        if cached is not sentinel:
+            return cached
+        identifier = self.kwargs.get("project_identifier")
+        if not identifier:
+            setattr(self, cache_key, None)
+            return None
+        resolved = (
+            Project.objects.filter(
+                workspace__slug=self.kwargs.get("slug"),
+                identifier=identifier,
+            )
+            .values_list("id", flat=True)
+            .first()
+        )
+        result = str(resolved) if resolved else None
+        setattr(self, cache_key, result)
+        return result
 
     def get_queryset(self):
         return (
@@ -2353,6 +2398,16 @@ class IssueSearchEndpoint(BaseAPIView):
                 q |= Q(**{f"{field}__icontains": query})
 
         # Filter issues
+        # NOTE: this queryset keys off ``self.request.user`` — for SP
+        # requests ``request.user`` is the human owner (see
+        # ``APIKeyAuthentication._authenticate_service_token``), so the
+        # search scope inherits the owner's workspace membership. The
+        # authorize() chain (resource_type="work_item") gates the request
+        # before this queryset runs, but the row-set is owner-bounded
+        # rather than ProjectGrant-bounded: an SP without a grant on
+        # project X still won't see X's issues here (the owner is not a
+        # member), but the SP's grant set is not the source of truth for
+        # row visibility — review m8 P2-1.
         issues = Issue.issue_objects.filter(
             q,
             project__project_projectmember__member=self.request.user,

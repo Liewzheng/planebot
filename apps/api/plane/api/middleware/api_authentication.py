@@ -89,6 +89,7 @@ class APIKeyAuthentication(authentication.BaseAuthentication):
                 "user", "service_principal__workspace"
             )
             .filter(
+                Q(Q(expired_at__gt=timezone.now()) | Q(expired_at__isnull=True)),
                 token=token,
                 is_active=True,
                 principal_type=PrincipalType.SERVICE,

@@ -90,6 +90,15 @@ class AIScopeEnforcementMixin:
     #: Resource type this view targets. Subclasses MUST set this when the
     #: view should accept SP requests. ``None`` (the default) means
     #: SP-authenticated calls are 403'd at ``check_permissions`` time.
+    #:
+    #: Note (review m8 P2-4): ``users`` (``/api/v1/users/me/``,
+    #: ``UserEndpoint``) is intentionally left default-deny even though
+    #: the legacy ``URL_RESOURCE_MAP`` mapped it to ``ResourceType.USER``.
+    #: The endpoint exists to return the authenticated principal's own
+    #: profile; under the SP wiring that would print the human owner's
+    #: profile to whatever bot holds the SP token. A future ``self``
+    #: resource type (or a guarded identity endpoint) is the right shape;
+    #: M8 leaves the endpoint inert to avoid even the surface.
     resource_type: str | None = None
 
     def get_permissions(self):

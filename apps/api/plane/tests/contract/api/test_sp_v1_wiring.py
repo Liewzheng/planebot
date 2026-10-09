@@ -35,6 +35,13 @@ def _issue_list_url(workspace_slug, project_id):
     )
 
 
+def _workspace_issue_by_identifier_url(workspace_slug, project_identifier, issue_sequence_id):
+    return (
+        f"/api/v1/workspaces/{workspace_slug}/"
+        f"issues/{project_identifier}-{issue_sequence_id}/"
+    )
+
+
 def _make_sp(workspace, owner, name="bot-1", is_active=True):
     sp = ServicePrincipal.objects.create(
         workspace=workspace,
@@ -295,3 +302,180 @@ class TestSPMemberVisibilityInResponse:
         )
 
         assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestSPByIdentifierWorkItemRegression:
+    """Regression tests for the by-identifier work-item endpoint
+    (``WorkspaceIssueAPIEndpoint``).
+
+    The URL resolves via ``<project_identifier>-<issue_identifier>``
+    instead of ``<project_id>``, so the inherited ``BaseAPIView.project_id``
+    property cannot drive ``AuthzContext.project_id``. Reviewer-m8 P1-1:
+    that gap would let an SP holding only a workspace-wide
+    ``work_item:read`` scope reach every project's issues here —
+    strictly wider than either humans (``ProjectEntityPermission`` on the
+    owner) or the legacy ``AIScopeEnforcementMixin`` allowed on the
+    same URL. The fix resolves the project via ``project_identifier``
+    inside the view so the engine's grant step engages.
+    """
+
+    @pytest.fixture
+    def granted_project(self, db, workspace, create_user):
+        from plane.db.models import Project, ProjectMember, WorkspaceMember
+
+        ProjectMember.objects.filter(
+            workspace=workspace, member=create_user
+        ).update(role=20)
+        proj = Project.objects.create(
+            name="Granted Project",
+            identifier="GP",
+            workspace=workspace,
+            created_by=create_user,
+            network=2,
+        )
+        ProjectMember.objects.create(
+            project=proj, member=create_user, role=20, is_active=True
+        )
+        WorkspaceMember.objects.filter(
+            workspace=workspace, member=create_user
+        ).update(role=20)
+        return proj
+
+    @pytest.fixture
+    def foreign_owner(self, db, workspace):
+        """A second admin who owns a project the SP's owner has no
+        relationship to. Used as the ``created_by`` to keep the foreign
+        project's membership off the SP-owner's roster."""
+        from plane.db.models import Project, ProjectMember, User
+        from plane.db.models import WorkspaceMember as WM
+
+        owner = User.objects.create(
+            email="foreign-owner@plane.so",
+            username="foreign-owner",
+        )
+        owner.set_password("password")
+        owner.save()
+        WM.objects.create(workspace=workspace, member=owner, role=20)
+        proj = Project.objects.create(
+            name="Foreign Project",
+            identifier="FP",
+            workspace=workspace,
+            created_by=owner,
+            network=0,
+        )
+        ProjectMember.objects.create(
+            project=proj, member=owner, role=20, is_active=True
+        )
+        return owner, proj
+
+    def test_workspace_wide_scope_no_grant_on_foreign_project_denies(
+        self,
+        workspace,
+        create_user,
+        granted_project,
+        foreign_owner,
+        spv1_client,
+    ):
+        """An SP with a workspace-wide ``work_item:read`` scope but ZERO
+        ProjectGrants must not read issues in a project the owner is not
+        even a member of (reviewer-m8 P1-1). Before the fix this returned
+        200 with the full IssueSerializer; after, it returns 403."""
+        from plane.db.models import Issue
+
+        foreign_user, foreign_project = foreign_owner
+        # The SP owner (create_user) is NOT in foreign_project.
+        sp = _make_sp(workspace, create_user, name="ws-scope-only")
+        _scope(sp, "work_item", "read", project=None)
+        # Workspace-wide scope row + workspace-wide no grants — exactly the
+        # configuration M6's management API lets an admin provision. A
+        # malicious or inattentive admin pairing this with the by-id URL
+        # would pre-fix fetch any project's issue.
+
+        issue = Issue.objects.create(
+            name="private issue",
+            sequence_id=1,
+            project=foreign_project,
+            workspace=workspace,
+            created_by=foreign_user,
+        )
+
+        spv1_client.credentials(
+            HTTP_X_API_KEY="plane_svc_token_ws-scope-only"
+        )
+        response = spv1_client.get(
+            _workspace_issue_by_identifier_url(
+                workspace.slug,
+                foreign_project.identifier,
+                issue.sequence_id,
+            )
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_full_chain_granted_sp_can_read_by_identifier(
+        self,
+        workspace,
+        create_user,
+        granted_project,
+        spv1_client,
+    ):
+        """Happy path for the by-identifier endpoint: SP with a project
+        scope row + active ProjectGrant can read an issue in that project
+        via ``<project_identifier>-<sequence_id>``."""
+        from plane.db.models import Issue
+
+        sp = _make_sp(workspace, create_user, name="by-id-granted")
+        _scope(sp, "work_item", "read", project=granted_project)
+        _grant(sp, granted_project, role_cap=15)
+        issue = Issue.objects.create(
+            name="granted issue",
+            sequence_id=42,
+            project=granted_project,
+            workspace=workspace,
+            created_by=create_user,
+        )
+        spv1_client.credentials(
+            HTTP_X_API_KEY="plane_svc_token_by-id-granted"
+        )
+        response = spv1_client.get(
+            _workspace_issue_by_identifier_url(
+                workspace.slug,
+                granted_project.identifier,
+                issue.sequence_id,
+            )
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_unknown_project_identifier_denies(
+        self, workspace, create_user, granted_project, spv1_client
+    ):
+        """An unidentified identifier must not bypass authorize() into a
+        ``None`` ctx.project_id path (reviewer-m8 P1-1 reasoning). The
+        engine hits DENY_SCOPE_MISS / DENY_GRANT_MISS on the workspace
+        scope and returns 403."""
+        from plane.db.models import Issue
+
+        issue = Issue.objects.create(
+            name="granted issue",
+            sequence_id=1,
+            project=granted_project,
+            workspace=workspace,
+            created_by=create_user,
+        )
+
+        sp = _make_sp(workspace, create_user, name="bad-id")
+        _scope(sp, "work_item", "read", project=granted_project)
+        _grant(sp, granted_project, role_cap=15)
+
+        spv1_client.credentials(HTTP_X_API_KEY="plane_svc_token_bad-id")
+        response = spv1_client.get(
+            _workspace_issue_by_identifier_url(
+                workspace.slug,
+                "NOPE",  # unknown identifier
+                issue.sequence_id,
+            )
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN

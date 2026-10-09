@@ -29,6 +29,15 @@ class StickyViewSet(BaseViewSet):
     resource_type = "sticky"
 
     def get_queryset(self):
+        # NOTE: owner-bounded row visibility — ``self.request.user`` is
+        # the human owner for SP requests (see
+        # ``APIKeyAuthentication._authenticate_service_token``), so the SP
+        # reads/writes the owner's personal stickies. ``sticky`` is
+        # project-scoped in the authz matrix but the viewset URL has no
+        # project_id (Q1 in the design review noted stickies as
+        # workspace-level); the workspace-wide scope row is enough for the
+        # authorize() gate, and the queryset then inherits the owner's
+        # personal sticky collection — review m8 P2-1.
         return self.filter_queryset(
             super()
             .get_queryset()

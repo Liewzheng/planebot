@@ -13,6 +13,7 @@ SP tokens fail closed.
 
 import pytest
 from django.test import RequestFactory
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.test import APIClient
@@ -199,3 +200,57 @@ class TestAPIKeyAuthenticationServicePrincipalInternal:
         request = self._authenticate(api_token.token)
 
         assert getattr(request, "_sp_principal", None) is None
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestAPIKeyAuthenticationExpiredAt:
+    """The SP token path must honor ``APIToken.expired_at`` the same way
+    the legacy user-token path does (reviewer-m8 P2-3)."""
+
+    def test_expired_service_token_fails_closed(
+        self, workspace, create_user, api_client
+    ):
+        from datetime import timedelta
+
+        sp = ServicePrincipal.objects.create(
+            workspace=workspace, owner=create_user, name="exp-bot"
+        )
+        APIToken.objects.create(
+            label="svc:exp-bot",
+            token="plane_svc_expired123",
+            user=create_user,
+            principal_type=PrincipalType.SERVICE,
+            service_principal=sp,
+            workspace=workspace,
+            expired_at=timezone.now() - timedelta(days=1),
+        )
+        api_client.credentials(HTTP_X_API_KEY="plane_svc_expired123")
+        response = api_client.get("/api/v1/users/me/")
+        assert response.status_code in (
+            status.HTTP_401_UNAUTHORIZED,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_unexpired_service_token_still_authenticates(
+        self, workspace, create_user, api_client
+    ):
+        from datetime import timedelta
+
+        sp = ServicePrincipal.objects.create(
+            workspace=workspace, owner=create_user, name="exp-bot-future"
+        )
+        APIToken.objects.create(
+            label="svc:exp-bot-future",
+            token="plane_svc_futureexpiry",
+            user=create_user,
+            principal_type=PrincipalType.SERVICE,
+            service_principal=sp,
+            workspace=workspace,
+            expired_at=timezone.now() + timedelta(days=30),
+        )
+        api_client.credentials(HTTP_X_API_KEY="plane_svc_futureexpiry")
+        # ``/users/me/`` has no ``resource_type`` so SP request default-
+        # deny -> 403 (the token authenticated, but the view rejects).
+        response = api_client.get("/api/v1/users/me/")
+        assert response.status_code == status.HTTP_403_FORBIDDEN

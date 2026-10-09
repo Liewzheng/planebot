@@ -86,6 +86,16 @@ class ProjectListCreateAPIEndpoint(BaseAPIView):
     use_read_replica = True
 
     def get_queryset(self):
+        # NOTE: owner-bounded row visibility — ``self.request.user`` is
+        # the human owner for SP requests (see
+        # ``APIKeyAuthentication._authenticate_service_token``). The
+        # queryset surfaces projects the owner is a member of plus public
+        # (network=2) ones; the SP's ProjectGrant set is NOT consulted
+        # here. ``resource_type="project"`` gates the request through
+        # authorize() before the queryset runs (workspace-wide writes
+        # fail the Q4 guard on POST/PUT/PATCH/DELETE anyway), but the
+        # read scope "projects the owner can see" is wider than "projects
+        # the SP is granted into" when the two diverge — review m8 P2-1.
         return (
             Project.objects.filter(workspace__slug=self.kwargs.get("slug"))
             .filter(

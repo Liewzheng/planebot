@@ -5,6 +5,7 @@
 # Third Party imports
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from drf_spectacular.utils import (
     extend_schema,
     OpenApiResponse,
@@ -106,6 +107,14 @@ class ProjectMemberListCreateAPIEndpoint(BaseAPIView):
     resource_type = "member"
 
     def get_permissions(self):
+        # SP requests must skip the membership-based permission classes:
+        # they reason about request.user-as-member, but the SP's grants
+        # (not the owner's) own the project membership decision. The SP
+        # gate is authorize(), reached via AIScopeEnforcementMixin.
+        # Mirroring the mixin's bypass here fixes reviewer-m8 P2-2
+        # (reviewer-m8 r1).
+        if getattr(self.request, "_sp_principal", None) is not None:
+            return [IsAuthenticated()]
         if self.request.method == "GET":
             return [ProjectMemberPermission()]
         return [ProjectAdminPermission()]
