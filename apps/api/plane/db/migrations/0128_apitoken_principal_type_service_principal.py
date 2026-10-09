@@ -17,7 +17,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("db", "0125_page_frontmatter_alter_fileasset_entity_type"),
+        ("db", "0127_page_description_updated_at"),
         ("service_principals", "0001_initial"),
     ]
 

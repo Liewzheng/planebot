@@ -16,6 +16,7 @@ from django.utils import timezone
 # Module imports
 from plane.db.models import Page, PageVersion
 from plane.utils.exception_logger import log_exception
+from plane.utils.page_content import page_content_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,18 @@ def track_page_version(page_id, existing_instance, user_id):
         if current_instance.get("description_html") != page.description_html:
             # Fetch the latest page version
             page_version = PageVersion.objects.filter(page_id=page_id).order_by("-last_saved_at").first()
+
+            # Record a version only when what a reader sees changed: the editor
+            # and the markdown/CLI import path serialize the same content
+            # differently, so a byte-comparison alone invents history - a page
+            # merely opened (or re-imported unchanged) picked up a new entry.
+            # A save is only persisted when its content differs from the stored
+            # revision, but a formatting-only edit is a real change and does get
+            # a version, which is why this compares content and not markup.
+            if page_version and page_content_fingerprint(page_version.description_html) == page_content_fingerprint(
+                page.description_html
+            ):
+                return
 
             # Get the latest page version if it exists and is owned by the user
             if (

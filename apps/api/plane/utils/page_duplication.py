@@ -23,6 +23,9 @@ import html as html_module
 import re
 from html.parser import HTMLParser
 
+# Module imports
+from plane.utils.page_content import duplicated_block_length
+
 DEFAULT_MIN_LINES = 120
 DEFAULT_MIN_UNIQUE_RATIO = 0.6
 ANCHOR_SAMPLE_CHARS = 40
@@ -106,11 +109,25 @@ def is_document_duplicated(
     min_lines: int = DEFAULT_MIN_LINES,
     min_unique_ratio: float = DEFAULT_MIN_UNIQUE_RATIO,
 ) -> bool:
-    """True when a document looks like a union-merged (duplicated) page."""
+    """True when a document looks like a union-merged (duplicated) page.
+
+    Two signals, because each misses a shape the other catches:
+
+    - the line-uniqueness ratio, which sees a body pasted together out of
+      differently-worded revisions (a merge keeps both variants, so few lines
+      repeat exactly);
+    - the longest repeated block of body text, which is measured on the content
+      itself rather than on lines. The ratio is blind below `min_lines` — a
+      20 KB page can be one block and 66 lines — and that is how a ballooned
+      page reached the database and stayed there (PLANE-76).
+
+    The block test is deliberately generous: a body only trips it when it
+    repeats a quarter of itself, which no document does by accident.
+    """
     stats = line_stats(html)
-    if stats["total_lines"] < min_lines:
-        return False
-    return stats["unique_ratio"] < min_unique_ratio
+    if stats["total_lines"] >= min_lines and stats["unique_ratio"] < min_unique_ratio:
+        return True
+    return duplicated_block_length(html) > 0
 
 
 def repair_duplicated_html(html: str) -> tuple[str, dict | None]:
