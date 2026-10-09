@@ -39,6 +39,8 @@ from plane.utils.openapi import (
 class StateListCreateAPIEndpoint(BaseAPIView):
     """State List and Create Endpoint"""
 
+    resource_type = "state"
+
     serializer_class = StateSerializer
     model = State
     permission_classes = [ProjectEntityPermission]
@@ -161,6 +163,8 @@ class StateListCreateAPIEndpoint(BaseAPIView):
 
 class StateDetailAPIEndpoint(BaseAPIView):
     """State Detail Endpoint"""
+
+    resource_type = "state"
 
     serializer_class = StateSerializer
     model = State

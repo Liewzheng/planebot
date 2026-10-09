@@ -26,6 +26,7 @@ class StickyViewSet(BaseViewSet):
     model = Sticky
     use_read_replica = True
     permission_classes = [WorkspaceUserPermission]
+    resource_type = "sticky"
 
     def get_queryset(self):
         return self.filter_queryset(

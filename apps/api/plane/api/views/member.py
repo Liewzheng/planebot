@@ -39,6 +39,7 @@ from plane.utils.openapi import (
 class WorkspaceMemberAPIEndpoint(BaseAPIView):
     permission_classes = [WorkSpaceAdminPermission]
     use_read_replica = True
+    resource_type = "member"
 
     @extend_schema(
         operation_id="get_workspace_members",
@@ -102,6 +103,7 @@ class WorkspaceMemberAPIEndpoint(BaseAPIView):
 class ProjectMemberListCreateAPIEndpoint(BaseAPIView):
     permission_classes = [ProjectMemberPermission]
     use_read_replica = True
+    resource_type = "member"
 
     def get_permissions(self):
         if self.request.method == "GET":
@@ -233,6 +235,8 @@ class ProjectMemberDetailAPIEndpoint(ProjectMemberListCreateAPIEndpoint):
 class WorkspaceMemberLiteAPIEndpoint(BaseAPIView):
     """Workspace members (lite) list endpoint."""
 
+    resource_type = "member"
+
     permission_classes = [WorkSpaceAdminPermission]
     use_read_replica = True
 
@@ -279,6 +283,8 @@ class WorkspaceMemberLiteAPIEndpoint(BaseAPIView):
 
 class ProjectMemberLiteAPIEndpoint(BaseAPIView):
     """Project members (lite) list endpoint."""
+
+    resource_type = "member"
 
     permission_classes = [ProjectMemberPermission]
     use_read_replica = True

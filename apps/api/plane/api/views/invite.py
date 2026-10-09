@@ -26,6 +26,8 @@ class WorkspaceInvitationsViewset(BaseViewSet):
     Endpoint for creating, listing and deleting workspace invites.
     """
 
+    resource_type = "invite"
+
     serializer_class = WorkspaceInviteSerializer
     model = WorkspaceMemberInvite
 

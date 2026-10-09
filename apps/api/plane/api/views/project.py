@@ -77,6 +77,8 @@ from plane.utils.openapi import (
 class ProjectListCreateAPIEndpoint(BaseAPIView):
     """Project List and Create Endpoint"""
 
+    resource_type = "project"
+
     serializer_class = ProjectSerializer
     model = Project
     webhook_event = "project"
@@ -342,6 +344,8 @@ class ProjectListCreateAPIEndpoint(BaseAPIView):
 class ProjectListLiteAPIEndpoint(BaseAPIView):
     """Project Lite List Endpoint"""
 
+    resource_type = "project"
+
     serializer_class = ProjectLiteSerializer
     model = Project
     permission_classes = [ProjectBasePermission]
@@ -429,6 +433,8 @@ class ProjectListLiteAPIEndpoint(BaseAPIView):
 
 class ProjectDetailAPIEndpoint(BaseAPIView):
     """Project Endpoints to  update, retrieve and delete endpoint"""
+
+    resource_type = "project"
 
     serializer_class = ProjectSerializer
     model = Project
@@ -649,6 +655,8 @@ class ProjectDetailAPIEndpoint(BaseAPIView):
 class ProjectArchiveUnarchiveAPIEndpoint(BaseAPIView):
     """Project Archive and Unarchive Endpoint"""
 
+    resource_type = "project"
+
     permission_classes = [ProjectBasePermission]
 
     @project_docs(
@@ -714,6 +722,7 @@ ALLOWED_PROJECT_SUMMARY_FIELDS = [
 class ProjectSummaryAPIEndpoint(BaseAPIView):
     permission_classes = [WorkSpaceAdminPermission]
     use_read_replica = True
+    resource_type = "project"
 
     def get(self, request, slug, project_id):
         """Get project summary

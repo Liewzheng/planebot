@@ -184,6 +184,8 @@ def user_has_issue_permission(user_id, project_id, issue=None, allowed_roles=Non
 
 
 class WorkspaceIssueAPIEndpoint(BaseAPIView):
+
+    resource_type = "work_item"
     """
     This viewset provides `retrieveByIssueId` on workspace level
 
@@ -261,6 +263,8 @@ class WorkspaceIssueAPIEndpoint(BaseAPIView):
 
 
 class IssueListCreateAPIEndpoint(BaseAPIView):
+
+    resource_type = "work_item"
     """
     This viewset provides `list` and `create` on issue level
     """
@@ -531,6 +535,8 @@ class IssueListCreateAPIEndpoint(BaseAPIView):
 
 class IssueDetailAPIEndpoint(BaseAPIView):
     """Issue Detail Endpoint"""
+
+    resource_type = "work_item"
 
     model = Issue
     webhook_event = "issue"
@@ -885,6 +891,8 @@ class IssueDetailAPIEndpoint(BaseAPIView):
 class LabelListCreateAPIEndpoint(BaseAPIView):
     """Label List and Create Endpoint"""
 
+    resource_type = "label"
+
     serializer_class = LabelSerializer
     model = Label
     permission_classes = [ProjectMemberPermission]
@@ -1120,6 +1128,8 @@ class LabelDetailAPIEndpoint(LabelListCreateAPIEndpoint):
 class IssueLinkListCreateAPIEndpoint(BaseAPIView):
     """Work Item Link List and Create Endpoint"""
 
+    resource_type = "work_item"
+
     serializer_class = IssueLinkSerializer
     model = IssueLink
     permission_classes = [ProjectEntityPermission]
@@ -1223,6 +1233,8 @@ class IssueLinkListCreateAPIEndpoint(BaseAPIView):
 
 class IssueLinkDetailAPIEndpoint(BaseAPIView):
     """Issue Link Detail Endpoint"""
+
+    resource_type = "work_item"
 
     permission_classes = [ProjectEntityPermission]
 
@@ -1366,6 +1378,8 @@ class IssueLinkDetailAPIEndpoint(BaseAPIView):
 
 class IssueCommentListCreateAPIEndpoint(BaseAPIView):
     """Issue Comment List and Create Endpoint"""
+
+    resource_type = "comment"
 
     serializer_class = IssueCommentSerializer
     model = IssueComment
@@ -1522,6 +1536,8 @@ class IssueCommentListCreateAPIEndpoint(BaseAPIView):
 
 class IssueCommentDetailAPIEndpoint(BaseAPIView):
     """Work Item Comment Detail Endpoint"""
+
+    resource_type = "comment"
 
     serializer_class = IssueCommentSerializer
     model = IssueComment
@@ -1729,6 +1745,7 @@ class IssueCommentDetailAPIEndpoint(BaseAPIView):
 class IssueActivityListAPIEndpoint(BaseAPIView):
     permission_classes = [ProjectEntityPermission]
     use_read_replica = True
+    resource_type = "work_item"
 
     @issue_activity_docs(
         operation_id="list_work_item_activities",
@@ -1782,6 +1799,8 @@ class IssueActivityListAPIEndpoint(BaseAPIView):
 
 class IssueActivityDetailAPIEndpoint(BaseAPIView):
     """Issue Activity Detail Endpoint"""
+
+    resource_type = "work_item"
 
     permission_classes = [ProjectEntityPermission]
     use_read_replica = True
@@ -1843,6 +1862,8 @@ class IssueActivityDetailAPIEndpoint(BaseAPIView):
 
 class IssueAttachmentListCreateAPIEndpoint(BaseAPIView):
     """Issue Attachment List and Create Endpoint"""
+
+    resource_type = "work_item"
 
     serializer_class = IssueAttachmentSerializer
     model = FileAsset
@@ -2067,6 +2088,8 @@ class IssueAttachmentListCreateAPIEndpoint(BaseAPIView):
 class IssueAttachmentDetailAPIEndpoint(BaseAPIView):
     """Issue Attachment Detail Endpoint"""
 
+    resource_type = "work_item"
+
     serializer_class = IssueAttachmentSerializer
     model = FileAsset
     use_read_replica = True
@@ -2276,6 +2299,8 @@ class IssueAttachmentDetailAPIEndpoint(BaseAPIView):
 class IssueSearchEndpoint(BaseAPIView):
     """Endpoint to search across multiple fields in the issues"""
 
+    resource_type = "work_item"
+
     use_read_replica = True
 
     @extend_schema(
@@ -2355,6 +2380,8 @@ class IssueSearchEndpoint(BaseAPIView):
 
 class IssueRelationListCreateAPIEndpoint(BaseAPIView):
     """Issue Relation List and Create Endpoint"""
+
+    resource_type = "work_item"
 
     serializer_class = IssueRelationSerializer
     model = IssueRelation

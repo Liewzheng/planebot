@@ -82,6 +82,8 @@ from plane.utils.openapi import (
 class CycleListCreateAPIEndpoint(BaseAPIView):
     """Cycle List and Create Endpoint"""
 
+    resource_type = "cycle"
+
     serializer_class = CycleSerializer
     model = Cycle
     webhook_event = "cycle"
@@ -360,6 +362,8 @@ class CycleListCreateAPIEndpoint(BaseAPIView):
 class CycleListLiteAPIEndpoint(BaseAPIView):
     """Cycle Lite List Endpoint"""
 
+    resource_type = "cycle"
+
     serializer_class = CycleLiteSerializer
     model = Cycle
     permission_classes = [ProjectEntityPermission]
@@ -410,6 +414,7 @@ class CycleDetailAPIEndpoint(BaseAPIView):
     This viewset automatically provides `retrieve`, `update` and `destroy` actions related to cycle.
     """
 
+    resource_type = "cycle"
     serializer_class = CycleSerializer
     model = Cycle
     webhook_event = "cycle"
@@ -662,6 +667,8 @@ class CycleDetailAPIEndpoint(BaseAPIView):
 class CycleArchiveUnarchiveAPIEndpoint(BaseAPIView):
     """Cycle Archive and Unarchive Endpoint"""
 
+    resource_type = "cycle"
+
     permission_classes = [ProjectEntityPermission]
     use_read_replica = True
 
@@ -851,6 +858,8 @@ class CycleArchiveUnarchiveAPIEndpoint(BaseAPIView):
 
 class CycleIssueListCreateAPIEndpoint(BaseAPIView):
     """Cycle Issue List and Create Endpoint"""
+
+    resource_type = "cycle"
 
     serializer_class = CycleIssueSerializer
     model = CycleIssue
@@ -1067,6 +1076,8 @@ class CycleIssueListCreateAPIEndpoint(BaseAPIView):
 
 
 class CycleIssueDetailAPIEndpoint(BaseAPIView):
+
+    resource_type = "cycle"
     """
     This viewset automatically provides `list`, `create`,
     and `destroy` actions related to cycle issues.
@@ -1171,6 +1182,8 @@ class CycleIssueDetailAPIEndpoint(BaseAPIView):
 
 
 class TransferCycleIssueAPIEndpoint(BaseAPIView):
+
+    resource_type = "cycle"
     """
     This viewset provides `create` actions for transferring the issues into a particular cycle.
 

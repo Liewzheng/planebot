@@ -78,6 +78,8 @@ from plane.utils.openapi import (
 class ModuleListCreateAPIEndpoint(BaseAPIView):
     """Module List and Create Endpoint"""
 
+    resource_type = "module"
+
     serializer_class = ModuleSerializer
     model = Module
     webhook_event = "module"
@@ -281,6 +283,8 @@ class ModuleListCreateAPIEndpoint(BaseAPIView):
 class ModuleListLiteAPIEndpoint(BaseAPIView):
     """Module Lite List Endpoint"""
 
+    resource_type = "module"
+
     serializer_class = ModuleLiteSerializer
     model = Module
     permission_classes = [ProjectEntityPermission]
@@ -328,6 +332,8 @@ class ModuleListLiteAPIEndpoint(BaseAPIView):
 
 class ModuleDetailAPIEndpoint(BaseAPIView):
     """Module Detail Endpoint"""
+
+    resource_type = "module"
 
     model = Module
     permission_classes = [ProjectEntityPermission]
@@ -586,6 +592,8 @@ class ModuleDetailAPIEndpoint(BaseAPIView):
 class ModuleIssueListCreateAPIEndpoint(BaseAPIView):
     """Module Work Item List and Create Endpoint"""
 
+    resource_type = "module"
+
     serializer_class = ModuleIssueSerializer
     model = ModuleIssue
     webhook_event = "module_issue"
@@ -784,6 +792,8 @@ class ModuleIssueListCreateAPIEndpoint(BaseAPIView):
 
 
 class ModuleIssueDetailAPIEndpoint(BaseAPIView):
+
+    resource_type = "module"
     """
     This viewset automatically provides `list`, `create`, `retrieve`,
     `update` and `destroy` actions related to module work items.
@@ -941,6 +951,7 @@ class ModuleIssueDetailAPIEndpoint(BaseAPIView):
 class ModuleArchiveUnarchiveAPIEndpoint(BaseAPIView):
     permission_classes = [ProjectEntityPermission]
     use_read_replica = True
+    resource_type = "module"
 
     def get_queryset(self):
         return (

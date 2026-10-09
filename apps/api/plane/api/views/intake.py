@@ -55,6 +55,8 @@ from plane.utils.openapi import (
 class IntakeIssueListCreateAPIEndpoint(BaseAPIView):
     """Intake Work Item List and Create Endpoint"""
 
+    resource_type = "intake"
+
     serializer_class = IntakeIssueSerializer
 
     model = Intake
@@ -226,6 +228,8 @@ class IntakeIssueListCreateAPIEndpoint(BaseAPIView):
 
 class IntakeIssueDetailAPIEndpoint(BaseAPIView):
     """Intake Issue API Endpoint"""
+
+    resource_type = "intake"
 
     permission_classes = [ProjectLitePermission]
 
