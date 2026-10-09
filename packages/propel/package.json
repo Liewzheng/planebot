@@ -31,6 +31,7 @@
     "./icon-button": "./dist/icon-button/index.js",
     "./icons": "./dist/icons/index.js",
     "./input": "./dist/input/index.js",
+    "./logo-spinner": "./dist/logo-spinner/index.js",
     "./menu": "./dist/menu/index.js",
     "./pill": "./dist/pill/index.js",
     "./popover": "./dist/popover/index.js",

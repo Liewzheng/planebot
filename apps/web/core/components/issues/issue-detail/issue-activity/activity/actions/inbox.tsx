@@ -5,6 +5,8 @@
  */
 
 import { observer } from "mobx-react";
+// plane imports
+import { useTranslation } from "@plane/i18n";
 // hooks
 import { IntakeOutline } from "@makeplane/propel/icons";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
@@ -17,6 +19,7 @@ type TIssueInboxActivity = { activityId: string; ends: "top" | "bottom" | undefi
 export const IssueInboxActivity = observer(function IssueInboxActivity(props: TIssueInboxActivity) {
   const { activityId, ends } = props;
   // hooks
+  const { t } = useTranslation();
   const {
     activity: { getActivityById },
   } = useIssueDetail();
@@ -26,15 +29,15 @@ export const IssueInboxActivity = observer(function IssueInboxActivity(props: TI
   const getInboxActivityMessage = () => {
     switch (activity?.verb) {
       case "-1":
-        return "declined this work item from intake.";
+        return t("issue_activity.inbox_declined");
       case "0":
-        return "snoozed this work item.";
+        return t("issue_activity.inbox_snoozed");
       case "1":
-        return "accepted this work item from intake.";
+        return t("issue_activity.inbox_accepted");
       case "2":
-        return "declined this work item from intake by marking a duplicate work item.";
+        return t("issue_activity.inbox_declined_duplicate");
       default:
-        return "updated intake work item status.";
+        return t("issue_activity.inbox_updated");
     }
   };
 

@@ -6,6 +6,8 @@
 
 import { observer } from "mobx-react";
 import { PriorityOutline } from "@makeplane/propel/icons";
+// plane imports
+import { useTranslation } from "@plane/i18n";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 // components
@@ -16,6 +18,7 @@ type TIssuePriorityActivity = { activityId: string; showIssue?: boolean; ends: "
 export const IssuePriorityActivity = observer(function IssuePriorityActivity(props: TIssuePriorityActivity) {
   const { activityId, showIssue = true, ends } = props;
   // hooks
+  const { t } = useTranslation();
   const {
     activity: { getActivityById },
   } = useIssueDetail();
@@ -30,8 +33,9 @@ export const IssuePriorityActivity = observer(function IssuePriorityActivity(pro
       ends={ends}
     >
       <>
-        set the priority to <span className="font-medium text-primary">{activity.new_value}</span>
-        {showIssue ? ` for ` : ``}
+        {t("issue_activity.priority_set")}
+        <span className="font-medium text-primary">{activity.new_value}</span>
+        {showIssue ? t("issue_activity.preposition_for") : ""}
         {showIssue && <IssueLink activityId={activityId} />}.
       </>
     </IssueActivityBlockComponent>

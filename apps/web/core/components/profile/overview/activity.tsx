@@ -29,7 +29,7 @@ export const ProfileActivity = observer(function ProfileActivity() {
   const { workspaceSlug, userId } = useParams();
   // store hooks
   const { data: currentUser } = useUser();
-  const { t } = useTranslation();
+  const { t, currentLocale } = useTranslation();
 
   const { data: userProfileActivity } = useSWR(
     workspaceSlug && userId ? USER_PROFILE_ACTIVITY(workspaceSlug.toString(), userId.toString(), {}) : null,
@@ -66,17 +66,21 @@ export const ProfileActivity = observer(function ProfileActivity() {
                 <div className="-mt-1 w-4/5 break-words">
                   <p className="inline text-13 text-secondary">
                     <span className="font-medium text-primary">
-                      {currentUser?.id === activity.actor_detail?.id ? "You" : activity.actor_detail?.display_name}{" "}
+                      {currentUser?.id === activity.actor_detail?.id
+                        ? t("you")
+                        : activity.actor_detail?.display_name}{" "}
                     </span>
                     {activity.field ? (
                       <ActivityMessage activity={activity} showIssue />
                     ) : (
                       <span>
-                        created <IssueLink activity={activity} />
+                        {t("issue_activity.created")} <IssueLink activity={activity} />
                       </span>
                     )}
                   </p>
-                  <p className="text-11 whitespace-nowrap text-secondary">{calculateTimeAgo(activity.created_at)}</p>
+                  <p className="text-11 whitespace-nowrap text-secondary">
+                    {calculateTimeAgo(activity.created_at, currentLocale)}
+                  </p>
                 </div>
               </div>
             ))}

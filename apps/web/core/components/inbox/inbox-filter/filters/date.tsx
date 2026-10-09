@@ -90,7 +90,7 @@ export const FilterDate = observer(function FilterDate(props: Props) {
               <FilterOption
                 isChecked={isCustomDateSelected()}
                 onClick={handleCustomDate}
-                title={t("custom theme")}
+                title={t("common.custom_date")}
                 multiple={false}
               />
             </>

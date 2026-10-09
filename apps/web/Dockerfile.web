@@ -38,6 +38,10 @@ RUN corepack enable pnpm
 # Copy full directory structure before fetch to ensure all package.json files are available
 COPY --from=builder /app/out/full/ .
 COPY turbo.json turbo.json
+# pnpm-managed patches come out of the warm store, but the root postinstall
+# applies patches/*.patch by hand (see patches/apply-y-prosemirror-patch.mjs),
+# so the directory has to exist before installing.
+COPY patches patches
 
 # Fetch dependencies to cache store, then install offline with dev deps
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm fetch --store-dir=/pnpm/store
@@ -70,6 +74,7 @@ ENV VITE_WEB_BASE_URL=$VITE_WEB_BASE_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV TURBO_TELEMETRY_DISABLED=1
 
+RUN pnpm --filter=./packages/utils run build
 RUN pnpm turbo run build --filter=web
 
 # *****************************************************************************

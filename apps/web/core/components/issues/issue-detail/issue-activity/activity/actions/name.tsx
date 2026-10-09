@@ -6,6 +6,8 @@
 
 import { observer } from "mobx-react";
 import { TextOutline } from "@makeplane/propel/icons";
+// plane imports
+import { useTranslation } from "@plane/i18n";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 // components
@@ -16,6 +18,7 @@ type TIssueNameActivity = { activityId: string; ends: "top" | "bottom" | undefin
 export const IssueNameActivity = observer(function IssueNameActivity(props: TIssueNameActivity) {
   const { activityId, ends } = props;
   // hooks
+  const { t } = useTranslation();
   const {
     activity: { getActivityById },
   } = useIssueDetail();
@@ -29,7 +32,7 @@ export const IssueNameActivity = observer(function IssueNameActivity(props: TIss
       activityId={activityId}
       ends={ends}
     >
-      <>set the name to {activity.new_value}.</>
+      <>{t("issue_activity.name_set", { name: activity.new_value })}</>
     </IssueActivityBlockComponent>
   );
 });
