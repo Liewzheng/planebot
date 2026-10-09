@@ -5,9 +5,6 @@
 # Python imports
 import logging
 
-# Django imports
-from django.db import transaction
-
 # Third party imports
 from rest_framework import serializers
 
@@ -146,49 +143,45 @@ class PageCreateSerializer(BaseSerializer):
         # Get the workspace id from the project
         project = Project.objects.get(pk=project_id)
 
-        # A page that exists but has no project link is invisible in every list
-        # (they all filter through project_pages) and drops its labels silently
-        # if the label write fails, so the whole creation is one unit.
-        with transaction.atomic():
-            # Create the page
-            page = Page.objects.create(
-                **validated_data,
-                owned_by_id=owned_by_id,
-                workspace_id=project.workspace_id,
+        # Create the page
+        page = Page.objects.create(
+            **validated_data,
+            owned_by_id=owned_by_id,
+            workspace_id=project.workspace_id,
+        )
+
+        # Create the project page
+        ProjectPage.objects.create(
+            workspace_id=page.workspace_id,
+            project_id=project_id,
+            page_id=page.id,
+            created_by_id=page.created_by_id,
+            updated_by_id=page.updated_by_id,
+        )
+
+        # Create page labels
+        if labels is not None:
+            PageLabel.objects.bulk_create(
+                [
+                    PageLabel(
+                        label=label,
+                        page=page,
+                        workspace_id=page.workspace_id,
+                        created_by_id=page.created_by_id,
+                        updated_by_id=page.updated_by_id,
+                    )
+                    for label in labels
+                ],
+                batch_size=10,
             )
 
-            # Create the project page
-            ProjectPage.objects.create(
-                workspace_id=page.workspace_id,
-                project_id=project_id,
-                page_id=page.id,
-                created_by_id=page.created_by_id,
-                updated_by_id=page.updated_by_id,
-            )
+        # frontmatter tags become project labels on top of the explicit ones
+        self._sync_frontmatter_tags(page, project_id)
 
-            # Create page labels
-            if labels is not None:
-                PageLabel.objects.bulk_create(
-                    [
-                        PageLabel(
-                            label=label,
-                            page=page,
-                            workspace_id=page.workspace_id,
-                            created_by_id=page.created_by_id,
-                            updated_by_id=page.updated_by_id,
-                        )
-                        for label in labels
-                    ],
-                    batch_size=10,
-                )
-
-            # frontmatter tags become project labels on top of the explicit ones
-            self._sync_frontmatter_tags(page, project_id)
-
-            metadata = getattr(self, "_frontmatter_metadata", None)
-            if metadata:
-                page.frontmatter = with_created_date(json_safe_metadata(metadata), page.created_at)
-                page.save(update_fields=["frontmatter"])
+        metadata = getattr(self, "_frontmatter_metadata", None)
+        if metadata:
+            page.frontmatter = with_created_date(json_safe_metadata(metadata), page.created_at)
+            page.save(update_fields=["frontmatter"])
         return page
 
 
@@ -227,23 +220,20 @@ class PageUpdateSerializer(PageCreateSerializer):
     def update(self, instance, validated_data):
         labels = validated_data.pop("labels", None)
         if labels is not None:
-            # Replace-all: the delete and the re-insert must not be separable, or
-            # a failed insert leaves the page with no labels at all.
-            with transaction.atomic():
-                PageLabel.objects.filter(page=instance).delete()
-                PageLabel.objects.bulk_create(
-                    [
-                        PageLabel(
-                            label=label,
-                            page=instance,
-                            workspace_id=instance.workspace_id,
-                            created_by_id=instance.created_by_id,
-                            updated_by_id=instance.updated_by_id,
-                        )
-                        for label in labels
-                    ],
-                    batch_size=10,
-                )
+            PageLabel.objects.filter(page=instance).delete()
+            PageLabel.objects.bulk_create(
+                [
+                    PageLabel(
+                        label=label,
+                        page=instance,
+                        workspace_id=instance.workspace_id,
+                        created_by_id=instance.created_by_id,
+                        updated_by_id=instance.updated_by_id,
+                    )
+                    for label in labels
+                ],
+                batch_size=10,
+            )
 
         page = super().update(instance, validated_data)
         # frontmatter tags become project labels on top of the explicit ones
