@@ -112,6 +112,10 @@ export class CoreRootStore {
     this.theme = new ThemeStore();
     this.workspaceRoot = new WorkspaceRootStore(this);
     this.projectRoot = new ProjectRootStore(this);
+    // M10 — the member root now owns the principal store (the
+    // dispatch endpoint payload), so the member / webhook
+    // consumers can read the unified visibility + permissions
+    // answer from one place.
     this.memberRoot = new MemberRootStore(this);
     this.cycle = new CycleStore(this);
     this.cycleFilter = new CycleFilterStore(this);
