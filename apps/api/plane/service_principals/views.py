@@ -50,12 +50,11 @@ def _reject_if_sp_token(request):
     is a no-op for them. Three legitimate surfaces can carry a token:
 
     * ``request.auth`` is the resolved ``APIToken`` instance (when the request
-      ran through ``APIKeyAuthentication`` and that path is wired in);
-    * ``request.auth`` is the token string (the current shape returned by
-      ``validate_api_token``);
+      ran through ``APIKeyAuthentication``);
+    * ``request.auth`` is the token string (a legacy shape, kept for
+      compatibility with older DRF code paths);
     * the raw ``X-Api-Key`` header is present without APIKeyAuthentication
-      running yet (defensive header probing / integration tests; M8/M9 will
-      close that loop).
+      running yet (defensive header probing / integration tests).
 
     Each is checked against the ``APIToken.principal_type`` column. ``None``
     is returned when the caller has no service-token signal, otherwise a 403

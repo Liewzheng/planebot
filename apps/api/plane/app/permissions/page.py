@@ -8,11 +8,53 @@ from plane.app.permissions import ROLE
 
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 
+from plane.core.authz import (
+    Action as AuthzAction,
+    AuthzContext,
+    authorize,
+    principal_from_request,
+)
+from plane.core.authz.principal import ServicePrincipalAuthz
+
 
 # Permission Mappings for workspace members
 ADMIN = ROLE.ADMIN.value
 MEMBER = ROLE.MEMBER.value
 GUEST = ROLE.GUEST.value
+
+
+def _resource_type_for_view(view) -> str | None:
+    """``authz_resource_type`` the view declares for SP authorization."""
+    return getattr(view, "authz_resource_type", None)
+
+
+def _action_for_method(method: str) -> str:
+    if method in ("GET", "HEAD", "OPTIONS"):
+        return AuthzAction.READ
+    if method == "POST":
+        return AuthzAction.CREATE
+    if method in ("PUT", "PATCH"):
+        return AuthzAction.UPDATE
+    if method == "DELETE":
+        return AuthzAction.DELETE
+    return AuthzAction.READ
+
+
+def _sp_has_permission(request, view) -> bool:
+    """``True`` when the SP satisfies authorize() for ``authz_resource_type``."""
+    principal = principal_from_request(request)
+    if not isinstance(principal, ServicePrincipalAuthz):
+        return False
+
+    resource_type = _resource_type_for_view(view)
+    if not resource_type:
+        return False
+
+    action = _action_for_method(request.method)
+    slug = view.kwargs.get("slug")
+    project_id = view.kwargs.get("project_id")
+    ctx = AuthzContext(workspace_slug=slug, project_id=project_id)
+    return bool(authorize(principal, action, resource_type, ctx=ctx).allowed)
 
 
 class ProjectPagePermission(BasePermission):
@@ -27,6 +69,14 @@ class ProjectPagePermission(BasePermission):
         """
         if request.user.is_anonymous:
             return False
+
+        # Service principals flow through the four-step authorize() chain.
+        # The view opts in by setting ``authz_resource_type``; without it the
+        # SP request is denied (default-deny). The page-level visibility logic
+        # below does not apply to SPs — the engine decides via scope/grant
+        # rather than the page ownership / access columns.
+        if getattr(request.user, "_is_service_principal_proxy", False):
+            return _sp_has_permission(request, view)
 
         user_id = request.user.id
         slug = view.kwargs.get("slug")
@@ -136,3 +186,4 @@ class ProjectPagePermission(BasePermission):
         if not project_member_exists:
             return False
         return True
+

@@ -36,6 +36,7 @@ from plane.app.views import (
     WorkspaceHomePreferenceViewSet,
     WorkspaceStickyViewSet,
     WorkspaceUserPreferenceViewSet,
+    PrincipalDispatchEndpoint,
 )
 
 
@@ -256,5 +257,14 @@ urlpatterns = [
         "workspaces/<str:slug>/sidebar-preferences/",
         WorkspaceUserPreferenceViewSet.as_view(),
         name="workspace-user-preference",
+    ),
+    # Unified principal dispatch (M9).
+    # Hands the front end the visible-member set and effective permissions
+    # so the picker / filter / mention / affordance state stops being
+    # computed client-side.
+    path(
+        "workspaces/<str:slug>/principal/permissions/",
+        PrincipalDispatchEndpoint.as_view(),
+        name="principal-dispatch",
     ),
 ]
