@@ -6,13 +6,13 @@
 
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 // plane imports
-import { ImageFullScreenModal, type TDisplayConfig } from "@plane/editor";
+import { ImageFullScreenModal, sanitizePageVersionHTML, type TDisplayConfig } from "@plane/editor";
+import { useTranslation } from "@plane/i18n";
 import type { TPageVersion } from "@plane/types";
 import { Loader } from "@plane/ui";
 import { cn, getEditorAssetSrc, getPageName } from "@plane/utils";
-import DOMPurify from "dompurify";
 // hooks
 import { usePageFilters } from "@/hooks/use-page-filters";
 // plane web hooks
@@ -47,20 +47,20 @@ const applyDimensionStyle = (el: HTMLElement, attr: "width" | "height") => {
 
 // static images open the full-screen viewer on click/keyboard activation, so
 // they need the same affordances the editor's image node view gets
-const makeImageInteractive = (img: HTMLImageElement) => {
+const makeImageInteractive = (img: HTMLImageElement, label: string) => {
   img.classList.add("cursor-zoom-in");
   img.setAttribute("tabindex", "0");
   img.setAttribute("role", "button");
-  img.setAttribute("aria-label", "View image full screen");
+  img.setAttribute("aria-label", label);
 };
 
 // Version snapshots are immutable, so they are rendered as sanitized static HTML
 // instead of mounting a second (read-only) editor instance. The stored description_html
 // is class-less server-generated markup, so re-apply the block class hooks the client
 // editor adds (starter-kit) to keep the read-mode typography rules matching.
-const sanitizeVersionHTML = (html: string, workspaceSlug?: string, projectId?: string): string => {
+const sanitizeVersionHTML = (html: string, imageLabel: string, workspaceSlug?: string, projectId?: string): string => {
   const container = document.createElement("div");
-  container.innerHTML = DOMPurify.sanitize(html, { FORBID_ATTR: ["style"] });
+  container.innerHTML = sanitizePageVersionHTML(html);
   container.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach((el) => el.classList.add("editor-heading-block"));
   container.querySelectorAll("p").forEach((el) => el.classList.add("editor-paragraph-block"));
   // resolve bare asset ids in image sources
@@ -69,7 +69,7 @@ const sanitizeVersionHTML = (html: string, workspaceSlug?: string, projectId?: s
     if (src) img.setAttribute("src", resolveAssetSrc(src, workspaceSlug, projectId));
     applyDimensionStyle(img, "width");
     applyDimensionStyle(img, "height");
-    makeImageInteractive(img);
+    makeImageInteractive(img, imageLabel);
   });
   // custom-image nodes serialize as <image-component>; swap them for plain <img>
   container.querySelectorAll("image-component").forEach((component) => {
@@ -82,7 +82,7 @@ const sanitizeVersionHTML = (html: string, workspaceSlug?: string, projectId?: s
     });
     applyDimensionStyle(img, "width");
     applyDimensionStyle(img, "height");
-    makeImageInteractive(img);
+    makeImageInteractive(img, imageLabel);
     component.replaceWith(img);
   });
   return container.innerHTML;
@@ -94,6 +94,8 @@ export const PagesVersionEditor = observer(function PagesVersionEditor(props: TV
   const { fontSize, fontStyle, isFullWidth } = usePageFilters();
   // route params
   const { workspaceSlug, projectId } = useParams();
+  // translation
+  const { t } = useTranslation();
   // full-screen image preview state
   const [fullScreenImage, setFullScreenImage] = useState<{ src: string; aspectRatio: number; width: string } | null>(
     null
@@ -141,6 +143,21 @@ export const PagesVersionEditor = observer(function PagesVersionEditor(props: TV
     wideLayout: isFullWidth,
   };
 
+  // Sanitizing walks the whole snapshot (DOMParser + DOMPurify + serialization), so
+  // it runs once per revision instead of on every render (full-screen toggle, theme).
+  const sanitizedDescriptionHTML = useMemo(
+    () =>
+      versionDetails
+        ? sanitizeVersionHTML(
+            versionDetails.description_html ?? "",
+            t("page_version.view_image_full_screen"),
+            workspaceSlug,
+            projectId
+          )
+        : "",
+    [versionDetails, t, workspaceSlug, projectId]
+  );
+
   if (!versionDetails)
     return (
       <div className="size-full px-5">
@@ -183,12 +200,10 @@ export const PagesVersionEditor = observer(function PagesVersionEditor(props: TV
       </div>
     );
 
-  const sanitizedDescriptionHTML = sanitizeVersionHTML(versionDetails.description_html ?? "", workspaceSlug, projectId);
-
   if (!sanitizedDescriptionHTML)
     return (
       <div className="grid h-full place-items-center px-5">
-        <p className="text-13 text-tertiary">This version has no content.</p>
+        <p className="text-13 text-tertiary">{t("page_version.no_content")}</p>
       </div>
     );
 

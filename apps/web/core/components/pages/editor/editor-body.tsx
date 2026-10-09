@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { observer } from "mobx-react";
 // plane imports
 import { LIVE_BASE_PATH, LIVE_BASE_URL } from "@plane/constants";
-import { CollaborativeDocumentEditorWithRef } from "@plane/editor";
+import { CollaborativeDocumentEditorWithRef, documentStamp } from "@plane/editor";
 import type {
   CollaborationState,
   EditorRefApi,
@@ -74,6 +74,8 @@ type Props = {
   storeType: EPageStoreType;
   customRealtimeEventHandlers?: TCustomEventHandlers;
   extendedEditorProps: TExtendedEditorExtensionsConfig;
+  /** an unpublished body to start editing from (the author's own draft) */
+  draftHtml?: string | null;
   isFetchingFallbackBinary?: boolean;
   onCollaborationStateChange?: (state: CollaborationState) => void;
 };
@@ -93,6 +95,7 @@ export const PageEditorBody = observer(function PageEditorBody(props: Props) {
     projectId,
     workspaceSlug,
     extendedEditorProps,
+    draftHtml,
     isFetchingFallbackBinary,
     onCollaborationStateChange,
   } = props;
@@ -224,6 +227,10 @@ export const PageEditorBody = observer(function PageEditorBody(props: Props) {
     }
   }, [webhookConnectionParams]);
 
+  // Which revision the served body is: the collaborative session only merges a
+  // locally cached document when it descends from it (see document-stamp)
+  const contentStamp = useMemo(() => documentStamp(page.description_html), [page.description_html]);
+
   const userConfig = useMemo(
     () => ({
       id: currentUser?.id ?? "",
@@ -305,7 +312,9 @@ export const PageEditorBody = observer(function PageEditorBody(props: Props) {
             onAssetChange={updateAssetsList}
             issueReference={issueReference}
             extendedEditorProps={extendedEditorProps}
+            draftHtml={draftHtml}
             isFetchingFallbackBinary={isFetchingFallbackBinary}
+            contentStamp={contentStamp}
           />
         </div>
       </div>

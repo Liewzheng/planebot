@@ -19,15 +19,35 @@ import type { TPageInstance } from "@/store/pages/base-page";
 
 type Props = {
   handleOpenNavigationPane: () => void;
+  isDirty: boolean;
   isEditing: boolean;
   isNavigationPaneOpen: boolean;
-  onFinishEditing: () => void;
+  isSaving: boolean;
+  lastSavedAt: string | null;
+  /** publishes the page and leaves edit mode */
+  onSave: () => void;
+  /** the document is loaded, so editing can start from the published revision */
+  canStartEditing: boolean;
+  /** keeps the work as the caller's own unpublished draft, then leaves edit mode */
+  onStashDraft: () => void;
   onStartEditing: () => void;
   page: TPageInstance;
 };
 
 export const PageEditorToolbarRoot = observer(function PageEditorToolbarRoot(props: Props) {
-  const { handleOpenNavigationPane, isEditing, isNavigationPaneOpen, onFinishEditing, onStartEditing, page } = props;
+  const {
+    handleOpenNavigationPane,
+    isDirty,
+    isEditing,
+    isNavigationPaneOpen,
+    isSaving,
+    lastSavedAt,
+    canStartEditing,
+    onSave,
+    onStashDraft,
+    onStartEditing,
+    page,
+  } = props;
   // translation
   const { t } = useTranslation();
   // derived values
@@ -40,9 +60,20 @@ export const PageEditorToolbarRoot = observer(function PageEditorToolbarRoot(pro
   // derived values
   // the rich toolbar is only shown while actively editing; reading mode gets the slim corner bar
   const shouldHideToolbar = !isStickyToolbarEnabled || !isContentEditable || !isEditing;
+  // the page is only ever written to the server on demand, so the unsaved state
+  // has to be visible while it lasts
+  const saveStatus = isSaving
+    ? t("page_editor.saving")
+    : isDirty
+      ? t("page_editor.unsaved_status")
+      : lastSavedAt
+        ? t("page_editor.published_status")
+        : null;
 
   return (
-    <>
+    // relative: the slim corner bar below is positioned against the toolbar's
+    // own block, so it never overlaps content rendered above it (the save banner)
+    <div className="relative">
       <div
         id="page-toolbar-container"
         className={cn("max-h-[52px] overflow-auto transition-all duration-300 ease-linear", {
@@ -60,15 +91,39 @@ export const PageEditorToolbarRoot = observer(function PageEditorToolbarRoot(pro
           <div className="flex w-full max-w-full items-center justify-between">
             <div className="flex-1">{editorRef && <PageToolbar editorRef={editorRef} />}</div>
             <div className="flex items-center gap-2">
+              {saveStatus && (
+                <span
+                  className={cn("text-13", {
+                    "text-secondary": !isDirty || isSaving,
+                    "text-amber-500": isDirty && !isSaving,
+                  })}
+                >
+                  {saveStatus}
+                </span>
+              )}
               {isEditing && (
                 <button
                   type="button"
-                  onClick={onFinishEditing}
-                  className="flex items-center gap-1 rounded-sm border border-subtle bg-layer-1 px-2 py-1 text-13 font-medium text-secondary transition-colors hover:bg-layer-transparent-hover hover:text-primary"
+                  onClick={onStashDraft}
+                  disabled={isSaving}
+                  className="rounded-sm px-2 py-1 text-13 font-medium text-secondary transition-colors hover:bg-layer-transparent-hover hover:text-primary disabled:opacity-60"
                 >
-                  <TickOutline className="size-3.5" />
-                  {t("page_editor.finish_editing")}
+                  {t("page_editor.stash_draft")}
                 </button>
+              )}
+              {isEditing && (
+                <Tooltip label={t("page_editor.publish_and_finish")}>
+                  <button
+                    type="button"
+                    onClick={onSave}
+                    disabled={isSaving}
+                    aria-label={t("page_editor.publish_and_finish")}
+                    className="flex items-center gap-1 rounded-sm border border-subtle bg-layer-1 px-2 py-1 text-13 font-medium text-secondary transition-colors hover:bg-layer-transparent-hover hover:text-primary disabled:opacity-60"
+                  >
+                    <TickOutline className="size-3.5" />
+                    {isSaving ? t("page_editor.publishing") : t("page_editor.publish")}
+                  </button>
+                </Tooltip>
               )}
               {!isNavigationPaneOpen && (
                 <button
@@ -84,13 +139,14 @@ export const PageEditorToolbarRoot = observer(function PageEditorToolbarRoot(pro
         </div>
       </div>
       {shouldHideToolbar && (
-        <div className="absolute top-0 right-0 z-10 flex h-[52px] items-center gap-2 px-page-x">
+        <div className="flex h-[52px] items-center justify-end gap-2 px-page-x">
           {isContentEditable && !isEditing && (
             <Tooltip label={t("page_editor.start_editing")}>
               <button
                 type="button"
                 onClick={onStartEditing}
-                className="flex items-center gap-1 rounded-sm border border-subtle bg-layer-1 px-2 py-1 text-13 font-medium text-secondary transition-colors hover:bg-layer-transparent-hover hover:text-primary"
+                disabled={!canStartEditing}
+                className="flex items-center gap-1 rounded-sm border border-subtle bg-layer-1 px-2 py-1 text-13 font-medium text-secondary transition-colors hover:bg-layer-transparent-hover hover:text-primary disabled:opacity-60"
                 aria-label={t("page_editor.start_editing")}
               >
                 <EditOutline className="size-3.5" />
@@ -112,6 +168,6 @@ export const PageEditorToolbarRoot = observer(function PageEditorToolbarRoot(pro
           )}
         </div>
       )}
-    </>
+    </div>
   );
 });

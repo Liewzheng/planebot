@@ -11,6 +11,7 @@ import type { CollaborationState, EditorRefApi } from "@plane/editor";
 import type { TDocumentPayload, TPage, TPageVersion, TWebhookConnectionQueryParams } from "@plane/types";
 // hooks
 import { usePageFallback } from "@/hooks/use-page-fallback";
+import { usePageSave } from "@/hooks/use-page-save";
 import type { PageUpdateHandler, TCustomEventHandlers } from "@/hooks/use-realtime-page-events";
 import { usePagesPaneExtensions, useExtendedEditorProps } from "@/hooks/pages";
 import type { EPageStoreType } from "@/hooks/store";
@@ -23,15 +24,22 @@ import { PagesVersionEditor } from "../version/editor";
 import { ContentLimitBanner } from "./content-limit-banner";
 import { PageEditorBody } from "./editor-body";
 import type { TEditorBodyConfig, TEditorBodyHandlers } from "./editor-body";
+import { PageSaveBanner } from "./save-banner";
 import { PageEditorToolbarRoot } from "./toolbar";
 
 export type TPageRootHandlers = {
   create: (payload: Partial<TPage>) => Promise<Partial<TPage> | undefined>;
+  /** the caller's own unpublished revision (PLANE-77) */
+  fetchDraft: () => Promise<{ description_html: string | null } | undefined>;
+  updateDraft: (payload: { description_html: string }) => Promise<{ description_html: string } | undefined>;
+  deleteDraft: () => Promise<void>;
   fetchAllVersions: (pageId: string) => Promise<TPageVersion[] | undefined>;
   fetchDescriptionBinary: () => Promise<ArrayBuffer>;
   fetchVersionDetails: (pageId: string, versionId: string) => Promise<TPageVersion | undefined>;
   restoreVersion: (pageId: string, versionId: string) => Promise<void>;
-  updateDescription: (document: TDocumentPayload) => Promise<void>;
+  updateDescription: (document: TDocumentPayload) => Promise<{ updated_at?: string } | undefined>;
+  /** renames the page: the title is part of what an author publishes */
+  updateName: (name: string) => Promise<void>;
 } & TEditorBodyHandlers;
 
 export type TPageRootConfig = TEditorBodyConfig;
@@ -46,6 +54,8 @@ type TPageRootProps = {
   workspaceSlug: string;
   customRealtimeEventHandlers?: TCustomEventHandlers;
 };
+
+
 
 export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
   const {
@@ -65,8 +75,16 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
   // reading mode is the default: the page opens read-only and only becomes
   // editable after the user explicitly clicks "Edit"
   const [isEditing, setIsEditing] = useState(false);
+  // an unpublished draft the next editing session starts from (PLANE-77)
+  const [draftToLoad, setDraftToLoad] = useState<string | null>(null);
+  // bumped whenever the editor is (re)created: the save hook re-anchors its
+  // baseline and dirty subscription to the new instance (edit mode toggles,
+  // draft restores)
+  const [editorEpoch, setEditorEpoch] = useState(0);
   // refs
   const editorRef = useRef<EditorRefApi>(null);
+  /** the page name as everyone else sees it, so publishing can tell if the title changed (PLANE-78) */
+  const publishedTitleRef = useRef<string | null>(null);
   // derived values
   const {
     id: pageId,
@@ -81,10 +99,97 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
     fetchPageDescription: handlers.fetchDescriptionBinary,
     page,
     collaborationState,
-    updatePageDescription: handlers.updateDescription,
-    // never write back from a reading-mode session (incl. the 30s auto-save)
-    enabled: isEditorEditable,
   });
+  // saving: nothing the editor does is written to the server until the user
+  // asks for it (PLANE-76)
+  const {
+    isDirty,
+    isSaving,
+    lastSavedAt,
+    draft,
+    serverDraft,
+    saveError,
+    draftError,
+    save,
+    stashAsDraft,
+    discardServerDraft,
+    discardDraft,
+  } = usePageSave({
+    pageId: page.id ?? "",
+    editorRef,
+    enabled: editorReady,
+    isEditing,
+    editorEpoch,
+    updateDescription: handlers.updateDescription,
+    fetchDraft: handlers.fetchDraft,
+    updateDraft: handlers.updateDraft,
+    deleteDraft: handlers.deleteDraft,
+    pageUpdatedAt: page.updated_at,
+    pageDescriptionHtml: page.description_html,
+  });
+  const draftConflict = draft?.reason === "conflict" ? (draft.conflict ?? null) : null;
+  // Editing starts from the shared document, so it has to be loaded: seeding a
+  // session from a document that has not arrived would publish an empty page.
+  const isDocumentReady =
+    !!collaborationState && (collaborationState.isServerSynced || collaborationState.isServerDisconnected);
+
+  const handleStartEditing = useCallback(() => {
+    publishedTitleRef.current = page.name ?? "";
+    setDraftToLoad(null);
+    setIsEditing(true);
+  }, [page.name]);
+
+  // Publishing is the way out of edit mode: one action, so the toolbar does not
+  // offer two buttons that both look like "finish" (PLANE-76). A publish that
+  // did not land keeps the editor open, with the banner explaining why.
+  // `Cmd`/`Ctrl`+`S` publishes without leaving.
+  const handlePublishAndFinish = useCallback(async () => {
+    const published = await save();
+    if (!published) return;
+
+    // The title travels with the content: it is part of the revision being
+    // published, and a rename is visible to everybody.
+    const title = (page.name ?? "").trim();
+    if (title && title !== publishedTitleRef.current) {
+      try {
+        await handlers.updateName(title);
+        publishedTitleRef.current = title;
+      } catch (error) {
+        console.error("Could not publish the page title:", error);
+      }
+    }
+
+    setIsEditing(false);
+  }, [handlers, page.name, save]);
+
+  // Stashing is the other way out of edit mode: the work is kept for this user
+  // only, and the page (what everybody else reads) stays on the published
+  // revision.
+  const handleStashDraft = useCallback(async () => {
+    const stashed = await stashAsDraft();
+    if (stashed) setIsEditing(false);
+  }, [stashAsDraft]);
+
+  // A draft is loaded INTO a new editing session, never into the shared
+  // document: writing it there is what would make it visible to others.
+  const handleLoadServerDraft = useCallback(() => {
+    if (!serverDraft) return;
+    publishedTitleRef.current = page.name ?? "";
+    setDraftToLoad(serverDraft);
+    setIsEditing(true);
+  }, [page.name, serverDraft]);
+
+  const handleDiscardServerDraft = useCallback(() => {
+    void discardServerDraft();
+  }, [discardServerDraft]);
+
+  const handleRestoreLocalDraft = useCallback(() => {
+    if (!draft) return;
+    publishedTitleRef.current = page.name ?? "";
+    setDraftToLoad(draft.html);
+    discardDraft();
+    setIsEditing(true);
+  }, [discardDraft, draft, page.name]);
 
   // leave editing mode when navigating to another page
   useEffect(() => {
@@ -94,6 +199,9 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
   const handleEditorReady = useCallback(
     (status: boolean) => {
       setEditorReady(status);
+      // every (re)creation of the editor invalidates the save hook's baseline
+      // and transaction subscription
+      if (status) setEditorEpoch((epoch) => epoch + 1);
       if (editorRef.current && !page.editor.editorRef) {
         setEditorRef(editorRef.current);
       }
@@ -147,12 +255,16 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
     projectId,
   });
 
+  // Restoring a revision is a write: it goes through the API (`/versions/<id>/restore/`),
+  // which rebuilds the document formats from the restored html and drops the
+  // collaborative document, so every client reloads the restored revision.
   const handleRestoreVersion = useCallback(
-    async (descriptionHTML: string) => {
-      editorRef.current?.clearEditor();
-      editorRef.current?.setEditorValue(descriptionHTML);
+    async (versionId: string) => {
+      const targetPageId = page.id;
+      if (!targetPageId) return;
+      await handlers.restoreVersion(targetPageId, versionId);
     },
-    [editorRef]
+    [handlers, page.id]
   );
 
   // reset editor ref on unmount
@@ -175,12 +287,29 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
           restoreEnabled={isEditorEditable}
           storeType={storeType}
         />
+        <PageSaveBanner
+          conflict={draftConflict}
+          draft={draft}
+          serverDraft={serverDraft}
+          saveError={draftError ? "draft-failed" : saveError}
+          isEditing={isEditing}
+          onDiscardDraft={discardDraft}
+          onDiscardServerDraft={handleDiscardServerDraft}
+          onLoadServerDraft={handleLoadServerDraft}
+          onRestoreDraft={handleRestoreLocalDraft}
+          onRetry={save}
+        />
         <PageEditorToolbarRoot
           handleOpenNavigationPane={handleOpenNavigationPane}
+          isDirty={isDirty}
           isEditing={isEditing}
           isNavigationPaneOpen={isNavigationPaneOpen}
-          onFinishEditing={() => setIsEditing(false)}
-          onStartEditing={() => setIsEditing(true)}
+          isSaving={isSaving}
+          lastSavedAt={lastSavedAt}
+          canStartEditing={isDocumentReady}
+          onSave={handlePublishAndFinish}
+          onStashDraft={handleStashDraft}
+          onStartEditing={handleStartEditing}
           page={page}
         />
         {showContentTooLargeBanner && <ContentLimitBanner className="px-page-x" />}
@@ -200,6 +329,7 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
           webhookConnectionParams={webhookConnectionParams}
           workspaceSlug={workspaceSlug}
           extendedEditorProps={extendedEditorProps}
+          draftHtml={draftToLoad}
           isFetchingFallbackBinary={isFetchingFallbackBinary}
           onCollaborationStateChange={setCollaborationState}
         />

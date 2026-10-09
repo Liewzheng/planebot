@@ -69,7 +69,7 @@ export function PageForm(props: Props) {
   return (
     <form onSubmit={handlePageFormSubmit}>
       <div className="space-y-5 p-5">
-        <h3 className="text-18 font-medium text-secondary">Create page</h3>
+        <h3 className="text-18 font-medium text-secondary">{t("page_actions.create_page")}</h3>
         <div className="flex h-9 w-full items-start gap-2">
           <EmojiPicker
             isOpen={isOpen}
@@ -129,9 +129,7 @@ export function PageForm(props: Props) {
               />
             </InputGroup>
             {isTitleLengthMoreThan255Character && (
-              <span className="text-11 text-danger-primary">
-                Max length of the name should be less than 255 characters
-              </span>
+              <span className="text-11 text-danger-primary">{t("page_actions.name_max_length_error")}</span>
             )}
           </div>
         </div>
@@ -148,7 +146,7 @@ export function PageForm(props: Props) {
         </div>
         <div className="flex items-center justify-end gap-2">
           <Button variant="secondary" size="lg" onClick={handleModalClose} tabIndex={getIndex("cancel")}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             variant="primary"
@@ -158,7 +156,7 @@ export function PageForm(props: Props) {
             disabled={isTitleLengthMoreThan255Character}
             tabIndex={getIndex("submit")}
           >
-            {isSubmitting ? "Creating" : "Create Page"}
+            {isSubmitting ? t("common.creating") : t("page_actions.create_page_button")}
           </Button>
         </div>
       </div>

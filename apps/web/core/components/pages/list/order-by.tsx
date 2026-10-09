@@ -6,6 +6,7 @@
 
 import { SortAscendingOutline, SortDescendingOutline, TickOutline } from "@makeplane/propel/icons";
 // plane imports
+import { useTranslation } from "@plane/i18n";
 import { getButtonStyling } from "@plane/propel/button";
 // types
 import type { TPageFiltersSortBy, TPageFiltersSortKey } from "@plane/types";
@@ -19,15 +20,16 @@ type Props = {
 
 const PAGE_SORTING_KEY_OPTIONS: {
   key: TPageFiltersSortKey;
-  label: string;
+  i18nLabel: string;
 }[] = [
-  { key: "name", label: "Name" },
-  { key: "created_at", label: "Date created" },
-  { key: "updated_at", label: "Date modified" },
+  { key: "name", i18nLabel: "common.name" },
+  { key: "created_at", i18nLabel: "page_list.sort.date_created" },
+  { key: "updated_at", i18nLabel: "page_list.sort.date_modified" },
 ];
 
 export function PageOrderByDropdown(props: Props) {
   const { onChange, sortBy, sortKey } = props;
+  const { t } = useTranslation();
 
   const orderByDetails = PAGE_SORTING_KEY_OPTIONS.find((option) => sortKey === option.key);
   const isDescending = sortBy === "desc";
@@ -37,7 +39,7 @@ export function PageOrderByDropdown(props: Props) {
       customButton={
         <div className={getButtonStyling("secondary", "lg")}>
           {!isDescending ? <SortAscendingOutline className="size-3" /> : <SortDescendingOutline className="size-3" />}
-          {orderByDetails?.label}
+          {orderByDetails ? t(orderByDetails.i18nLabel) : ""}
         </div>
       }
       placement="bottom-end"
@@ -54,7 +56,7 @@ export function PageOrderByDropdown(props: Props) {
             })
           }
         >
-          {option.label}
+          {t(option.i18nLabel)}
           {sortKey === option.key && <TickOutline className="h-3 w-3" />}
         </CustomMenu.MenuItem>
       ))}
@@ -68,7 +70,7 @@ export function PageOrderByDropdown(props: Props) {
             });
         }}
       >
-        Ascending
+        {t("common.order_by.asc")}
         {!isDescending && <TickOutline className="h-3 w-3" />}
       </CustomMenu.MenuItem>
       <CustomMenu.MenuItem
@@ -80,7 +82,7 @@ export function PageOrderByDropdown(props: Props) {
             });
         }}
       >
-        Descending
+        {t("common.order_by.desc")}
         {isDescending && <TickOutline className="h-3 w-3" />}
       </CustomMenu.MenuItem>
     </CustomMenu>

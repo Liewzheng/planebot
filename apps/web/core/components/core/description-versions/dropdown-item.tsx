@@ -26,7 +26,7 @@ export const DescriptionVersionsDropdownItem = observer(function DescriptionVers
   // derived values
   const versionCreator = version.owned_by ? getUserDetails(version.owned_by) : null;
   // translation
-  const { t } = useTranslation();
+  const { t, currentLocale } = useTranslation();
 
   return (
     <CustomMenu.MenuItem key={version.id} className="flex items-center gap-1" onClick={() => onClick(version.id)}>
@@ -40,7 +40,7 @@ export const DescriptionVersionsDropdownItem = observer(function DescriptionVers
       </span>
       <p className="flex items-center gap-1.5 text-11 text-secondary">
         <span className="font-medium">{versionCreator?.display_name ?? t("common.deactivated_user")}</span>
-        <span>{calculateTimeAgo(version.last_saved_at)}</span>
+        <span>{calculateTimeAgo(version.last_saved_at, currentLocale)}</span>
       </p>
     </CustomMenu.MenuItem>
   );
