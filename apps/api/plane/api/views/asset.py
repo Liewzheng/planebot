@@ -50,6 +50,8 @@ from plane.utils.exception_logger import log_exception
 class UserAssetEndpoint(BaseAPIView):
     """This endpoint is used to upload user profile images."""
 
+    resource_type = "asset"
+
     def asset_delete(self, asset_id):
         asset = FileAsset.objects.filter(id=asset_id).first()
         if asset is None:
@@ -248,6 +250,8 @@ class UserAssetEndpoint(BaseAPIView):
 class UserServerAssetEndpoint(BaseAPIView):
     """This endpoint is used to upload user profile images."""
 
+    resource_type = "asset"
+
     def asset_delete(self, asset_id):
         asset = FileAsset.objects.filter(id=asset_id).first()
         if asset is None:
@@ -404,6 +408,8 @@ class UserServerAssetEndpoint(BaseAPIView):
 
 class GenericAssetEndpoint(BaseAPIView):
     """This endpoint is used to upload generic assets that can be later bound to entities."""
+
+    resource_type = "asset"
 
     # The workspace is taken straight from the URL slug, so every method must
     # verify the caller is an active member of that workspace. Without this the

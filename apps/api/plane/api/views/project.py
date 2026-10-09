@@ -77,6 +77,8 @@ from plane.utils.openapi import (
 class ProjectListCreateAPIEndpoint(BaseAPIView):
     """Project List and Create Endpoint"""
 
+    resource_type = "project"
+
     serializer_class = ProjectSerializer
     model = Project
     webhook_event = "project"
@@ -84,6 +86,16 @@ class ProjectListCreateAPIEndpoint(BaseAPIView):
     use_read_replica = True
 
     def get_queryset(self):
+        # NOTE: owner-bounded row visibility — ``self.request.user`` is
+        # the human owner for SP requests (see
+        # ``APIKeyAuthentication._authenticate_service_token``). The
+        # queryset surfaces projects the owner is a member of plus public
+        # (network=2) ones; the SP's ProjectGrant set is NOT consulted
+        # here. ``resource_type="project"`` gates the request through
+        # authorize() before the queryset runs (workspace-wide writes
+        # fail the Q4 guard on POST/PUT/PATCH/DELETE anyway), but the
+        # read scope "projects the owner can see" is wider than "projects
+        # the SP is granted into" when the two diverge — review m8 P2-1.
         return (
             Project.objects.filter(workspace__slug=self.kwargs.get("slug"))
             .filter(
@@ -342,6 +354,8 @@ class ProjectListCreateAPIEndpoint(BaseAPIView):
 class ProjectListLiteAPIEndpoint(BaseAPIView):
     """Project Lite List Endpoint"""
 
+    resource_type = "project"
+
     serializer_class = ProjectLiteSerializer
     model = Project
     permission_classes = [ProjectBasePermission]
@@ -429,6 +443,8 @@ class ProjectListLiteAPIEndpoint(BaseAPIView):
 
 class ProjectDetailAPIEndpoint(BaseAPIView):
     """Project Endpoints to  update, retrieve and delete endpoint"""
+
+    resource_type = "project"
 
     serializer_class = ProjectSerializer
     model = Project
@@ -649,6 +665,8 @@ class ProjectDetailAPIEndpoint(BaseAPIView):
 class ProjectArchiveUnarchiveAPIEndpoint(BaseAPIView):
     """Project Archive and Unarchive Endpoint"""
 
+    resource_type = "project"
+
     permission_classes = [ProjectBasePermission]
 
     @project_docs(
@@ -714,6 +732,7 @@ ALLOWED_PROJECT_SUMMARY_FIELDS = [
 class ProjectSummaryAPIEndpoint(BaseAPIView):
     permission_classes = [WorkSpaceAdminPermission]
     use_read_replica = True
+    resource_type = "project"
 
     def get(self, request, slug, project_id):
         """Get project summary

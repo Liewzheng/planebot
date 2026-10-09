@@ -30,6 +30,7 @@ from plane.utils.openapi import (
 class ProjectEstimateAPIEndpoint(BaseAPIView):
     permission_classes = [ProjectEntityPermission]
     model = Estimate
+    resource_type = "estimate"
     serializer_class = EstimateSerializer
 
     def get_queryset(self):
@@ -137,6 +138,8 @@ class ProjectEstimateAPIEndpoint(BaseAPIView):
 class EstimatePointListCreateAPIEndpoint(BaseAPIView):
     """List and bulk create estimate points for an estimate."""
 
+    resource_type = "estimate"
+
     permission_classes = [ProjectEntityPermission]
     model = EstimatePoint
     serializer_class = EstimatePointSerializer
@@ -233,6 +236,8 @@ class EstimatePointListCreateAPIEndpoint(BaseAPIView):
 
 class EstimatePointDetailAPIEndpoint(BaseAPIView):
     """Update and delete a single estimate point."""
+
+    resource_type = "estimate"
 
     permission_classes = [ProjectEntityPermission]
     model = EstimatePoint

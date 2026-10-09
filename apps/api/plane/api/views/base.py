@@ -18,18 +18,36 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
-from rest_framework.exceptions import APIException
+from rest_framework.exceptions import APIException, PermissionDenied
 from rest_framework.generics import GenericAPIView
 
 # Module imports
 from plane.api.middleware.api_authentication import APIKeyAuthentication
 from plane.api.rate_limit import ApiKeyRateThrottle
+from plane.core.authz import AuthzContext, Action, enforce
 from plane.utils.exception_logger import log_exception
 from plane.utils.paginator import BasePaginator
 from plane.utils.core.mixins import ReadReplicaControlMixin
 
 
 logger = logging.getLogger("plane.api")
+
+
+# Map request methods to the authorize() chain's action vocabulary. We map
+# every GET-class request to READ (not LIST) — see the reviewer-m7 finding on
+# workspace-level LIST being denied by the Q4 guard (LIST satisfies only via
+# a READ scope, so requesting the simpler action is always equivalent for
+# SPs and lets workspace-level collection endpoints reach the read-allowed
+# path without modifying core authz).
+_METHOD_TO_ACTION = {
+    "GET": Action.READ,
+    "HEAD": Action.READ,
+    "OPTIONS": Action.READ,
+    "POST": Action.CREATE,
+    "PUT": Action.UPDATE,
+    "PATCH": Action.UPDATE,
+    "DELETE": Action.DELETE,
+}
 
 
 class TimezoneMixin:
@@ -47,19 +65,111 @@ class TimezoneMixin:
 
 
 class AIScopeEnforcementMixin:
-    """Enforce per-account scope policies for AI (bot) service accounts.
+    """Enforce per-account scope policies for AI (bot) service accounts and
+    for Service Principal tokens.
 
-    Human requests are completely untouched. Bot requests must additionally
-    satisfy the allow-listed scope policies on their AIAccount (default-deny).
+    Three callers feed this hook:
+
+    * **Human users** — pass through untouched. The base DRF permission
+      classes already gate workspace/project membership.
+    * **AI bots** (``request.user.is_bot=True``) — the historical path:
+      ``plane.ai_accounts.policy.enforce_ai_scope`` checks the bot's
+      ``AIScopePolicy`` rows against a URL-name keyed resource map. Behavior
+      is unchanged from before M8 — vihar's review #2 / mission context
+      explicit guarantee.
+    * **Service principals** (``request._sp_principal`` stashed by
+      :class:`APIKeyAuthentication`) — every SP-authenticated request runs
+      :func:`plane.core.authz.authorize`. The view must declare its
+      ``resource_type``; an undeclared type denies the request outright
+      (default-deny). The view's DRF ``permission_classes`` are skipped via
+      :meth:`get_permissions` because those classes reason about
+      ``request.user``-as-member, which is the wrong semantic for an SP —
+      the SP's grants (not the owner's) own the project membership decision.
     """
 
+    #: Resource type this view targets. Subclasses MUST set this when the
+    #: view should accept SP requests. ``None`` (the default) means
+    #: SP-authenticated calls are 403'd at ``check_permissions`` time.
+    #:
+    #: Note (review m8 P2-4): ``users`` (``/api/v1/users/me/``,
+    #: ``UserEndpoint``) is intentionally left default-deny even though
+    #: the legacy ``URL_RESOURCE_MAP`` mapped it to ``ResourceType.USER``.
+    #: The endpoint exists to return the authenticated principal's own
+    #: profile; under the SP wiring that would print the human owner's
+    #: profile to whatever bot holds the SP token. A future ``self``
+    #: resource type (or a guarded identity endpoint) is the right shape;
+    #: M8 leaves the endpoint inert to avoid even the surface.
+    resource_type: str | None = None
+
+    def get_permissions(self):
+        # SP requests bypass the view's membership-based permission classes
+        # (ProjectMemberPermission, WorkspaceUserPermission, …) — those
+        # reason about ``request.user``-as-workspace-member which is the
+        # wrong semantic for an SP. The authorize() chain is the only gate.
+        if getattr(self.request, "_sp_principal", None) is not None:
+            return [IsAuthenticated()]
+        return super().get_permissions()
+
     def check_permissions(self, request):
+        # super() runs IsAuthenticated + the view's permission_classes
+        # (skipped for SP via get_permissions above).
         super().check_permissions(request)
+
+        sp_principal = getattr(request, "_sp_principal", None)
+        if sp_principal is not None:
+            self._enforce_sp_permission(request, sp_principal)
+            return
+
+        # AI-bot path — unchanged. Called only when the request user is an
+        # is_bot User, never for SP requests (the wrapper sets is_bot=False).
         if getattr(request.user, "is_bot", False):
-            # Local import to avoid a circular import at module load time
             from plane.ai_accounts.policy import enforce_ai_scope
 
             enforce_ai_scope(request, self)
+
+    def _enforce_sp_permission(self, request, sp_principal):
+        """Run :func:`authorize` for the current SP + (action, resource).
+
+        Unannotated endpoints raise PermissionDenied (default-deny). The
+        matrix entry drives role_cap; workspace-level writes are blocked
+        inside the engine (Q4 guard).
+        """
+        resource_type = getattr(self, "resource_type", None)
+        if not resource_type:
+            raise PermissionDenied(
+                "Endpoint is not exposed to service principals."
+            )
+
+        action = _METHOD_TO_ACTION.get(request.method)
+        if action is None:
+            raise PermissionDenied(
+                f"Method {request.method} is not allowed for service principals."
+            )
+
+        ctx = AuthzContext(
+            workspace_slug=getattr(self, "workspace_slug", None),
+            project_id=getattr(self, "project_id", None),
+        )
+        decision = authorize_for_view(
+            sp_principal, action, resource_type, ctx
+        )
+        enforce(decision)
+
+
+def authorize_for_view(sp_principal, action, resource_type, ctx):
+    """Thin wrapper so M8/M9 can share the authorize() invocation shape.
+
+    Local imports keep the base view circular-free (engine.py imports
+    WorkspaceMember and ProjectMember models).
+    """
+    from plane.core.authz import authorize as _authorize
+
+    return _authorize(
+        sp_principal,
+        action,
+        resource_type,
+        ctx=ctx,
+    )
 
 
 class BaseAPIView(AIScopeEnforcementMixin, TimezoneMixin, GenericAPIView, ReadReplicaControlMixin, BasePaginator):
@@ -106,7 +216,7 @@ class BaseAPIView(AIScopeEnforcementMixin, TimezoneMixin, GenericAPIView, ReadRe
 
             if isinstance(e, KeyError):
                 return Response(
-                    {"error": "The required key does not exist."},
+                    {"error": "The required key does not exist"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -234,7 +344,7 @@ class BaseViewSet(AIScopeEnforcementMixin, TimezoneMixin, ReadReplicaControlMixi
                     },
                 )
                 return Response(
-                    {"error": "The required key does not exist."},
+                    {"error": "The required key does not exist"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
