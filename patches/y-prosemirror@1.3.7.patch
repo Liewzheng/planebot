@@ -1,0 +1,67 @@
+diff --git a/src/plugins/sync-plugin.js b/src/plugins/sync-plugin.js
+index dccfb76918c8c70fe5a5b12372cdabcc9d8c58dd..feec5ad0c8dfbe04cce7aa30818f16de61b9a653 100644
+--- a/src/plugins/sync-plugin.js
++++ b/src/plugins/sync-plugin.js
+@@ -802,10 +802,11 @@
+     meta.mapping.set(el, node)
+     return node
+   } catch (e) {
+-    // an error occured while creating the node. This is probably a result of a concurrent action.
+-    /** @type {Y.Doc} */ (el.doc).transact((transaction) => {
+-      /** @type {Y.Item} */ (el._item).delete(transaction)
+-    }, ySyncPluginKey)
++    // PLANE PATCH (PLANE-76): a node this client cannot render - an editor
++    // version skew, a disabled extension, content written by another schema -
++    // used to be deleted from the shared document, destroying another writer's
++    // content. Keep it in Yjs and skip rendering it instead; leaving it out of
++    // the mapping is what the reconcile patch above needs to protect it.
+     meta.mapping.delete(el)
+     return null
+   }
+@@ -837,10 +838,7 @@
+       nodes.push(schema.text(delta.insert, attributesToMarks(delta.attributes, schema)))
+     }
+   } catch (e) {
+-    // an error occured while creating the node. This is probably a result of a concurrent action.
+-    /** @type {Y.Doc} */ (text.doc).transact((transaction) => {
+-      /** @type {Y.Item} */ (text._item).delete(transaction)
+-    }, ySyncPluginKey)
++    // PLANE PATCH (PLANE-76): keep unrenderable text in the shared document too.
+     return null
+   }
+   // @ts-ignore
+@@ -1284,8 +1282,32 @@
+       // Only delete the content of the Y.Text to retain remote changes on the same Y.Text object
+       yChildren[0].delete(0, yChildren[0].length)
+     } else if (yDelLen > 0) {
+-      yDomFragment.slice(left, left + yDelLen).forEach(type => meta.mapping.delete(type))
+-      yDomFragment.delete(left, yDelLen)
++      // PLANE PATCH (PLANE-76): the range this PM document no longer holds also
++      // covers content we never rendered - blocks a remote writer added after our
++      // last render. Deleting those destroys another writer's content silently
++      // (reproduced: a stale client copy wiped a freshly imported page). Only
++      // delete children present in the mapping; unmapped ones stay and become
++      // deletable once the observer has rendered them.
++      const deletableRuns = []
++      let runStart = -1
++      for (let i = left; i < left + yDelLen; i += 1) {
++        const child = yDomFragment.get(i)
++        const rendered = child !== null && meta.mapping.get(child) !== undefined
++        if (rendered && runStart === -1) {
++          runStart = i
++        } else if (!rendered && runStart !== -1) {
++          deletableRuns.push([runStart, i - runStart])
++          runStart = -1
++        }
++      }
++      if (runStart !== -1) {
++        deletableRuns.push([runStart, left + yDelLen - runStart])
++      }
++      for (let r = deletableRuns.length - 1; r >= 0; r -= 1) {
++        const [start, len] = deletableRuns[r]
++        yDomFragment.slice(start, start + len).forEach(type => meta.mapping.delete(type))
++        yDomFragment.delete(start, len)
++      }
+     }
+     if (left + right < pChildCnt) {
+       const ins = []
