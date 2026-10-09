@@ -32,7 +32,7 @@ export const IssueLinkItem = observer(function IssueLinkItem(props: TIssueLinkIt
   // props
   const { linkId, linkOperations, isNotAllowed, issueServiceType = EIssueServiceType.ISSUES } = props;
   // hooks
-  const { t } = useTranslation();
+  const { t, currentLocale } = useTranslation();
   const {
     toggleIssueLinkModal: toggleIssueLinkModalStore,
     setIssueLinkData,
@@ -80,7 +80,7 @@ export const IssueLinkItem = observer(function IssueLinkItem(props: TIssueLinkIt
         </div>
         <div className="flex flex-shrink-0 items-center gap-1">
           <p className="group-hover-text-secondary p-1 align-bottom text-caption-sm-regular leading-5 text-placeholder">
-            {calculateTimeAgo(linkDetail.created_at)}
+            {calculateTimeAgo(linkDetail.created_at, currentLocale)}
           </p>
           <span
             onClick={() => {

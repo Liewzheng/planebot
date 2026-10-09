@@ -6,24 +6,31 @@
 
 import type { TIssueActivity } from "@plane/types";
 
-export const getRelationActivityContent = (activity: TIssueActivity | undefined): string | undefined => {
+type TTranslationFunction = (key: string, params?: Record<string, unknown>) => string;
+
+export const getRelationActivityContent = (
+  activity: TIssueActivity | undefined,
+  t: TTranslationFunction
+): string | undefined => {
   if (!activity) return;
 
   switch (activity.field) {
     case "blocking":
       return activity.old_value === ""
-        ? `marked this work item is blocking work item `
-        : `removed the blocking work item `;
+        ? t("issue_activity.relation_blocking_set")
+        : t("issue_activity.relation_blocking_removed");
     case "blocked_by":
       return activity.old_value === ""
-        ? `marked this work item is being blocked by `
-        : `removed this work item being blocked by work item `;
+        ? t("issue_activity.relation_blocked_by_set")
+        : t("issue_activity.relation_blocked_by_removed");
     case "duplicate":
       return activity.old_value === ""
-        ? `marked this work item as duplicate of `
-        : `removed this work item as a duplicate of `;
+        ? t("issue_activity.relation_duplicate_set")
+        : t("issue_activity.relation_duplicate_removed");
     case "relates_to":
-      return activity.old_value === "" ? `marked that this work item relates to ` : `removed the relation from `;
+      return activity.old_value === ""
+        ? t("issue_activity.relation_relates_to_set")
+        : t("issue_activity.relation_relates_to_removed");
   }
 
   return;

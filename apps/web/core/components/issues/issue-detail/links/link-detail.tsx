@@ -8,6 +8,8 @@ import { DeleteOutline, EditOutline, NewTabOutline } from "@makeplane/propel/ico
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import { Tooltip } from "@makeplane/propel/components/tooltip";
 import { getIconForLink, copyTextToClipboard, calculateTimeAgo } from "@plane/utils";
+// plane imports
+import { useTranslation } from "@plane/i18n";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useMember } from "@/hooks/store/use-member";
@@ -32,6 +34,8 @@ export function IssueLinkDetail(props: TIssueLinkDetail) {
   } = useIssueDetail();
   const { getUserDetails } = useMember();
   const { isMobile } = usePlatformOS();
+  // translation
+  const { t, currentLocale } = useTranslation();
   const linkDetail = getLinkById(linkId);
   if (!linkDetail) return <></>;
 
@@ -111,11 +115,13 @@ export function IssueLinkDetail(props: TIssueLinkDetail) {
 
         <div className="px-5">
           <p className="mt-0.5 stroke-[1.5] text-11 text-tertiary">
-            Added {calculateTimeAgo(linkDetail.created_at)}
+            {t("issue_activity.added_ago")}
+            {calculateTimeAgo(linkDetail.created_at, currentLocale)}
             <br />
             {createdByDetails && (
               <>
-                by {createdByDetails?.is_bot ? createdByDetails?.first_name + " Bot" : createdByDetails?.display_name}
+                {t("issue_activity.by_actor")}
+                {createdByDetails?.is_bot ? createdByDetails?.first_name + " Bot" : createdByDetails?.display_name}
               </>
             )}
           </p>

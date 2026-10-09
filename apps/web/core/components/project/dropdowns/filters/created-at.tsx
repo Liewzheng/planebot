@@ -76,7 +76,7 @@ export const FilterCreatedDate = observer(function FilterCreatedDate(props: Prop
               <FilterOption
                 isChecked={isCustomDateSelected()}
                 onClick={handleCustomDate}
-                title={t("custom theme")}
+                title={t("common.custom_date")}
                 multiple={false}
               />
             </>

@@ -9,6 +9,7 @@ import { HierarchyOutline } from "@makeplane/propel/icons";
 // plane imports
 import { Tooltip } from "@makeplane/propel/components/tooltip";
 import { renderFormattedTime, renderFormattedDate, calculateTimeAgo } from "@plane/utils";
+import { useTranslation } from "@plane/i18n";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // local imports
@@ -32,6 +33,7 @@ export function IssueActivityBlockComponent(props: TIssueActivityBlockComponent)
 
   const activity = getActivityById(activityId);
   const { isMobile } = usePlatformOS();
+  const { currentLocale } = useTranslation();
   if (!activity) return <></>;
   return (
     <div
@@ -55,7 +57,10 @@ export function IssueActivityBlockComponent(props: TIssueActivityBlockComponent)
             label={`${renderFormattedDate(activity.created_at)}, ${renderFormattedTime(activity.created_at)}`}
             disabled={isMobile}
           >
-            <span className="whitespace-nowrap text-tertiary"> {calculateTimeAgo(activity.created_at)}</span>
+            <span className="whitespace-nowrap text-tertiary">
+              {" "}
+              {calculateTimeAgo(activity.created_at, currentLocale)}
+            </span>
           </Tooltip>
         </span>
       </div>
