@@ -10,10 +10,24 @@ Usage:
     python manage.py page_doctor --scan --include-deleted
     python manage.py page_doctor --repair <page_id> --dry-run
     python manage.py page_doctor --repair <page_id>
+    python manage.py page_doctor --scan-stale           # live content older than history
+    python manage.py page_doctor --restore-latest <page_id> --dry-run
+    python manage.py page_doctor --restore-latest <page_id>
+    python manage.py page_doctor --restore-version <page_id>:<version_id>
 
 A repair rebuilds a single copy of the body, regenerates the document JSON and
-Yjs binary through the live service and drops the live server's in-memory copy
-so the fixed document is what gets served next.
+Yjs binary through the live service — the page title included, in the Yjs
+`title` fragment — and drops the live server's in-memory copy so the fixed
+document is what gets served next.
+
+`--scan-stale` covers the other failure mode: a stale client copy can overwrite
+content that was just written through the API (a CLI re-upload), leaving the page
+showing an older state while the newer one survives only as a history entry.
+`--restore-latest` puts the newest history entry back as the live content — but
+only when that entry is not itself the product of an overwrite: on a clobbered
+page the newest entry IS the stale copy, so restoring it would keep the loss.
+The command refuses that case and points at `--restore-version`, which restores
+one named entry (pick the last one written by the importing client).
 """
 
 # Python imports
@@ -23,8 +37,13 @@ import base64
 from django.core.management.base import BaseCommand, CommandError
 
 # Module imports
-from plane.db.models import Page
-from plane.utils.page_content import convert_page_html_to_formats, invalidate_live_document
+from plane.db.models import Page, PageVersion
+from plane.utils.page_content import (
+    convert_page_html_to_formats,
+    invalidate_live_document,
+    page_content_fingerprint,
+    page_content_text_length,
+)
 from plane.utils.page_duplication import (
     CannotDeduplicate,
     deduplicate_page_html,
@@ -41,6 +60,21 @@ class Command(BaseCommand):
         parser.add_argument("--scan", action="store_true", help="List pages whose body looks duplicated")
         parser.add_argument("--repair", metavar="PAGE_ID", help="Repair one page (id from --scan)")
         parser.add_argument(
+            "--scan-stale",
+            action="store_true",
+            help="List pages whose live content is older than their newest history entry",
+        )
+        parser.add_argument(
+            "--restore-latest",
+            metavar="PAGE_ID",
+            help="Make a page's newest history entry its live content again (refuses an overwrite entry)",
+        )
+        parser.add_argument(
+            "--restore-version",
+            metavar="PAGE_ID:VERSION_ID",
+            help="Restore one named history entry as the live content (use for clobbered pages)",
+        )
+        parser.add_argument(
             "--scan-links",
             action="store_true",
             help="List pages holding half-converted markdown links/images ([text](url), ![alt](url))",
@@ -51,12 +85,14 @@ class Command(BaseCommand):
             help="Fold half-converted markdown links/images on one page into proper markup",
         )
         parser.add_argument(
-            "--dry-run", action="store_true", help="With --repair/--fix-links: show the plan, write nothing"
+            "--dry-run",
+            action="store_true",
+            help="With --repair/--fix-links/--restore-latest/--restore-version: write nothing",
         )
         parser.add_argument(
             "--include-deleted",
             action="store_true",
-            help="With --scan: include archived and soft-deleted pages",
+            help="With --scan/--scan-stale: include archived and soft-deleted pages",
         )
 
     def handle(self, *args, **options):
@@ -68,6 +104,18 @@ class Command(BaseCommand):
             return
         if options["repair"]:
             self.repair_page(options["repair"], dry_run=options["dry_run"])
+            return
+        if options["scan_stale"]:
+            self.scan_stale_current(include_deleted=options["include_deleted"])
+            return
+        if options["restore_latest"]:
+            self.restore_latest_version(options["restore_latest"], dry_run=options["dry_run"])
+            return
+        if options["restore_version"]:
+            page_id, _, version_id = options["restore_version"].partition(":")
+            if not page_id or not version_id:
+                raise CommandError("--restore-version expects <page_id>:<version_id>")
+            self.restore_named_version(page_id, version_id, dry_run=options["dry_run"])
             return
         self.scan_pages(include_deleted=options["include_deleted"])
 
@@ -99,6 +147,120 @@ class Command(BaseCommand):
                 f"ratio={stats['unique_ratio']}{suffix}  {page.name[:60]}"
             )
         self.stdout.write("\nRepair one of them with:  python manage.py page_doctor --repair <page_id>")
+
+    # --- stale live content ------------------------------------------------
+    def scan_stale_current(self, include_deleted: bool = False):
+        queryset = Page.all_objects if include_deleted else Page.objects
+        suspects = []
+        for page in queryset.only("id", "name", "description_html").iterator():
+            versions = list(
+                PageVersion.objects.filter(page_id=page.id)
+                .order_by("created_at")
+                .only("id", "created_at", "owned_by_id", "description_html")
+            )
+            if len(versions) < 2:
+                continue
+            current = page_content_fingerprint(page.description_html)
+            newest = versions[-1]
+            if page_content_fingerprint(newest.description_html) == current:
+                continue
+            older = [v for v in versions[:-1] if page_content_fingerprint(v.description_html) == current]
+            if older:
+                suspects.append((page, older[-1], newest))
+
+        if not suspects:
+            self.stdout.write(self.style.SUCCESS("No page holds content older than its newest history entry."))
+            return
+
+        self.stdout.write(
+            self.style.WARNING(
+                f"{len(suspects)} page(s) hold content older than their newest history entry "
+                f"— a stale client copy overwrote a newer write:"
+            )
+        )
+        for page, matching, newest in suspects:
+            if page.archived_at:
+                flags = " [archived]"
+            else:
+                flags = ""
+            self.stdout.write(
+                f"  {page.id}{flags}  html={len(page.description_html or '')}  matches {str(matching.id)[:8]} "
+                f"({matching.created_at:%Y-%m-%d %H:%M}), newest is {str(newest.id)[:8]} "
+                f"({newest.created_at:%Y-%m-%d %H:%M})  "
+                f"{page.name[:50]}"
+            )
+        self.stdout.write("\nRestore the newest entry with:  python manage.py page_doctor --restore-latest <page_id>")
+
+    def restore_latest_version(self, page_id: str, dry_run: bool = False):
+        try:
+            page = Page.all_objects.get(id=page_id)
+        except (Page.DoesNotExist, ValueError):
+            raise CommandError(f"Page {page_id} not found")
+
+        versions = list(
+            PageVersion.objects.filter(page_id=page.id)
+            .order_by("created_at")
+            .only("id", "created_at", "description_html")
+        )
+        if not versions:
+            raise CommandError(f"Page {page_id} has no history entry to restore")
+
+        newest = versions[-1]
+        earlier = {page_content_fingerprint(v.description_html) for v in versions[:-1]}
+        if page_content_fingerprint(newest.description_html) in earlier:
+            # The newest entry reproduces an earlier state: it is the overwrite
+            # itself, so restoring it would keep the loss.
+            raise CommandError(
+                f"Page {page_id}: the newest history entry ({str(newest.id)[:8]}) reproduces an earlier state, "
+                "so it is an overwrite rather than the content to restore. Pick the last entry written by the "
+                "importing client and use --restore-version <page_id>:<version_id>."
+            )
+
+        self.restore_version(page, newest, dry_run=dry_run)
+
+    def restore_named_version(self, page_id: str, version_id: str, dry_run: bool = False):
+        try:
+            page = Page.all_objects.get(id=page_id)
+        except (Page.DoesNotExist, ValueError):
+            raise CommandError(f"Page {page_id} not found")
+        try:
+            version = PageVersion.objects.get(id=version_id, page_id=page.id)
+        except (PageVersion.DoesNotExist, ValueError):
+            raise CommandError(f"Page {page_id} has no history entry {version_id}")
+
+        self.restore_version(page, version, dry_run=dry_run)
+
+    def restore_version(self, page, version, dry_run: bool = False):
+        self.stdout.write(
+            f"Page {page.id} ({page.name[:50]})  current text={page_content_text_length(page.description_html)}  "
+            f"restoring entry {str(version.id)[:8]} ({version.created_at:%Y-%m-%d %H:%M}, "
+            f"text={page_content_text_length(version.description_html)})"
+        )
+        if dry_run:
+            self.stdout.write("Dry run: nothing written.")
+            return
+
+        page.description_html = version.description_html
+        page.description_json = version.description_json
+        page.description_binary = version.description_binary
+        page.description_stripped = version.description_stripped
+        page.save(
+            update_fields=[
+                "description_html",
+                "description_json",
+                "description_binary",
+                "description_stripped",
+                "updated_at",
+            ]
+        )
+        page.refresh_from_db()
+        invalidate_live_document(str(page.id), page_content_text_length(page.description_html))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Restored {page.id} from {str(version.id)[:8]}: "
+                f"text={page_content_text_length(page.description_html)} binary={len(page.description_binary or b'')}"
+            )
+        )
 
     # --- repairing --------------------------------------------------------
     def repair_page(self, page_id: str, dry_run: bool = False):
@@ -198,8 +360,8 @@ class Command(BaseCommand):
 
     # --- shared write path ------------------------------------------------
     def write_repaired_html(self, page, repaired_html: str):
-        """Rebuild json/binary from the repaired html, store it, drop live's copy."""
-        converted = convert_page_html_to_formats(repaired_html)
+        """Rebuild json/binary from the repaired html (page title included), store it, drop live's copy."""
+        converted = convert_page_html_to_formats(repaired_html, page.name)
         encoded_binary = converted.get("description_binary")
         if not encoded_binary:
             raise CommandError(
@@ -218,6 +380,9 @@ class Command(BaseCommand):
         page.description_html = repaired_html
         page.description_json = converted.get("description_json")
         page.description_binary = binary
-        page.save()
+        # A repair is not an edit: it must not take the page over from whoever
+        # last saved it (`save()` attributes the write to the current user, and
+        # in a management command there is none — the attribution would be lost).
+        page.save(disable_auto_set_user=True)
 
-        invalidate_live_document(str(page.id))
+        invalidate_live_document(str(page.id), page_content_text_length(page.description_html))

@@ -27,6 +27,7 @@ from plane.utils.page_frontmatter import (
 from plane.utils.text_repetition import collapse_repeated_text
 from plane.db.models import (
     Page,
+    PageDraft,
     PageLabel,
     Label,
     ProjectPage,
@@ -313,3 +314,18 @@ class PageBinaryUpdateSerializer(serializers.Serializer):
 
         instance.save()
         return instance
+
+
+class PageDraftSerializer(BaseSerializer):
+    """The requesting user's own unpublished revision of a page."""
+
+    class Meta:
+        model = PageDraft
+        fields = ["id", "description_html", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class PageDraftUpdateSerializer(serializers.Serializer):
+    """What a client writes when it stashes a draft: the body only."""
+
+    description_html = serializers.CharField(allow_blank=True)

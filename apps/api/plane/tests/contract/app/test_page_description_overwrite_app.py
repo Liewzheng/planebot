@@ -69,7 +69,8 @@ class TestPageDescriptionOverwrite:
     ):
         invalidated = []
         monkeypatch.setattr(
-            "plane.app.views.page.base.invalidate_live_document", lambda page_id: invalidated.append(page_id)
+            "plane.app.views.page.base.invalidate_live_document",
+            lambda page_id, content_text_length=None: invalidated.append(page_id),
         )
 
         response = session_client.patch(
@@ -87,18 +88,26 @@ class TestPageDescriptionOverwrite:
         assert invalidated == [str(page.id)]
 
     @pytest.mark.django_db
-    def test_live_writer_does_not_invalidate_its_own_document(
+    def test_every_content_write_drops_the_collaborative_document(
         self, session_client, workspace, project, page, live_internal_key, monkeypatch
     ):
+        """The live server no longer stores, so it is never the writer.
+
+        Editing happens in the client's own document, and every write therefore
+        replaces content the live server still holds — including a write that
+        carries the live internal key. Dropping the document is what makes the
+        next load read the stored revision.
+        """
         invalidated = []
         monkeypatch.setattr(
-            "plane.app.views.page.base.invalidate_live_document", lambda page_id: invalidated.append(page_id)
+            "plane.app.views.page.base.invalidate_live_document",
+            lambda page_id, content_text_length=None: invalidated.append(page_id),
         )
 
         response = session_client.patch(
             description_url(workspace.slug, project.id, page.id),
             {
-                "description_html": "<p>live store</p>",
+                "description_html": "<p>published elsewhere</p>",
                 "description_binary": base64.b64encode(b"yjs-binary").decode(),
             },
             format="json",
@@ -107,8 +116,8 @@ class TestPageDescriptionOverwrite:
 
         assert response.status_code == status.HTTP_200_OK
         page.refresh_from_db()
-        assert page.description_html == "<p>live store</p>"
-        assert invalidated == []
+        assert page.description_html == "<p>published elsewhere</p>"
+        assert invalidated == [str(page.id)]
 
     @pytest.mark.django_db
     def test_html_only_write_rebuilds_the_binary(
@@ -121,7 +130,9 @@ class TestPageDescriptionOverwrite:
             return True
 
         monkeypatch.setattr("plane.app.views.page.base.sync_page_description_formats", fake_sync)
-        monkeypatch.setattr("plane.app.views.page.base.invalidate_live_document", lambda page_id: None)
+        monkeypatch.setattr(
+            "plane.app.views.page.base.invalidate_live_document", lambda page_id, content_text_length=None: None
+        )
 
         response = session_client.patch(
             description_url(workspace.slug, project.id, page.id),
@@ -140,7 +151,8 @@ class TestPageDescriptionOverwrite:
     ):
         invalidated = []
         monkeypatch.setattr(
-            "plane.app.views.page.base.invalidate_live_document", lambda page_id: invalidated.append(page_id)
+            "plane.app.views.page.base.invalidate_live_document",
+            lambda page_id, content_text_length=None: invalidated.append(page_id),
         )
 
         response = session_client.patch(

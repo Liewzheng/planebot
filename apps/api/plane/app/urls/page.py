@@ -6,10 +6,12 @@ from django.urls import path
 
 
 from plane.app.views import (
+    PageDraftEndpoint,
     PageViewSet,
     PageFavoriteViewSet,
     PagesDescriptionViewSet,
     PageVersionEndpoint,
+    PageVersionRestoreEndpoint,
     PageDuplicateEndpoint,
 )
 
@@ -59,6 +61,11 @@ urlpatterns = [
         name="page-description",
     ),
     path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:page_id>/draft/",
+        PageDraftEndpoint.as_view(),
+        name="page-draft",
+    ),
+    path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:page_id>/versions/",
         PageVersionEndpoint.as_view(),
         name="page-versions",
@@ -67,6 +74,11 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:page_id>/versions/<uuid:pk>/",
         PageVersionEndpoint.as_view(),
         name="page-versions",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:page_id>/versions/<uuid:pk>/restore/",
+        PageVersionRestoreEndpoint.as_view(),
+        name="page-versions-restore",
     ),
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:page_id>/duplicate/",

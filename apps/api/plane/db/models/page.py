@@ -32,6 +32,12 @@ class Page(BaseModel):
     description_json = models.JSONField(default=dict, blank=True)
     description_binary = models.BinaryField(null=True)
     description_html = models.TextField(blank=True, default="<p></p>")
+    # When the body was last written, as opposed to `updated_at` (auto_now),
+    # which also moves when only properties change (name, access, logo). The
+    # editor's publish sends the revision it read as its base; comparing it
+    # against `updated_at` refused publishes that kept the content but were
+    # preceded by a rename. Set synchronously by every content-write path.
+    description_updated_at = models.DateTimeField(default=timezone.now, null=True)
     description_stripped = models.TextField(blank=True, null=True)
     # YAML frontmatter parsed off a markdown upload (title/status/created/tags…)
     frontmatter = models.JSONField(default=dict, blank=True)
@@ -182,3 +188,35 @@ class PageVersion(BaseModel):
             else strip_tags(self.description_html)
         )
         super(PageVersion, self).save(*args, **kwargs)
+
+
+class PageDraft(BaseModel):
+    """A revision of a page that its author has not published yet.
+
+    A draft lives beside the page, never in it: it is not part of
+    `description_html`, does not reach the live document, the version history,
+    the PDF export or the public API, and it is only readable by the user who
+    wrote it. That is what makes it "invisible to others" — an unpublished edit
+    kept in the shared document would be visible to every open editor, and one
+    left in `description_html` would be visible to everyone (PLANE-77).
+    """
+
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="page_drafts")
+    page = models.ForeignKey("db.Page", on_delete=models.CASCADE, related_name="drafts")
+    owned_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="page_drafts")
+    description_html = models.TextField(blank=True, default="<p></p>")
+
+    class Meta:
+        verbose_name = "Page Draft"
+        verbose_name_plural = "Page Drafts"
+        db_table = "page_drafts"
+        ordering = ("-created_at",)
+        constraints = [
+            # one draft per author and page; soft-deleted rows do not count, so
+            # a discarded draft can be written again
+            models.UniqueConstraint(
+                fields=["page", "owned_by"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="page_draft_unique_active_page_owner",
+            )
+        ]

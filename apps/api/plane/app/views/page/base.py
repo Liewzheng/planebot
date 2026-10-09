@@ -6,6 +6,11 @@
 import json
 from datetime import datetime
 from django.core.serializers.json import DjangoJSONEncoder
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+
+# Python imports
+import logging
 
 # Django imports
 from django.conf import settings
@@ -42,13 +47,21 @@ from plane.db.models import (
     PageLog,
     UserFavorite,
     ProjectMember,
+    PageVersion,
     ProjectPage,
     Project,
     UserRecentVisit,
 )
 from plane.utils.error_codes import ERROR_CODES
 from plane.utils.order_queryset import PAGE_ORDER_BY_ALLOWLIST, sanitize_order_by
-from plane.utils.page_content import invalidate_live_document, sync_page_description_formats
+from plane.utils.page_content import (
+    content_is_unchanged,
+    duplicated_block_length,
+    invalidate_live_document,
+    page_content_fingerprint,
+    page_content_text_length,
+    sync_page_description_formats,
+)
 
 # Local imports
 from ..base import BaseAPIView, BaseViewSet
@@ -57,6 +70,33 @@ from plane.bgtasks.page_version_task import track_page_version
 from plane.bgtasks.recent_visited_task import recent_visited_task
 from plane.bgtasks.copy_s3_object import copy_s3_objects_of_description_and_assets
 from plane.app.permissions import ProjectPagePermission
+
+
+logger = logging.getLogger(__name__)
+
+
+def is_revert_to_earlier_version(page, incoming_html) -> bool:
+    """True when `incoming_html` reproduces a revision the page already moved past.
+
+    Compares content fingerprints, so editor serialization differences do not
+    count as a revision. Unknown/new content and the current revision are not
+    reverts.
+    """
+    if not incoming_html:
+        return False
+    incoming = page_content_fingerprint(incoming_html)
+    revision_fingerprints = [
+        page_content_fingerprint(html)
+        for html in PageVersion.objects.filter(page_id=page.id)
+        .order_by("created_at")
+        .values_list("description_html", flat=True)
+    ]
+    if not revision_fingerprints:
+        return False
+    if revision_fingerprints[-1] == incoming:
+        # already the newest revision: nothing to revert
+        return False
+    return incoming in revision_fingerprints[:-1]
 
 
 def unarchive_archive_page_and_descendants(page_id, archived_at):
@@ -202,6 +242,13 @@ class PageViewSet(BaseViewSet):
             serializer = PageDetailSerializer(page, data=request.data, partial=True)
             page_description = page.description_html
             if serializer.is_valid():
+                # the body moved: keep the content-revision clock in sync so the
+                # editor's first-publisher-wins check sees this write. Set it
+                # BEFORE the save so it is never later than `updated_at`
+                # (auto_now): the editor sends `updated_at` as its publish base
+                # and the check compares it against this clock.
+                if "description_html" in request.data:
+                    page.description_updated_at = timezone.now()
                 serializer.save()
                 # Backfill the Yjs binary when content was written as HTML only;
                 # regenerate it when the HTML changed (this endpoint carries no
@@ -577,29 +624,162 @@ class PagesDescriptionViewSet(BaseViewSet):
 
         # Use serializer for validation and update
         serializer = PageBinaryUpdateSerializer(page, data=request.data, partial=True)
+        # The live server identifies itself with a shared secret header. An
+        # explicit API write is a deliberate act (including "restore version"),
+        # so the revert guard below only applies to the collaborative store.
+        is_live_writer = bool(settings.LIVE_INTERNAL_API_KEY) and (
+            request.headers.get("x-live-internal-key") == settings.LIVE_INTERNAL_API_KEY
+        )
+        # The editor writes here when the user presses Save (`save_source`), which
+        # is what page content is persisted by: the live server never stores the
+        # collaborative document on its own any more. A save is a deliberate act
+        # by a signed-in user, and the document it was read from already holds
+        # exactly this content — dropping the server's in-memory copy would
+        # reload every open editor on every save.
+        is_editor_save = request.data.get("save_source") == "editor"
+        # Writes that may not resurrect a revision the page already moved past,
+        # and that are dropped when they change nothing a reader can see.
+        is_content_write = is_live_writer or is_editor_save
+
+        # A client whose local copy was ballooned (a stale copy merged as a yjs
+        # union) would persist the page holding its own content twice, and every
+        # client would then sync that back. Refused before the serializer runs so
+        # the caller gets the code the editor acts on (it keeps the draft and
+        # reloads the stored copy) instead of a plain validation error. The body
+        # is only refused when it repeats a quarter of itself and the stored page
+        # does not: a document that repeats a table row on purpose stays writable.
+        ballooned_block = duplicated_block_length(request.data.get("description_html"))
+        if is_editor_save and ballooned_block and not duplicated_block_length(page.description_html):
+            logger.warning(
+                "REFUSED a save that duplicated page %s (repeated block of %s chars); "
+                "dropping the live document so clients reload the stored copy",
+                page.id,
+                ballooned_block,
+            )
+            invalidate_live_document(str(page.id), page_content_text_length(page.description_html))
+            return Response(
+                {
+                    "error_code": ERROR_CODES.get("PAGE_DUPLICATED", "CONTENT_DUPLICATED"),
+                    "error_message": "Refused to save a page whose content was duplicated by a stale copy",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        # First publisher wins. An editing session is seeded from the published
+        # revision and the author sends that revision's `updated_at` back with
+        # the publish: if the page's content moved on while they were editing
+        # (someone published, restored a version, re-uploaded), publishing their
+        # older base would silently overwrite the newer revision. Refuse, so the
+        # draft is kept and the client reloads what won.
+        #
+        # `page.updated_at` is not the base to compare against: it is an
+        # auto_now field, so it also moves when only properties change (a
+        # rename, an access change, a logo) — the author's own title edit is
+        # even saved to the page row right before publishing, which used to
+        # refuse every publish that kept the content and only renamed the page.
+        # `description_updated_at` moves exactly when the body is written, so
+        # that is what "the revision the author read" is measured against.
+        base_updated_at = request.data.get("base_updated_at")
+        if is_editor_save and isinstance(base_updated_at, str):
+            base_datetime = parse_datetime(base_updated_at)
+            if base_datetime is None:
+                return Response(
+                    {
+                        "error_code": "INVALID_BASE_REVISION",
+                        "error_message": "base_updated_at is not a valid timestamp",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            content_revision_at = page.description_updated_at or page.created_at
+            if content_revision_at and base_datetime < content_revision_at:
+                logger.warning(
+                    "REFUSED a publish of page %s from a stale revision (base %s, content saved at %s); "
+                    "dropping the live document so clients reload what won",
+                    page.id,
+                    base_updated_at,
+                    content_revision_at,
+                )
+                invalidate_live_document(str(page.id), page_content_text_length(page.description_html))
+                return Response(
+                    {
+                        "error_code": "PAGE_VERSION_CONFLICT",
+                        "error_message": "This page was updated while you were editing. "
+                        "Reload it and re-apply your changes.",
+                        "updated_at": page.updated_at.isoformat(),
+                        "updated_by": (page.updated_by.display_name or page.updated_by.email)
+                        if page.updated_by
+                        else None,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
         if serializer.is_valid():
+            # Opening a page is enough to make the collaborative client rewrite
+            # the markup it received (node ids are migrated, markup normalized),
+            # so a write that changes nothing a reader can see would drift the
+            # stored html and name whoever saved it, for a change nobody made.
+            # Content identity ignores serialization, so such a write is dropped
+            # whole: no row update, no version, no attribution.
+            incoming_html = request.data.get("description_html")
+            if is_content_write and content_is_unchanged(page.description_html, incoming_html):
+                logger.debug("ignoring a write that did not change the content of page %s", page.id)
+                return Response({"message": "No content change"}, status=status.HTTP_200_OK)
+
+            # A client holding a stale copy must not push the page back to a
+            # state it already had: that silently reverts content written
+            # through the API (reproduced three times, PLANE-76). Refuse the
+            # write and drop the live document so every client reloads the
+            # database copy.
+            if is_content_write and is_revert_to_earlier_version(page, incoming_html):
+                latest_version = (
+                    PageVersion.objects.filter(page_id=page.id)
+                    .select_related("owned_by")
+                    .order_by("-created_at")
+                    .first()
+                )
+                logger.warning(
+                    "REFUSED a write that reverts page %s to an earlier revision; "
+                    "dropping the live document so clients reload it",
+                    page.id,
+                )
+                invalidate_live_document(str(page.id), page_content_text_length(page.description_html))
+                return Response(
+                    {
+                        "error_code": ERROR_CODES.get("PAGE_REVERTED", "CONTENT_REVERTED"),
+                        "error_message": "Refused to overwrite a newer revision with an older one",
+                        # what the caller lost to, so the editor can say who saved
+                        # first instead of just reporting a failure
+                        "conflict": {
+                            "version_id": str(latest_version.id),
+                            "saved_by": latest_version.owned_by.display_name or latest_version.owned_by.email,
+                            "saved_at": latest_version.created_at.isoformat(),
+                        }
+                        if latest_version
+                        else None,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            # the body moved: this is the revision later publishes must build
+            # on (see the first-publisher-wins check above). Set it BEFORE the
+            # save so it is never later than `updated_at` (auto_now): the
+            # editor sends `updated_at` as its publish base.
+            page.description_updated_at = timezone.now()
             serializer.save()
 
-            # Content written from outside the live server (the web editor's
-            # offline fallback, any API client) makes the live server's
-            # in-memory document stale: it would keep serving - and re-persist -
-            # the previous content, and connected clients would union-merge the
-            # old content back in. Drop it so the next load reads the database.
-            # The live server identifies itself with a shared secret header.
-            is_live_writer = (
-                bool(settings.LIVE_INTERNAL_API_KEY)
-                and request.headers.get("x-live-internal-key") == settings.LIVE_INTERNAL_API_KEY
-            )
-            if not is_live_writer:
-                if not request.data.get("description_binary"):
-                    # html-only write: rebuild the binary/json from it so the two
-                    # formats cannot diverge (this also invalidates the document)
-                    sync_page_description_formats(page, force=True)
-                else:
-                    invalidate_live_document(str(page.id))
+            # The write replaced the content the live server holds: editing
+            # happens in the client's own document now, so the shared one is
+            # always the previous revision. Dropping it makes every client -
+            # including the one that published - load the stored revision.
+            # Either way the stored formats must agree: an html-only write has
+            # its binary rebuilt from it (which invalidates the document too).
+            if not request.data.get("description_binary"):
+                sync_page_description_formats(page, force=True)
+            else:
+                invalidate_live_document(str(page.id), page_content_text_length(page.description_html))
 
             # Capture the page transaction
-            if request.data.get("description_html"):
+            if incoming_html:
                 page_transaction.delay(
                     new_description_html=request.data.get("description_html", "<p></p>"),
                     old_description_html=old_description_html,
@@ -612,7 +792,7 @@ class PagesDescriptionViewSet(BaseViewSet):
                 existing_instance=existing_instance,
                 user_id=request.user.id,
             )
-            return Response({"message": "Updated successfully"})
+            return Response({"message": "Updated successfully", "updated_at": page.updated_at})
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
