@@ -8,6 +8,7 @@ import { useState } from "react";
 import { observer } from "mobx-react";
 import { ReactionOutline } from "@makeplane/propel/icons";
 // plane imports
+import { useTranslation } from "@plane/i18n";
 import { EmojiPicker, EmojiIconPickerTypes } from "@plane/propel/emoji-icon-picker";
 import { cn } from "@plane/utils";
 // store
@@ -27,6 +28,7 @@ type Props = {
 
 export const PageEditorHeaderRoot = observer(function PageEditorHeaderRoot(props: Props) {
   const { page, isEditable } = props;
+  const { t } = useTranslation();
   // states
   const [isLogoPickerOpen, setIsLogoPickerOpen] = useState(false);
   // derived values
@@ -60,7 +62,7 @@ export const PageEditorHeaderRoot = observer(function PageEditorHeaderRoot(props
                   )}
                 >
                   <ReactionOutline className="size-4 flex-shrink-0" />
-                  Icon
+                  {t("page_editor.icon")}
                 </button>
               }
               onChange={updatePageLogo}

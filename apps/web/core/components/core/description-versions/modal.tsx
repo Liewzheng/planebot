@@ -62,7 +62,7 @@ export const DescriptionVersionsModal = observer(function DescriptionVersionsMod
   const workspaceId = getWorkspaceBySlug(workspaceSlug)?.id;
   const versionCreator = activeVersionDetails?.owned_by ? getUserDetails(activeVersionDetails.owned_by) : null;
   // translation
-  const { t } = useTranslation();
+  const { t, currentLocale } = useTranslation();
 
   const handleCopyMarkdown = useCallback(() => {
     if (!editorRef.current) return;
@@ -94,7 +94,7 @@ export const DescriptionVersionsModal = observer(function DescriptionVersionsMod
               </span>
             </p>
             <p className="flex-shrink-0 text-secondary">
-              {calculateTimeAgo(activeVersionDetails?.last_saved_at ?? "")}
+              {calculateTimeAgo(activeVersionDetails?.last_saved_at ?? "", currentLocale)}
             </p>
           </div>
           <div className="flex flex-shrink-0 items-center">

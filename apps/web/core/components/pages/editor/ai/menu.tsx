@@ -51,19 +51,19 @@ const MENU_ITEMS: {
 const TONES_LIST = [
   {
     key: "default",
-    label: "Default",
+    i18nLabel: "common.default",
     casual_score: 5,
     formal_score: 5,
   },
   {
     key: "professional",
-    label: "💼 Professional",
+    i18nLabel: "page_editor.tone_professional",
     casual_score: 0,
     formal_score: 10,
   },
   {
     key: "casual",
-    label: "😃 Casual",
+    i18nLabel: "page_editor.tone_casual",
     casual_score: 10,
     formal_score: 0,
   },
@@ -237,7 +237,7 @@ export function EditorAIMenu(props: Props) {
                         className="rounded-sm p-1 text-13 font-medium text-tertiary outline-none hover:bg-layer-1"
                         onClick={() => handleInsertText(false)}
                       >
-                        Replace selection
+                        {t("page_editor.replace_selection")}
                       </button>
                       <Tooltip label={t("add_to_next_line")}>
                         <button
@@ -248,7 +248,7 @@ export function EditorAIMenu(props: Props) {
                           <CornerRightDownOutline className="size-4 text-tertiary" />
                         </button>
                       </Tooltip>
-                      <Tooltip label="Re-generate response">
+                      <Tooltip label={t("page_editor.re_generate_response")}>
                         <button
                           type="button"
                           className="grid size-6 flex-shrink-0 place-items-center rounded-sm outline-none hover:bg-layer-1"
@@ -270,7 +270,7 @@ export function EditorAIMenu(props: Props) {
                   </div>
                 ) : (
                   <p className="text-13 text-secondary">
-                    {activeTask ? LOADING_TEXTS[activeTask] : "Pi is writing"}...
+                    {activeTask ? LOADING_TEXTS[activeTask] : t("page_editor.pi_is_writing")}...
                   </p>
                 )}
               </div>
@@ -291,7 +291,7 @@ export function EditorAIMenu(props: Props) {
                       handleToneChange(tone.key);
                     }}
                   >
-                    {tone.label}
+                    {t(tone.i18nLabel)}
                   </button>
                 ))}
               </div>
@@ -304,9 +304,7 @@ export function EditorAIMenu(props: Props) {
           <span className="grid size-4 flex-shrink-0 place-items-center">
             <WarningTriangleOutline className="size-3" />
           </span>
-          <p className="flex-shrink-0 text-11 font-medium">
-            By using this feature, you consent to sharing the message with a 3rd party service.
-          </p>
+          <p className="flex-shrink-0 text-11 font-medium">{t("page_editor.ai_consent_notice")}</p>
         </div>
       )}
     </div>

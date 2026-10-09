@@ -33,7 +33,7 @@ export class ProjectPage extends BasePage implements TProjectPage {
       },
       updateDescription: async (document) => {
         if (!workspaceSlug || !projectId || !page.id) throw new Error("Missing required fields.");
-        await projectPageService.updateDescription(workspaceSlug, projectId, page.id, document);
+        return await projectPageService.updateDescription(workspaceSlug, projectId, page.id, document);
       },
       updateAccess: async (payload) => {
         if (!workspaceSlug || !projectId || !page.id) throw new Error("Missing required fields.");

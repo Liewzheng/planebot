@@ -22,7 +22,7 @@ import { PageVersionsMainContent } from "./main-content";
 type Props = {
   editorComponent: React.FC<TVersionEditorProps>;
   fetchVersionDetails: (pageId: string, versionId: string) => Promise<TPageVersion | undefined>;
-  handleRestore: (descriptionHTML: string) => Promise<void>;
+  handleRestore: (versionId: string) => Promise<void>;
   pageId: string;
   pageName?: string;
   restoreEnabled: boolean;

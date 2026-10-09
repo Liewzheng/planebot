@@ -35,8 +35,8 @@ export const useParseEditorContent = (args: TArgs) => {
    * @returns {Promise<string>}
    */
   const replaceCustomComponentsFromHTMLContent = useCallback(
-    async (props: { htmlContent: string; noAssets?: boolean }): Promise<string> => {
-      const { htmlContent, noAssets = false } = props;
+    async (props: { htmlContent: string; noAssets?: boolean; contentWidthPx?: number }): Promise<string> => {
+      const { htmlContent, noAssets = false, contentWidthPx } = props;
       // create a DOM parser
       const parser = new DOMParser();
       // parse the HTML string into a DOM document
@@ -167,6 +167,9 @@ export const useParseEditorContent = (args: TArgs) => {
       // remove all issue-embed-component elements
       const issueEmbedComponents = doc.querySelectorAll("issue-embed-component");
       issueEmbedComponents.forEach((component) => component.remove());
+      // tables: react-pdf's html renderer splits every column evenly — the
+      // export stamps the share each column earns from its content plus the
+      // theme's zebra rows, like a browser's auto layout (see @plane/utils)
       // serialize the document back into a string
       let serializedDoc = doc.body.innerHTML;
       // remove null colors from table elements
@@ -290,3 +293,4 @@ export const useParseEditorContent = (args: TArgs) => {
     getEditorMetaData,
   };
 };
+

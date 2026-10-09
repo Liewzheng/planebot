@@ -97,7 +97,23 @@ function PageDetailsPage({ params }: Route.ComponentProps) {
           return `/${workspaceSlug}/projects/${projectId}/pages`;
         }
       },
-      updateDescription: updateDescription ?? (async () => {}),
+      updateDescription: updateDescription ?? (async () => undefined),
+      updateName: async (name) => {
+        if (!id) return;
+        await projectPageService.update(workspaceSlug, projectId, id, { name });
+      },
+      fetchDraft: async () => {
+        if (!id) return { description_html: null };
+        return await projectPageService.fetchDraft(workspaceSlug, projectId, id);
+      },
+      updateDraft: async (payload) => {
+        if (!id) return;
+        return await projectPageService.updateDraft(workspaceSlug, projectId, id, payload);
+      },
+      deleteDraft: async () => {
+        if (!id) return;
+        return await projectPageService.deleteDraft(workspaceSlug, projectId, id);
+      },
     }),
     [createPage, fetchEntityCallback, id, updateDescription, workspaceSlug, projectId]
   );
