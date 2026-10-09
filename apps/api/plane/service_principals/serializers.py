@@ -11,7 +11,12 @@ create / rotate responses — listing and detail never expose it.
 from rest_framework import serializers
 
 from plane.db.models import APIToken
-from plane.service_principals.models import ProjectGrant, ServicePrincipal, ServiceScope
+from plane.service_principals.models import (
+    ProjectGrant,
+    ServicePrincipal,
+    ServiceScope,
+    WorkspaceSPSettings,
+)
 
 from .constants import ACTION_CHOICES, RESOURCE_CHOICES
 
@@ -98,3 +103,27 @@ class ProjectGrantInputSerializer(serializers.Serializer):
     project = serializers.UUIDField(required=True)
     role_cap = serializers.ChoiceField(choices=[20, 15, 5], default=15)
     is_active = serializers.BooleanField(default=True)
+
+
+class WorkspaceSPSettingsSerializer(serializers.ModelSerializer):
+    """Read-only view of a workspace's SP settings.
+
+    Accepts either a saved WorkspaceSPSettings row or None — when the row
+    doesn't exist yet the read endpoint returns the model defaults without
+    persisting a row. The frontend (M11) treats the absence of a row the same
+    way, so this lazy default keeps GET/PATCH round-trips symmetric.
+    """
+
+    class Meta:
+        model = WorkspaceSPSettings
+        fields = ["sp_assignable", "created_at", "updated_at"]
+        read_only_fields = ["created_at", "updated_at"]
+
+    def to_representation(self, instance):
+        if instance is None:
+            return {"sp_assignable": False}
+        return super().to_representation(instance)
+
+
+class WorkspaceSPSettingsInputSerializer(serializers.Serializer):
+    sp_assignable = serializers.BooleanField(required=True)

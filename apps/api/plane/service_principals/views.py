@@ -23,7 +23,7 @@ from plane.db.models import APIToken, Workspace
 from plane.db.models.api import generate_service_token
 
 from .constants import PrincipalType
-from .models import ProjectGrant, ServicePrincipal, ServiceScope
+from .models import ProjectGrant, ServicePrincipal, ServiceScope, WorkspaceSPSettings
 from .serializers import (
     ProjectGrantInputSerializer,
     ProjectGrantSerializer,
@@ -32,6 +32,8 @@ from .serializers import (
     ServicePrincipalUpdateSerializer,
     ServiceScopeInputSerializer,
     ServiceScopeSerializer,
+    WorkspaceSPSettingsInputSerializer,
+    WorkspaceSPSettingsSerializer,
 )
 
 
@@ -39,6 +41,44 @@ def _get_sp(slug, pk):
     return ServicePrincipal.objects.select_related("owner", "workspace").get(
         pk=pk, workspace__slug=slug
     )
+
+
+def _reject_if_sp_token(request):
+    """Return 403 if the request carried a service-principal API token.
+
+    Session-cookie admins (the human UI path) never set an SP token, so this
+    is a no-op for them. Three legitimate surfaces can carry a token:
+
+    * ``request.auth`` is the resolved ``APIToken`` instance (when the request
+      ran through ``APIKeyAuthentication`` and that path is wired in);
+    * ``request.auth`` is the token string (the current shape returned by
+      ``validate_api_token``);
+    * the raw ``X-Api-Key`` header is present without APIKeyAuthentication
+      running yet (defensive header probing / integration tests; M8/M9 will
+      close that loop).
+
+    Each is checked against the ``APIToken.principal_type`` column. ``None``
+    is returned when the caller has no service-token signal, otherwise a 403
+    Response.
+    """
+    api_token = None
+    auth = getattr(request, "auth", None)
+    if isinstance(auth, APIToken):
+        api_token = auth
+    elif isinstance(auth, str) and auth:
+        api_token = APIToken.objects.filter(token=auth).first()
+    else:
+        header_token = None
+        if hasattr(request, "headers") and request.headers is not None:
+            header_token = request.headers.get("X-Api-Key")
+        if header_token:
+            api_token = APIToken.objects.filter(token=header_token).first()
+    if api_token and api_token.principal_type == PrincipalType.SERVICE:
+        return Response(
+            {"error": "Service principals cannot manage workspace SP settings"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return None
 
 
 class ServicePrincipalListCreateAPIEndpoint(BaseAPIView):
@@ -321,3 +361,59 @@ class ServicePrincipalRotateTokenAPIEndpoint(BaseAPIView):
         # The new service token secret is returned exactly once.
         data["token"] = token.token
         return Response(data, status=status.HTTP_200_OK)
+
+
+class WorkspaceSPSettingsAPIEndpoint(BaseAPIView):
+    """GET / PATCH the workspace's SP toggles (currently just ``sp_assignable``).
+
+    The endpoint is a per-workspace configuration switch (like other general
+    settings), not a credential operation — it is therefore not step-up TOTP
+    gated. Workspace-admin-only access is enforced by ``allow_permission``;
+    SP principal tokens (``principal_type=SERVICE``) are rejected by
+    ``_reject_if_sp_token`` so an SP cannot toggle its own visibility in the
+    assignee / filter / mention pickers.
+
+    GET is lazy: when no ``WorkspaceSPSettings`` row exists yet the model
+    defaults are returned (``{"sp_assignable": False}``) without persisting a
+    row — the frontend (M11) is wired against the same convention so the UI
+    sees the model default as a 200, not a 404.
+
+    PATCH upserts via ``get_or_create(workspace=...)`` so a workspace stays
+    pinned to a single row even when callers PATCH the same flag repeatedly.
+    """
+
+    @allow_permission([ROLE.ADMIN], level="WORKSPACE")
+    def get(self, request, slug):
+        rejected = _reject_if_sp_token(request)
+        if rejected is not None:
+            return rejected
+
+        workspace = Workspace.objects.get(slug=slug)
+        settings_row = WorkspaceSPSettings.objects.filter(workspace=workspace).first()
+        return Response(
+            WorkspaceSPSettingsSerializer(settings_row).data,
+            status=status.HTTP_200_OK,
+        )
+
+    @allow_permission([ROLE.ADMIN], level="WORKSPACE")
+    def patch(self, request, slug):
+        rejected = _reject_if_sp_token(request)
+        if rejected is not None:
+            return rejected
+
+        serializer = WorkspaceSPSettingsInputSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        workspace = Workspace.objects.get(slug=slug)
+        with transaction.atomic():
+            settings_row, _created = WorkspaceSPSettings.objects.get_or_create(
+                workspace=workspace,
+            )
+            settings_row.sp_assignable = serializer.validated_data["sp_assignable"]
+            settings_row.save()
+
+        return Response(
+            WorkspaceSPSettingsSerializer(settings_row).data,
+            status=status.HTTP_200_OK,
+        )
