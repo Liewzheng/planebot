@@ -123,11 +123,13 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
    * M10 — the visible-member predicate (the legacy `is_bot` / `bot_type`
    * filter that used to live here) is now produced server-side by
    * the principal-dispatch endpoint.  When the dispatch has loaded
-   * we honour the server's view verbatim; until it loads we fall
-   * back to the legacy member map (filtered by the server-side
-   * `WorkspaceMemberViewSet.list` which still applies the bot
-   * exclusion at the API layer).  Either way, no predicate is
-   * recomputed in this store.
+   * we honour the server's view verbatim.  Until the dispatch loads
+   * (or after a failed fetch) we fall back to the legacy member map;
+   * the `/api/workspaces/<slug>/members/` list endpoint does NOT
+   * filter bots server-side (review finding F2), so the fallback
+   * applies the same humans-only predicate via
+   * `_isVisibleHumanFallback`.  Either way, no predicate is
+   * recomputed in this store on the primary path.
    */
   get workspaceMemberIds() {
     const workspaceSlug = this.routerStore.workspaceSlug;
@@ -159,12 +161,19 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
       return this._sortIdsForCurrentUser(workspaceSlug, humans);
     }
 
-    // Fallback: dispatch hasn't loaded yet (or errored).  Reuse
-    // the local member map; the API endpoint that fed it
-    // (`/api/workspaces/<slug>/members/`) already filters bots on
-    // the server side, so no local `is_bot` predicate is needed.
+    // Fallback: dispatch hasn't loaded yet (or errored).  The
+    // `/api/workspaces/<slug>/members/` list endpoint
+    // (`apps/api/plane/app/views/workspace/member.py:49`) does NOT
+    // apply a bot filter server-side — see review finding F2.  The
+    // picker must not flash bot rows during the loading window or
+    // when the dispatch has failed, so apply the same humans-only
+    // predicate (`VISIBLE_MEMBER_Q` from
+    // `plane.core.authz.visibility`) here.  This is a temporary
+    // safety net until M10's scope is widened to the API view.
     const members = Object.values(this.workspaceMemberMap?.[workspaceSlug] ?? {});
-    const memberIds = members.filter((m) => m.is_active !== false).map((m) => m.member);
+    const memberIds = members
+      .filter((m) => m.is_active !== false && this._isVisibleHumanFallback(m.member))
+      .map((m) => m.member);
     return this._sortIdsForCurrentUser(workspaceSlug, memberIds);
   });
 
@@ -176,13 +185,19 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
     // Source the row list from the dispatch when it's loaded; the
     // server already applied the bot/AI filter and the
     // `sp_assignable` toggle.  Fall back to the local map when
-    // the dispatch hasn't loaded yet.
+    // the dispatch hasn't loaded yet — and apply the same
+    // humans-only predicate as the primary path
+    // (`_isVisibleHumanFallback`) so the picker / search / filter
+    // surfaces stay consistent regardless of which source fed the
+    // rows.
     const dispatchRows = this.memberRoot.principalStore.getVisibleMemberRows(workspaceSlug);
     let members: IWorkspaceMembership[];
     if (dispatchRows.length > 0 || this.memberRoot.principalStore.getDispatch(workspaceSlug) !== null) {
       members = this._dispatchRowsToMemberships(workspaceSlug, dispatchRows);
     } else {
-      members = Object.values(this.workspaceMemberMap?.[workspaceSlug] ?? {}).filter((m) => m.is_active !== false);
+      members = Object.values(this.workspaceMemberMap?.[workspaceSlug] ?? {}).filter(
+        (m) => m.is_active !== false && this._isVisibleHumanFallback(m.member)
+      );
     }
 
     // Use filters store to get filtered member ids
@@ -459,6 +474,18 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
         role: (row.role ?? 0) as EUserPermissions,
         is_active: row.is_active,
       }));
+  };
+
+  /** F2 — humans-only predicate for the dispatch-loading fallback
+   *  path.  Mirrors ``VISIBLE_MEMBER_Q`` on the server side
+   *  (``plane.core.authz.visibility``: ``Q(member__is_bot=False)``).
+   *  Used while the dispatch payload is in flight or after a
+   *  failed fetch, so the picker / search / filter / mention
+   *  surfaces don't render bot rows.  Once the dispatch loads the
+   *  primary path takes over and this helper is dormant. */
+  private _isVisibleHumanFallback = (memberId: string): boolean => {
+    const user = this.memberRoot?.memberMap?.[memberId];
+    return !user?.is_bot;
   };
 }
 
