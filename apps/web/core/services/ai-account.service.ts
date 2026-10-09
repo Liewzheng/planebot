@@ -128,7 +128,14 @@ export class ServicePrincipalService extends APIService {
     return this.get(`/api/workspaces/${workspaceSlug}/sp-settings/`)
       .then((response) => response?.data)
       .catch((error) => {
-        throw error?.response?.data;
+        // Rethrow with the HTTP status attached so the UI's
+        // isHttpNotFound check can detect "endpoint not wired yet".
+        // Default to {} when the response body is missing (network error)
+        // to keep the spread safe.
+        throw {
+          status_code: error?.response?.status,
+          ...(error?.response?.data ?? {}),
+        };
       });
   }
 
@@ -139,7 +146,13 @@ export class ServicePrincipalService extends APIService {
     return this.patch(`/api/workspaces/${workspaceSlug}/sp-settings/`, data)
       .then((response) => response?.data)
       .catch((error) => {
-        throw error?.response?.data;
+        // See fetchSPSettings — propagate status_code so the UI's
+        // rollback path can distinguish "endpoint missing" (no real
+        // failure) from a genuine validation error.
+        throw {
+          status_code: error?.response?.status,
+          ...(error?.response?.data ?? {}),
+        };
       });
   }
 }

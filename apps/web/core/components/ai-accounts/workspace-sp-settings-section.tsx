@@ -39,9 +39,8 @@ export const WorkspaceSPSettingsSection = observer(function WorkspaceSPSettingsS
   // SWR backed by the future /api/workspaces/<slug>/sp-settings/ endpoint.
   // 404 today means "no settings row yet" — the model defaults
   // sp_assignable to false so the UI lands on the same default.
-  const { data, error, mutate } = useSWR<TWorkspaceSPSettings>(
-    isAdmin ? SP_SETTINGS_SW_KEY(workspaceSlug) : null,
-    () => servicePrincipalService.fetchSPSettings(workspaceSlug)
+  const { data, error, mutate } = useSWR<TWorkspaceSPSettings>(isAdmin ? SP_SETTINGS_SW_KEY(workspaceSlug) : null, () =>
+    servicePrincipalService.fetchSPSettings(workspaceSlug)
   );
   const backendWired = !error || !isHttpNotFound(error);
   const currentValue = data?.sp_assignable ?? false;
@@ -56,14 +55,14 @@ export const WorkspaceSPSettingsSection = observer(function WorkspaceSPSettingsS
       mutate({ workspace: workspaceSlug, sp_assignable: nextValue });
       setToast({
         type: TOAST_TYPE.SUCCESS,
-        title: t("common.toast.success"),
+        title: t("toast.success"),
         message: t("workspace_settings.settings.service_principals.assignable.toast_updated"),
       });
-    } catch (err) {
+    } catch {
       mutate({ workspace: workspaceSlug, sp_assignable: previous }, false);
       setToast({
         type: TOAST_TYPE.ERROR,
-        title: t("common.toast.error"),
+        title: t("toast.error"),
         message: t("workspace_settings.settings.service_principals.assignable.toast_update_failed"),
       });
     }

@@ -18,11 +18,7 @@ import { CustomSelect, EModalPosition, EModalWidth, ModalCore, AlertModalCore } 
 import { useProject } from "@/hooks/store/use-project";
 import { servicePrincipalService } from "@/services/ai-account.service";
 // local imports
-import {
-  SERVICE_PRINCIPALS_LIST,
-  SERVICE_PRINCIPAL_GRANTS,
-  SERVICE_PRINCIPAL_GRANT_ROLE_CAPS,
-} from "./constants";
+import { SERVICE_PRINCIPALS_LIST, SERVICE_PRINCIPAL_GRANTS, SERVICE_PRINCIPAL_GRANT_ROLE_CAPS } from "./constants";
 
 type Props = {
   principal: TServicePrincipal;
@@ -87,6 +83,16 @@ export const ServicePrincipalGrantsModal = observer(function ServicePrincipalGra
     setGrantRows((prevRows) => prevRows.map((row) => (row.key === rowKey ? { ...row, ...data } : row)));
 
   const removeGrantRow = (rowKey: string) => setGrantRows((prevRows) => prevRows.filter((row) => row.key !== rowKey));
+
+  // Per-row filter: each row's project dropdown must not list a project
+  // another row has already picked. The backend's PUT replaces the grant
+  // set but does NOT deduplicate rows on (project), so two grants for the
+  // same project would coexist with conflicting role_caps. The current
+  // row's own project stays in the list so it still shows as selected.
+  const getAvailableProjectsForRow = (rowKey: string) => {
+    const takenByOtherRows = new Set(grantRows.filter((row) => row.key !== rowKey).map((row) => row.project));
+    return workspaceProjects.filter((project) => !takenByOtherRows.has(project.id));
+  };
 
   // Reopening before the delayed reset fires must cancel the timer and clear
   // the submitting lock — but NOT the rows: closing nulls the SWR key, so the
@@ -195,7 +201,7 @@ export const ServicePrincipalGrantsModal = observer(function ServicePrincipalGra
                       value={row.project ?? ""}
                       onChange={(val: string) => updateGrantRow(row.key, { project: val })}
                     >
-                      {workspaceProjects.map((project) => (
+                      {getAvailableProjectsForRow(row.key).map((project) => (
                         <CustomSelect.Option key={project.id} value={project.id}>
                           {project.name}
                         </CustomSelect.Option>
@@ -209,9 +215,7 @@ export const ServicePrincipalGrantsModal = observer(function ServicePrincipalGra
                       customButton={
                         <div className="flex h-8 w-full items-center justify-between gap-2 rounded-md border-[0.5px] border-subtle px-2 text-13">
                           <span className="truncate">
-                            {t(
-                              `workspace_settings.settings.service_principals.grants.role_caps.${row.role_cap}`
-                            )}
+                            {t(`workspace_settings.settings.service_principals.grants.role_caps.${row.role_cap}`)}
                           </span>
                           <ChevronDownIcon className="size-3 flex-shrink-0 text-tertiary" aria-hidden="true" />
                         </div>
@@ -243,7 +247,9 @@ export const ServicePrincipalGrantsModal = observer(function ServicePrincipalGra
                       }
                       optionsClassName="max-h-60 overflow-y-auto"
                       value={row.is_active ? "active" : "inactive"}
-                      onChange={(val: "active" | "inactive") => updateGrantRow(row.key, { is_active: val === "active" })}
+                      onChange={(val: "active" | "inactive") =>
+                        updateGrantRow(row.key, { is_active: val === "active" })
+                      }
                     >
                       <CustomSelect.Option value="active">
                         {t("workspace_settings.settings.service_principals.grants.statuses.active")}

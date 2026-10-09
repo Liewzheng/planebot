@@ -39,7 +39,10 @@ export function GeneratedTokenDetails(props: Props) {
       )
       .catch((error: unknown) => {
         // never log the token itself
-        console.error("Failed to copy service principal token to clipboard", error instanceof Error ? error.message : error);
+        console.error(
+          "Failed to copy service principal token to clipboard",
+          error instanceof Error ? error.message : error
+        );
         setToast({
           type: TOAST_TYPE.ERROR,
           title: `${t("error")}!`,

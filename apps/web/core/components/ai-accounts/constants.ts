@@ -4,11 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import type {
-  TServicePrincipalRoleCap,
-  TServiceScopeAction,
-  TServiceScopeResourceType,
-} from "@plane/types";
+import type { TServicePrincipalRoleCap, TServiceScopeAction, TServiceScopeResourceType } from "@plane/types";
 
 export const SERVICE_PRINCIPALS_LIST = (workspaceSlug: string) => `SERVICE_PRINCIPALS_LIST_${workspaceSlug}`;
 
@@ -48,7 +44,8 @@ export const MFA_ERROR_CODE_INVALID = 5205;
 /** Map a step-up failure to an inline message; returns undefined for non-MFA errors. */
 export const getMfaStepUpError = (err: unknown, t: (key: string) => string): string | undefined => {
   const code = (err as { error_code?: number })?.error_code;
-  if (code === MFA_ERROR_CODE_REQUIRED) return t("workspace_settings.settings.service_principals.step_up.code_required");
+  if (code === MFA_ERROR_CODE_REQUIRED)
+    return t("workspace_settings.settings.service_principals.step_up.code_required");
   if (code === MFA_ERROR_CODE_INVALID) return t("workspace_settings.settings.service_principals.step_up.code_invalid");
   return undefined;
 };

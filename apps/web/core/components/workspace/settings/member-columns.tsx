@@ -95,7 +95,7 @@ export function NameColumn(props: NameProps) {
                 keyExtractor={(item) => item}
                 popoverClassName="justify-end"
                 buttonClassName="outline-none	origin-center rotate-90 size-8 aspect-square flex-shrink-0 grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity"
-                render={(item) => (
+                render={(_item) => (
                   <button
                     type="button"
                     className="flex cursor-pointer items-center gap-x-3"

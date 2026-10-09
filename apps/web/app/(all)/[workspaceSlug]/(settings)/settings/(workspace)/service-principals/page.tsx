@@ -49,9 +49,7 @@ function ServicePrincipalsListPage({ params }: Route.ComponentProps) {
     mutate,
   } = useSWR(
     canPerformWorkspaceAdminActions ? SERVICE_PRINCIPALS_LIST(workspaceSlug) : null,
-    canPerformWorkspaceAdminActions
-      ? () => servicePrincipalService.fetchServicePrincipalsList(workspaceSlug)
-      : null
+    canPerformWorkspaceAdminActions ? () => servicePrincipalService.fetchServicePrincipalsList(workspaceSlug) : null
   );
 
   const pageTitle = currentWorkspace?.name

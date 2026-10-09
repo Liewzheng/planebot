@@ -214,9 +214,7 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
                       customButton={
                         <div className="flex h-8 w-full items-center justify-between gap-2 rounded-md border-[0.5px] border-subtle px-2 text-13">
                           <span className="truncate">
-                            {t(
-                              `workspace_settings.settings.service_principals.scopes.resources.${row.resource_type}`
-                            )}
+                            {t(`workspace_settings.settings.service_principals.scopes.resources.${row.resource_type}`)}
                           </span>
                           <ChevronDownIcon className="size-3 flex-shrink-0 text-tertiary" aria-hidden="true" />
                         </div>
@@ -227,9 +225,7 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
                     >
                       {SERVICE_PRINCIPAL_SCOPE_RESOURCE_TYPES.map((resourceType) => (
                         <CustomSelect.Option key={resourceType} value={resourceType}>
-                          {t(
-                            `workspace_settings.settings.service_principals.scopes.resources.${resourceType}`
-                          )}
+                          {t(`workspace_settings.settings.service_principals.scopes.resources.${resourceType}`)}
                         </CustomSelect.Option>
                       ))}
                     </CustomSelect>
