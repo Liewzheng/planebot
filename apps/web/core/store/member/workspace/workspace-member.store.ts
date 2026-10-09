@@ -14,6 +14,8 @@ import type {
   IUserLite,
   IWorkspaceMember,
   IWorkspaceMemberInvitation,
+  TDispatchMemberRow,
+  TDispatchPermissionsMatrix,
 } from "@plane/types";
 // services
 import { WorkspaceService } from "@/services/workspace.service";
@@ -33,9 +35,6 @@ export interface IWorkspaceMembership {
   is_active?: boolean;
 }
 
-// AI agent bots are managed like regular members; other bot types stay hidden
-const isVisibleMember = (user: IUserLite | undefined) => !user?.is_bot || user?.bot_type === "AI_AGENT";
-
 export interface IWorkspaceMemberStore {
   // observables
   workspaceMemberMap: Record<string, Record<string, IWorkspaceMembership>>;
@@ -53,8 +52,13 @@ export interface IWorkspaceMemberStore {
   getSearchedWorkspaceInvitationIds: (searchQuery: string) => string[] | null;
   getWorkspaceMemberDetails: (workspaceMemberId: string) => IWorkspaceMember | null;
   getWorkspaceInvitationDetails: (invitationId: string) => IWorkspaceMemberInvitation | null;
+  // dispatch (M10)
+  getVisibleMemberRows: (workspaceSlug: string) => TDispatchMemberRow[];
+  getSpAssignable: (workspaceSlug: string) => boolean;
+  getPermissions: (workspaceSlug: string) => TDispatchPermissionsMatrix;
   // fetch actions
   fetchWorkspaceMembers: (workspaceSlug: string) => Promise<IWorkspaceMember[]>;
+  fetchPrincipalDispatch: (workspaceSlug: string) => Promise<void>;
   fetchWorkspaceMemberInvitations: (workspaceSlug: string) => Promise<IWorkspaceMemberInvitation[]>;
   // crud actions
   updateMember: (workspaceSlug: string, userId: string, data: { role: EUserPermissions }) => Promise<void>;
@@ -96,6 +100,7 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
       memberMap: computed,
       // actions
       fetchWorkspaceMembers: action,
+      fetchPrincipalDispatch: action,
       updateMember: action,
       removeMemberFromWorkspace: action,
       fetchWorkspaceMemberInvitations: action,
@@ -114,6 +119,15 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
 
   /**
    * @description get the list of all the user ids of all the members of the current workspace
+   *
+   * M10 — the visible-member predicate (the legacy `is_bot` / `bot_type`
+   * filter that used to live here) is now produced server-side by
+   * the principal-dispatch endpoint.  When the dispatch has loaded
+   * we honour the server's view verbatim; until it loads we fall
+   * back to the legacy member map (filtered by the server-side
+   * `WorkspaceMemberViewSet.list` which still applies the bot
+   * exclusion at the API layer).  Either way, no predicate is
+   * recomputed in this store.
    */
   get workspaceMemberIds() {
     const workspaceSlug = this.routerStore.workspaceSlug;
@@ -135,16 +149,23 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
   }
 
   getWorkspaceMemberIds = computedFn((workspaceSlug: string) => {
-    let members = Object.values(this.workspaceMemberMap?.[workspaceSlug] ?? {});
-    members = sortBy(members, [
-      (m) => m.member !== this.userStore?.data?.id,
-      (m) => this.memberRoot?.memberMap?.[m.member]?.display_name?.toLowerCase(),
-    ]);
-    //filter out bots (AI agent bots stay visible) and inactive members
-    const memberIds = members
-      .filter((m) => m.is_active !== false && isVisibleMember(this.memberRoot?.memberMap?.[m.member]))
-      .map((m) => m.member);
-    return memberIds;
+    const dispatchRows = this.memberRoot.principalStore.getVisibleMemberRows(workspaceSlug);
+    if (dispatchRows.length > 0 || this.memberRoot.principalStore.getDispatch(workspaceSlug) !== null) {
+      // Dispatch has loaded (or finished with an explicit empty
+      // list) — use the server's filtered, sorted answer verbatim.
+      // SPs and bots stay out because the server already filtered
+      // them; humans stay in, in the order the API returned.
+      const humans = dispatchRows.filter((row) => row.kind === "user").map((row) => row.id);
+      return this._sortIdsForCurrentUser(workspaceSlug, humans);
+    }
+
+    // Fallback: dispatch hasn't loaded yet (or errored).  Reuse
+    // the local member map; the API endpoint that fed it
+    // (`/api/workspaces/<slug>/members/`) already filters bots on
+    // the server side, so no local `is_bot` predicate is needed.
+    const members = Object.values(this.workspaceMemberMap?.[workspaceSlug] ?? {});
+    const memberIds = members.filter((m) => m.is_active !== false).map((m) => m.member);
+    return this._sortIdsForCurrentUser(workspaceSlug, memberIds);
   });
 
   /**
@@ -152,9 +173,17 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
    * @param workspaceSlug
    */
   getFilteredWorkspaceMemberIds = computedFn((workspaceSlug: string) => {
-    let members = Object.values(this.workspaceMemberMap?.[workspaceSlug] ?? {});
-    //filter out bots and inactive members (AI agent bots stay visible)
-    members = members.filter((m) => isVisibleMember(this.memberRoot?.memberMap?.[m.member]));
+    // Source the row list from the dispatch when it's loaded; the
+    // server already applied the bot/AI filter and the
+    // `sp_assignable` toggle.  Fall back to the local map when
+    // the dispatch hasn't loaded yet.
+    const dispatchRows = this.memberRoot.principalStore.getVisibleMemberRows(workspaceSlug);
+    let members: IWorkspaceMembership[];
+    if (dispatchRows.length > 0 || this.memberRoot.principalStore.getDispatch(workspaceSlug) !== null) {
+      members = this._dispatchRowsToMemberships(workspaceSlug, dispatchRows);
+    } else {
+      members = Object.values(this.workspaceMemberMap?.[workspaceSlug] ?? {}).filter((m) => m.is_active !== false);
+    }
 
     // Use filters store to get filtered member ids
     const memberIds = this.filtersStore.getFilteredMemberIds(
@@ -238,6 +267,22 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
     return invitation ?? null;
   });
 
+  // -----------------------------------------------------------------
+  // M10 — dispatch endpoint accessors.  The store no longer
+  // recomputes visibility; it forwards the dispatch answer to
+  // components that need a quick read.
+  // -----------------------------------------------------------------
+
+  getVisibleMemberRows = computedFn((workspaceSlug: string) =>
+    this.memberRoot.principalStore.getVisibleMemberRows(workspaceSlug)
+  );
+
+  getSpAssignable = computedFn((workspaceSlug: string) =>
+    this.memberRoot.principalStore.getSpAssignable(workspaceSlug)
+  );
+
+  getPermissions = computedFn((workspaceSlug: string) => this.memberRoot.principalStore.getPermissions(workspaceSlug));
+
   /**
    * @description fetch all the members of a workspace
    * @param workspaceSlug
@@ -257,6 +302,17 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
       });
       return response;
     });
+
+  /**
+   * M10 — fetch the unified principal-dispatch payload.  This is
+   * the single call the legacy "fetch + filter" path now defers
+   * to.  The store triggers it on workspace switch (handled in the
+   * member root) and the SP toggle UI invalidates the cache by
+   * calling `force: true`. */
+  fetchPrincipalDispatch = async (workspaceSlug: string) => {
+    if (!workspaceSlug) return;
+    await this.memberRoot.principalStore.fetchPrincipalDispatch(workspaceSlug);
+  };
 
   /**
    * @description update the role of a workspace member
@@ -373,4 +429,40 @@ export class WorkspaceMemberStore implements IWorkspaceMemberStore {
     const workspaceMember = this.workspaceMemberMap?.[workspaceSlug]?.[userId];
     return workspaceMember?.is_active === false;
   });
+
+  // -----------------------------------------------------------------
+  // private helpers
+  // -----------------------------------------------------------------
+
+  /** Apply the "current user first, then alphabetical by display
+   *  name" sort the legacy code shipped, but over an arbitrary
+   *  list of member ids.  Used to keep the picker ordering
+   *  identical regardless of which source fed the ids. */
+  private _sortIdsForCurrentUser = (workspaceSlug: string, ids: string[]): string[] => {
+    const sorted = sortBy(ids, [
+      (id) => id !== this.userStore?.data?.id,
+      (id) => this.memberRoot?.memberMap?.[id]?.display_name?.toLowerCase(),
+    ]);
+    return sorted;
+  };
+
+  /** Project the dispatch rows back into the membership shape the
+   *  filters store consumes, so the filter pipeline keeps working
+   *  unchanged.  The dispatch endpoint already gives us the role
+   *  per row, so we wrap it in a membership stub. */
+  private _dispatchRowsToMemberships = (workspaceSlug: string, rows: TDispatchMemberRow[]): IWorkspaceMembership[] => {
+    return rows
+      .filter((row) => row.kind === "user")
+      .map((row) => ({
+        id: row.id,
+        member: row.id,
+        role: (row.role ?? 0) as EUserPermissions,
+        is_active: row.is_active,
+      }));
+  };
 }
+
+// Re-export the IUserLite type alias for downstream consumers
+// that destructured the old file.  The shape is unchanged; this
+// keeps the public surface stable.
+export type { IUserLite };
