@@ -9,6 +9,7 @@ import type { fetchPayload, onLoadDocumentPayload, storePayload } from "@hocuspo
 export type TConvertDocumentRequestBody = {
   description_html: string;
   variant: "rich" | "document";
+  document_name?: string;
 };
 
 export interface OnLoadDocumentPayloadWithContext extends onLoadDocumentPayload {
