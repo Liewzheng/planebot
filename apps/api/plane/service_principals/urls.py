@@ -10,6 +10,7 @@ from .views import (
     ServicePrincipalListCreateAPIEndpoint,
     ServicePrincipalRotateTokenAPIEndpoint,
     ServicePrincipalScopeAPIEndpoint,
+    WorkspaceSPSettingsAPIEndpoint,
 )
 
 urlpatterns = [
@@ -37,5 +38,10 @@ urlpatterns = [
         "workspaces/<str:slug>/service-principals/<uuid:pk>/rotate-token/",
         ServicePrincipalRotateTokenAPIEndpoint.as_view(),
         name="service-principals-rotate-token",
+    ),
+    path(
+        "workspaces/<str:slug>/sp-settings/",
+        WorkspaceSPSettingsAPIEndpoint.as_view(),
+        name="workspace-sp-settings",
     ),
 ]
