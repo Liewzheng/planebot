@@ -23,6 +23,7 @@ export default defineConfig({
     "src/icon-button/index.ts",
     "src/icons/index.ts",
     "src/input/index.ts",
+    "src/logo-spinner/index.ts",
     "src/menu/index.ts",
     "src/pill/index.ts",
     "src/popover/index.ts",
