@@ -24,6 +24,7 @@ The two paths share the same 403 error body and a ``crew``-friendly
 
 from plane.db.models import WorkspaceMember, ProjectMember
 from functools import wraps
+from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework import status
 
@@ -47,6 +48,30 @@ class ROLE(Enum):
 _DENY_BODY = {"error": "You don't have the required permissions."}
 
 
+class IsAuthenticatedNoSP(BasePermission):
+    """Default auth boundary for the internal app API.
+
+    Wraps DRF's :class:`IsAuthenticated` semantics but additionally denies
+    the service-principal proxy unless the view explicitly opts in via
+    ``allow_service_principal = True``. Without this gate, every endpoint
+    using only ``permission_classes = [IsAuthenticated]`` would let a bare
+    service token through — the proxy passes ``is_authenticated=True`` and
+    role-based filters (the only safety net) would fail closed by accident
+    (``request.user.id`` is ``None`` and member queries return empty
+    sets) — surfacing as 400/500 rather than 403.
+    """
+
+    message = "Authentication required."
+
+    def has_permission(self, request, view):
+        user = getattr(request, "user", None)
+        if user is None or not getattr(user, "is_authenticated", False):
+            return False
+        if getattr(user, "_is_service_principal_proxy", False):
+            return bool(getattr(view, "allow_service_principal", False))
+        return True
+
+
 def _method_to_action(method: str) -> str:
     """Map an HTTP verb to an :class:`plane.core.authz.actions.Action`.
 
@@ -68,7 +93,6 @@ def _method_to_action(method: str) -> str:
 def _authorize_sp(
     principal: ServicePrincipalAuthz,
     *,
-    allowed_roles: list[int],
     level: str,
     resource_type: str | None,
     method: str,
@@ -163,15 +187,10 @@ def allow_permission(
 
             # Service-principal path ------------------------------------------------
             if isinstance(principal, ServicePrincipalAuthz):
-                slug = kwargs.get("slug") or getattr(
-                    getattr(request, "_view", None), "workspace_slug", None
-                )
-                project_id = kwargs.get("project_id") or getattr(
-                    getattr(request, "_view", None), "project_id", None
-                )
+                slug = kwargs.get("slug")
+                project_id = kwargs.get("project_id")
                 resp = _authorize_sp(
                     principal,
-                    allowed_roles=[],
                     level=level,
                     resource_type=resource_type,
                     method=request.method,

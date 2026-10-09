@@ -99,18 +99,12 @@ def principal_from_request(request: "HttpRequest") -> Optional[Principal]:
 
 
 def _resolve_workspace_id(request: "HttpRequest", user: Any) -> str:
-    """Best-effort workspace id for a UserPrincipal.
+    """Workspace anchor for a UserPrincipal.
 
-    Prefer the URL-derived ``view.workspace_slug`` (set on a
-    ``BaseAPIView`` / ``BaseViewSet``); fall back to the user's primary key
-    so the principal is always constructible. The engine ignores
-    ``workspace_id`` for human principals (it short-circuits to allow).
+    The engine short-circuits human principals to ``Decision.allow`` so the
+    actual value here is a placeholder — the user's primary key keeps the
+    principal constructible across every URL shape.
     """
-    view = getattr(request, "_view", None) or None
-    if view is not None:
-        slug = getattr(view, "workspace_slug", None)
-        if slug:
-            return str(slug)
     return str(getattr(user, "id", "") or "")
 
 

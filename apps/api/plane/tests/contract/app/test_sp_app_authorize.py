@@ -144,6 +144,11 @@ class TestPlane82BareTokenDenied:
         assert returned_token.id == sp_token.id
         assert returned_token.principal_type == PrincipalType.SERVICE
         assert returned_token.service_principal_id == sp_token.service_principal_id
+        # The proxy is a *full* authenticated user — both flags flip from
+        # the AnonymousUser default so every permission class's
+        # ``is_anonymous`` short-circuit lets the SP branch run (P1-1).
+        assert user.is_authenticated is True
+        assert user.is_anonymous is False
 
     def test_bare_sp_token_cannot_list_workspace_members(
         self, sp_key_client, workspace
@@ -302,6 +307,191 @@ class TestHumanSessionUnchanged:
         url = f"/api/workspaces/{workspace.slug}/sp-settings/"
         response = client.get(url)
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+# --------------------------------------------------------------------------- #
+# P1-1 — proxy ``is_anonymous=False`` so permission class SP branch is reachable
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestSpRoutingThroughPermissionClass:
+    """The proxy inherits ``is_anonymous=False`` so legacy permission
+    classes' first guard (``if request.user.is_anonymous: return False``)
+    no longer short-circuits the SP branch. A scoped SP then reaches the
+    four-step authorize() chain; an unscoped SP is denied.
+
+    P1-1 in the review.
+    """
+
+    def test_permission_class_with_authz_resource_type_allows_scoped_sp(
+        self, sp, sp_token, workspace, project
+    ):
+        """End-to-end: a permission class that opts in via
+        ``authz_resource_type`` (or the dispatch endpoint's
+        ``allow_service_principal = True`` flag) must let a scoped SP
+        through. The proxy's ``is_anonymous=False`` (P1-1 fix) is what
+        makes the SP branch reachable.
+        """
+        from rest_framework.test import APIClient as _Client
+
+        # Add a workspace-wide read scope + a project grant for the SP.
+        _add_scope(sp, "work_item", "read", project=None)
+        _add_grant(sp, project, role_cap=15)
+
+        client = _Client()
+        client.credentials(HTTP_X_API_KEY=sp_token.token)
+        response = client.get(
+            f"/api/workspaces/{workspace.slug}/principal/permissions/"
+        )
+        # The dispatch endpoint (allow_service_principal=True) accepts
+        # the SP and reports the per-action matrix truthfully.
+        assert response.status_code == status.HTTP_200_OK
+        perms = response.data["permissions"]
+        # SP can read work_items (workspace-wide scope + grant).
+        assert perms["work_item"]["read"]["allowed"] is True
+
+    def test_permission_class_without_authz_resource_type_denies_sp(
+        self, sp, sp_token, workspace, project
+    ):
+        """The opt-in flag is required: a permission-class-gated view
+        without ``authz_resource_type`` is default-deny for SPs (M9
+        contract). The dispatch endpoint IS opt-in; an unauthenticated
+        SP path through any other permission class is denied.
+        """
+        from rest_framework.test import APIClient as _Client
+
+        # Add the scope+grant; the test asserts the SP is *still* denied
+        # on a non-opt-in endpoint.
+        _add_scope(sp, "work_item", "read", project=None)
+        _add_grant(sp, project, role_cap=20)
+
+        client = _Client()
+        client.credentials(HTTP_X_API_KEY=sp_token.token)
+        # WorkspaceDraftIssueViewSet is a project-scoped CRUD with no
+        # ``authz_resource_type`` on the @allow_permission — default
+        # deny for SP. The M9 contract: SP requests on endpoints that
+        # have not opted in get 403, even with a valid scope+grant.
+        response = client.get(
+            f"/api/workspaces/{workspace.slug}/draft-issues/"
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+# --------------------------------------------------------------------------- #
+# P2-1 — user API tokens are not accepted on the internal app API
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestUserApiTokenRejected:
+    """``plane_api_…`` user tokens authenticate on the v1 API
+    (``/api/v1/``) but NOT on the internal app API. The v1 API has its own
+    middleware; the app's APIKeyAuthentication rejects user tokens so a
+    leaked user token can't expand its blast radius through every app
+    endpoint's role-gated allow-by-default paths (P2-1).
+    """
+
+    def test_user_api_token_does_not_authenticate(self, create_user, workspace):
+        from plane.db.models import APIToken as ApiTokenModel
+
+        token = ApiTokenModel.objects.create(
+            user=create_user,
+            label="user-app-key",
+            user_type=0,  # human
+            # principal_type=0 (USER) is the default — user token.
+        )
+        from plane.app.middleware.api_authentication import APIKeyAuthentication
+
+        with pytest.raises(Exception) as exc:
+            APIKeyAuthentication().authenticate(_fake_request(token.token))
+        # DRF wraps AuthenticationFailed in its own exception class.
+        assert "User API tokens are not accepted" in str(exc.value)
+
+    def test_user_api_token_cannot_reach_internal_endpoint(
+        self, create_user, workspace
+    ):
+        from plane.db.models import APIToken as ApiTokenModel
+
+        token = ApiTokenModel.objects.create(
+            user=create_user,
+            label="user-app-key",
+            user_type=0,
+        )
+        client = APIClient()
+        client.credentials(HTTP_X_API_KEY=token.token)
+        # Any role-gated endpoint is sufficient — the rejection happens
+        # at the auth layer. DRF returns 401 when ``authenticate_header``
+        # is set on the rejected authenticator, otherwise 403; both are
+        # secure rejects for a user token on the internal app API.
+        url = f"/api/workspaces/{workspace.slug}/members/"
+        response = client.get(url)
+        assert response.status_code in (
+            status.HTTP_401_UNAUTHORIZED,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+
+# --------------------------------------------------------------------------- #
+# P2-2 — SP proxy is denied at the default permission boundary
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestSpProxyDeniedAtDefaultBoundary:
+    """Endpoints that only declare ``permission_classes = [IsAuthenticated]``
+    (no ``@allow_permission``) used to let the SP proxy through to the view
+    body. After M9 the default boundary is :class:`IsAuthenticatedNoSP`
+    which explicitly denies the proxy unless the view opts in via
+    ``allow_service_principal = True`` (P2-2).
+    """
+
+    def test_ungated_view_denies_sp_by_default(
+        self, sp_key_client, workspace
+    ):
+        """``/api/workspaces/<slug>/user-properties/`` is gated only by the
+        default ``IsAuthenticatedNoSP`` — the SP proxy fails closed."""
+        url = f"/api/workspaces/{workspace.slug}/user-properties/"
+        response = sp_key_client.get(url)
+        # 401 (no session + SP proxy denied) is the expected boundary
+        # response; 403 (the permission class on some variants) is also
+        # acceptable. Either way the SP never reaches the view body.
+        assert response.status_code in (
+            status.HTTP_401_UNAUTHORIZED,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+
+# --------------------------------------------------------------------------- #
+# P2-3 — dispatch GET is read-only (no row created)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestDispatchIsReadOnly:
+    """The dispatch endpoint's lazy GET must NOT persist a
+    ``WorkspaceSPSettings`` row (M8 contract). P2-3.
+    """
+
+    def test_get_does_not_create_settings_row(self, session_client, workspace):
+        from plane.service_principals.models import WorkspaceSPSettings
+
+        assert not WorkspaceSPSettings.objects.filter(
+            workspace=workspace
+        ).exists()
+        response = session_client.get(
+            f"/api/workspaces/{workspace.slug}/principal/permissions/"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        # GET must not materialize the row — the default ``sp_assignable``
+        # value is returned without writing.
+        assert not WorkspaceSPSettings.objects.filter(
+            workspace=workspace
+        ).exists()
 
 
 # --------------------------------------------------------------------------- #

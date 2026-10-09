@@ -26,6 +26,7 @@ from rest_framework.viewsets import ModelViewSet
 
 # Module imports
 from plane.app.middleware.api_authentication import APIKeyAuthentication
+from plane.app.permissions import IsAuthenticatedNoSP
 from plane.authentication.session import BaseSessionAuthentication
 from plane.utils.exception_logger import log_exception
 from plane.utils.paginator import BasePaginator
@@ -54,14 +55,19 @@ class TimezoneMixin:
 class BaseViewSet(TimezoneMixin, ReadReplicaControlMixin, ModelViewSet, BasePaginator):
     model = None
 
-    permission_classes = [IsAuthenticated]
+    # ``IsAuthenticatedNoSP`` is the app-default auth boundary: humans
+    # (session or user-token via the v1 API) pass; the SP proxy is denied
+    # unless the view sets ``allow_service_principal = True``. The v1
+    # API and SP management endpoints are out of scope — they use their
+    # own middleware and permission classes.
+    permission_classes = [IsAuthenticatedNoSP]
 
     filter_backends = (DjangoFilterBackend, SearchFilter)
 
     # Session first so a logged-in browser wins over a stale API key;
-    # APIKeyAuthentication handles user and service tokens and rejects
-    # service-principal tokens as anonymous-by-role (their permissions
-    # flow through ``plane.core.authz.authorize``).
+    # APIKeyAuthentication handles service-principal tokens only (user
+    # API tokens are deliberately rejected — they belong on the v1 API).
+    # SP permissions flow through ``plane.core.authz.authorize``.
     authentication_classes = [BaseSessionAuthentication, APIKeyAuthentication]
 
     filterset_fields = []
@@ -157,14 +163,15 @@ class BaseViewSet(TimezoneMixin, ReadReplicaControlMixin, ModelViewSet, BasePagi
 
 
 class BaseAPIView(TimezoneMixin, ReadReplicaControlMixin, APIView, BasePaginator):
-    permission_classes = [IsAuthenticated]
+    # See :class:`BaseViewSet` for the rationale on ``IsAuthenticatedNoSP``.
+    permission_classes = [IsAuthenticatedNoSP]
 
     filter_backends = (DjangoFilterBackend, SearchFilter)
 
     # Session first so a logged-in browser wins over a stale API key;
-    # APIKeyAuthentication handles user and service tokens and rejects
-    # service-principal tokens as anonymous-by-role (their permissions
-    # flow through ``plane.core.authz.authorize``).
+    # APIKeyAuthentication handles service-principal tokens only (user
+    # API tokens are deliberately rejected — they belong on the v1 API).
+    # SP permissions flow through ``plane.core.authz.authorize``.
     authentication_classes = [BaseSessionAuthentication, APIKeyAuthentication]
 
     filterset_fields = []
