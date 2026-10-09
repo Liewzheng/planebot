@@ -11,6 +11,8 @@ import type { IUserLite } from "@plane/types";
 // plane web imports
 import type { IProjectMemberStore } from "@/store/member/project/base-project-member.store";
 import { ProjectMemberStore } from "@/store/member/project/base-project-member.store";
+import type { IPrincipalStore } from "@/store/principal/principal.store";
+import { PrincipalStore } from "@/store/principal/principal.store";
 import type { RootStore } from "@/store/root.store";
 // local imports
 import type { IWorkspaceMemberStore } from "./workspace/workspace-member.store";
@@ -25,6 +27,7 @@ export interface IMemberRootStore {
   // sub-stores
   workspace: IWorkspaceMemberStore;
   project: IProjectMemberStore;
+  principalStore: IPrincipalStore;
 }
 
 export class MemberRootStore implements IMemberRootStore {
@@ -33,6 +36,7 @@ export class MemberRootStore implements IMemberRootStore {
   // sub-stores
   workspace: IWorkspaceMemberStore;
   project: IProjectMemberStore;
+  principalStore: IPrincipalStore;
 
   constructor(_rootStore: RootStore) {
     makeObservable(this, {
@@ -40,6 +44,10 @@ export class MemberRootStore implements IMemberRootStore {
       memberMap: observable,
     });
     // sub-stores
+    // M10 — the principal store is constructed first so the
+    // workspace / project member stores can read its dispatch
+    // payload from the moment they're built.
+    this.principalStore = new PrincipalStore();
     this.workspace = new WorkspaceMemberStore(this, _rootStore);
     this.project = new ProjectMemberStore(this, _rootStore);
   }
