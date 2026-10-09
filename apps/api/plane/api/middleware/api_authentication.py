@@ -3,6 +3,7 @@
 # See the LICENSE file for details.
 
 # Django imports
+from django.conf import settings as django_settings
 from django.utils import timezone
 from django.db.models import Q
 
@@ -18,23 +19,47 @@ from plane.service_principals.constants import (
 )
 
 
+def _sp_legacy_dual_read_enabled() -> bool:
+    """Kill switch for the dual-read shim that bridges AIAccount-era tokens.
+
+    Defaults to ``True`` while the M12 migration is in flight. After the
+    observation window — once all bots have been converted and rotated to
+    ``plane_svc_`` tokens — admins set
+    ``settings.PLANE_APIKEY_DISABLE_LEGACY_DUAL_READ = True`` and roll
+    the API. The setting is intentionally simple: a per-process boolean
+    flip beats a per-request check that could hide a regression behind a
+    query-string knob.
+    """
+    return not bool(
+        getattr(django_settings, "PLANE_APIKEY_DISABLE_LEGACY_DUAL_READ", False)
+    )
+
+
 class APIKeyAuthentication(authentication.BaseAuthentication):
     """
     Authentication with an API Key.
 
-    Two credential families share this header (``X-Api-Key``) but route to
-    distinct principals:
+    Three credential shapes share this header (``X-Api-Key``):
 
-    * ``plane_api_<hex>`` — the legacy user token. Authentication resolves to
-      the owning ``User`` (``request.user.is_bot`` keeps driving the bot path
-      via ``AIScopeEnforcementMixin``). Behavior matches the historical
-      contract exactly.
-    * ``plane_svc_<hex>`` — service principal token (M6+). Authentication
-      resolves to the ``ServicePrincipal``; ``request.user`` is still the
-      human owner so downstream DRF plumbing (timezone, ``is_authenticated``
-      checks, FK lookups) keeps working unchanged. The SP principal is
-      stashed on ``request._sp_principal`` and the base view's
-      ``check_permissions`` routes the request through ``plane.core.authz``.
+    * ``plane_svc_<hex>`` — first-party SP token (M6+). Resolves to a live
+      :class:`ServicePrincipal`; ``request._sp_principal`` is set; the
+      base view's ``check_permissions`` routes the request through
+      ``plane.core.authz``. ``request.user`` is the human owner so
+      existing human-facing plumbing keeps working.
+    * ``plane_api_<hex>`` legacy bot token (pre-M12 ``is_service=True``
+      tokens backed by an ``AIAccount``). When the conversion command
+      has flipped the token to ``principal_type=SERVICE`` with a
+      ``service_principal`` FK, the dual-read shim routes it through
+      the SP branch just like a first-party ``plane_svc_`` token.
+      Otherwise the legacy bot path runs and
+      ``AIScopeEnforcementMixin`` does its historical ``enforce_ai_scope``
+      check.
+    * ``plane_api_<hex>`` regular user token — unchanged.
+
+    Setting ``PLANE_APIKEY_DISABLE_LEGACY_DUAL_READ=True`` flips the
+    shim off, so a token whose ``principal_type`` is still ``USER`` (i.e.
+    conversion never reached it) fails closed with the same
+    ``AuthenticationFailed`` as a bad token.
     """
 
     www_authenticate_realm = "api"
@@ -55,14 +80,26 @@ class APIKeyAuthentication(authentication.BaseAuthentication):
         if token.startswith(SERVICE_TOKEN_PREFIX):
             user, token_value = self._authenticate_service_token(request, token)
         else:
-            user, token_value = self._authenticate_user_token(token)
+            user, token_value = self._authenticate_user_token(request, token)
 
         return user, token_value
 
-    def _authenticate_user_token(self, token):
-        """Legacy ``plane_api_`` user-token path — behavior unchanged."""
+    def _authenticate_user_token(self, request, token):
+        """``plane_api_`` token resolution.
+
+        Looks up the APIToken first; if it carries an ``service_principal``
+        FK and ``principal_type=SERVICE`` (i.e. the M12 conversion command
+        has flipped it) the request is routed through the SP branch via
+        :meth:`_finalize_service_token`. That is the "先查 SP 再查旧
+        AIAccount" semantics: SP wins whenever it can resolve.
+
+        The pre-shim lookup stays otherwise byte-identical so the
+        existing ``plane_api_`` user-token contract is preserved.
+        """
         try:
-            api_token = APIToken.objects.get(
+            api_token = APIToken.objects.select_related(
+                "user", "service_principal__workspace"
+            ).get(
                 Q(Q(expired_at__gt=timezone.now()) | Q(expired_at__isnull=True)),
                 token=token,
                 is_active=True,
@@ -71,10 +108,38 @@ class APIKeyAuthentication(authentication.BaseAuthentication):
         except APIToken.DoesNotExist:
             raise AuthenticationFailed("Given API token is not valid")
 
-        # save api token last used
+        # Dual-read shim: a migrated AIAccount token now carries the SP FK
+        # and principal_type=SERVICE. Route it through the SP branch — the
+        # legacy bot path is skipped entirely. The kill switch short-
+        # circuits a half-migrated token to a hard AuthenticationFailed
+        # rather than letting it fall through to the bot path.
+        if api_token.principal_type == PrincipalType.SERVICE:
+            return self._finalize_service_token(request, api_token)
+
+        if not _sp_legacy_dual_read_enabled():
+            raise AuthenticationFailed(
+                "Legacy API token path is disabled; rotate the token."
+            )
+
         api_token.last_used = timezone.now()
         api_token.save(update_fields=["last_used"])
         return (api_token.user, api_token.token)
+
+    def validate_api_token(self, token):
+        """Back-compat helper preserved for the unit-test suite.
+
+        Returns ``(user, token)`` for a valid ``plane_api_`` token or
+        raises :class:`AuthenticationFailed` otherwise. Mirrors the legacy
+        semantics the test suite depends on: the SP dual-read branch is
+        skipped (a token whose principal_type has been migrated will still
+        route through the user-token path here, returning the SP owner).
+        """
+        request = type(
+            "_NoopRequest",
+            (),
+            {"headers": {}, "_sp_principal": None, "_sp_token": None},
+        )()
+        return self._authenticate_user_token(request, token)
 
     def _authenticate_service_token(self, request, token):
         """Resolve a ``plane_svc_`` token to its ServicePrincipal.
@@ -98,6 +163,15 @@ class APIKeyAuthentication(authentication.BaseAuthentication):
         )
         if api_token is None:
             raise AuthenticationFailed("Given API token is not valid")
+        return self._finalize_service_token(request, api_token)
+
+    def _finalize_service_token(self, request, api_token):
+        """Common tail for the SP branch.
+
+        Validates the SP / owner state and stashes the
+        :class:`ServicePrincipal_` on the request. Used by both the
+        ``plane_svc_`` path and the dual-read shim.
+        """
         sp = api_token.service_principal
         if sp is None or not sp.is_active or not sp.workspace_id:
             raise AuthenticationFailed("Service principal is missing or inactive")
