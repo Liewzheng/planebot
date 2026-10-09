@@ -173,7 +173,8 @@ from .page.base import (
     PagesDescriptionViewSet,
     PageDuplicateEndpoint,
 )
-from .page.version import PageVersionEndpoint
+from .page.draft import PageDraftEndpoint
+from .page.version import PageVersionEndpoint, PageVersionRestoreEndpoint
 
 from .search.base import GlobalSearchEndpoint, SearchEndpoint
 from .search.issue import IssueSearchEndpoint
