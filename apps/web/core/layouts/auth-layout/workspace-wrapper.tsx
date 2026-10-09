@@ -31,6 +31,7 @@ import {
   WORKSPACE_STATES,
   WORKSPACE_SIDEBAR_PREFERENCES,
   WORKSPACE_PROJECT_NAVIGATION_PREFERENCES,
+  WORKSPACE_PRINCIPAL_DISPATCH,
 } from "@plane/constants";
 // hooks
 import { useFavorite } from "@/hooks/store/use-favorite";
@@ -55,7 +56,7 @@ export const WorkspaceAuthWrapper = observer(function WorkspaceAuthWrapper(props
   const { fetchPartialProjects } = useProject();
   const { fetchFavorite } = useFavorite();
   const {
-    workspace: { fetchWorkspaceMembers },
+    workspace: { fetchWorkspaceMembers, fetchPrincipalDispatch },
   } = useMember();
   const { workspaces, fetchSidebarNavigationPreferences, fetchProjectNavigationPreferences } = useWorkspace();
   const { isMobile } = usePlatformOS();
@@ -88,6 +89,17 @@ export const WorkspaceAuthWrapper = observer(function WorkspaceAuthWrapper(props
   useSWR(
     workspaceSlug && currentWorkspace ? WORKSPACE_PARTIAL_PROJECTS(workspaceSlug.toString()) : null,
     workspaceSlug && currentWorkspace ? () => fetchPartialProjects(workspaceSlug.toString()) : null,
+    { revalidateIfStale: false, revalidateOnFocus: false }
+  );
+  // fetch the unified principal-dispatch payload (M10).
+  // The dispatch endpoint is the single source of truth for member
+  // visibility and effective permissions, so it must load on every
+  // workspace mount.  Declared BEFORE the WORKSPACE_MEMBERS SWR so
+  // SWR's parallel-fire order keeps the predicate answer available
+  // before the member-map fallback path is exercised.
+  useSWR(
+    workspaceSlug && currentWorkspace ? WORKSPACE_PRINCIPAL_DISPATCH(workspaceSlug.toString()) : null,
+    workspaceSlug && currentWorkspace ? () => fetchPrincipalDispatch(workspaceSlug.toString()) : null,
     { revalidateIfStale: false, revalidateOnFocus: false }
   );
   // fetch workspace members
