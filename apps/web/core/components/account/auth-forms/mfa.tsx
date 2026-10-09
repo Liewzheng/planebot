@@ -63,12 +63,28 @@ export const MFAForm = observer(function MFAForm() {
     }
   }, [searchParams, t]);
 
-  const handleCSRFToken = async () => {
-    if (!formRef || !formRef.current) return;
-    const token = await csrfPromise;
-    if (!token?.csrf_token) return;
+  const handleCSRFToken = async (): Promise<boolean> => {
+    if (!formRef || !formRef.current) return false;
+
+    let token: { csrf_token?: string } | undefined;
+    try {
+      token = await csrfPromise;
+    } catch (error) {
+      console.error("Could not fetch the CSRF token:", error);
+    }
+
+    if (!token?.csrf_token) {
+      // The rejected promise is what is cached in state, so drop it: the effect
+      // fetches a fresh one and the user's next attempt can succeed instead of
+      // failing silently forever.
+      setCsrfPromise(undefined);
+      setBannerMessage(t("auth.mfa.errors.csrf_token"));
+      return false;
+    }
+
     const csrfElement = formRef.current.querySelector("input[name=csrfmiddlewaretoken]");
-    csrfElement?.setAttribute("value", token?.csrf_token);
+    csrfElement?.setAttribute("value", token.csrf_token);
+    return true;
   };
 
   const isButtonDisabled = isSubmitting || code.trim().length === 0;
@@ -87,7 +103,9 @@ export const MFAForm = observer(function MFAForm() {
         action={`${API_BASE_URL}/auth/mfa/${isRecoveryMode ? "recovery" : "totp"}/`}
         onSubmit={async (event) => {
           event.preventDefault(); // Prevent form from submitting by default
-          await handleCSRFToken();
+          // no token means the server would reject the POST: say so instead of
+          // submitting a form the user cannot succeed with
+          if (!(await handleCSRFToken())) return;
           setIsSubmitting(true);
           if (formRef.current) formRef.current.submit(); // Manually submit the form
         }}
