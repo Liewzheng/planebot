@@ -110,10 +110,15 @@ describe("PLANE-76 guards are reachable from the live store and invalidate paths
       expect(idx, `${name} guard must be present in storeDocument`).toBeGreaterThanOrEqual(0);
       // Look at the next ~600 chars after the guard call site — enough
       // to capture the `if (…duplicated) { logger.warn(...); return; }`
-      // block without crossing into the next guard.
-      const slice = new Set(body.slice(idx, idx + 600));
-      expect(slice.has("forceCloseDocumentAcrossServers"), `${name} guard must not force-close clients`).toBe(false);
-      expect(slice.has("return"), `${name} guard must short-circuit the store`).toBe(true);
+      // block without crossing into the next guard. Substring search is
+      // intentional here — Set membership is per-character and would miss
+      // the multi-character tokens we are looking for.
+      // oxlint-disable-next-line prefer-set-has
+      const window = body.slice(idx, idx + 600);
+      expect(window.includes("forceCloseDocumentAcrossServers"), `${name} guard must not force-close clients`).toBe(
+        false
+      );
+      expect(window.includes("return"), `${name} guard must short-circuit the store`).toBe(true);
     }
   });
 
