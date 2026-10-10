@@ -111,9 +111,9 @@ describe("PLANE-76 guards are reachable from the live store and invalidate paths
       // Look at the next ~600 chars after the guard call site — enough
       // to capture the `if (…duplicated) { logger.warn(...); return; }`
       // block without crossing into the next guard.
-      const window = new Set(body.slice(idx, idx + 600));
-      expect(window.has("forceCloseDocumentAcrossServers"), `${name} guard must not force-close clients`).toBe(false);
-      expect(window.has("return"), `${name} guard must short-circuit the store`).toBe(true);
+      const slice = new Set(body.slice(idx, idx + 600));
+      expect(slice.has("forceCloseDocumentAcrossServers"), `${name} guard must not force-close clients`).toBe(false);
+      expect(slice.has("return"), `${name} guard must short-circuit the store`).toBe(true);
     }
   });
 
