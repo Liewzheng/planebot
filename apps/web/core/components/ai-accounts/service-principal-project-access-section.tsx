@@ -125,7 +125,7 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
         message:
           (err as { message?: string })?.message ??
           (err as { detail?: string })?.detail ??
-          "Could not update grant for this project. The principal's other grants were not changed.",
+          t("workspace_settings.settings.service_principals.project_access.errors.update_grant_failed"),
       });
     } finally {
       setPendingPrincipalId(null);
@@ -154,7 +154,7 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
         message:
           (err as { message?: string })?.message ??
           (err as { detail?: string })?.detail ??
-          "Could not update the role cap. The principal's other grants were not changed.",
+          t("workspace_settings.settings.service_principals.project_access.errors.update_role_cap_failed"),
       });
     } finally {
       setPendingPrincipalId(null);
@@ -179,7 +179,7 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
         message:
           (err as { message?: string })?.message ??
           (err as { detail?: string })?.detail ??
-          "Could not update the grant status. The principal's other grants were not changed.",
+          t("workspace_settings.settings.service_principals.project_access.errors.update_status_failed"),
       });
     } finally {
       setPendingPrincipalId(null);
@@ -190,8 +190,8 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
     <div className="mt-10 flex flex-col gap-4">
       <SettingsBoxedControlItem
         className="flex-col items-stretch"
-        title="Service principal access"
-        description="Service principals (machine accounts for integrations and automation) are intentionally NOT members of this project. A workspace admin can grant any principal access to this project below — toggling on adds a grant, which the principal needs in addition to its scopes. Only workspace admins can perform this action."
+        title={t("workspace_settings.settings.service_principals.project_access.section.title")}
+        description={t("workspace_settings.settings.service_principals.project_access.section.description")}
       />
       {principalsLoading ? (
         <p className="text-13 text-placeholder">{t("loading")}…</p>
@@ -202,15 +202,15 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
         // workspace has no principals — that misleads admins into
         // creating duplicates.
         <ErrorState
-          message="Could not load service principals for this workspace. You may not have permission, or the workspace list endpoint is unavailable."
+          message={t("workspace_settings.settings.service_principals.project_access.list.error_loading")}
           onRetry={() => mutate(SERVICE_PRINCIPALS_LIST(workspaceSlug))}
           t={t}
         />
       ) : !principals || principals.length === 0 ? (
         <p className="rounded-md border border-subtle bg-layer-2 p-4 text-13 text-tertiary">
-          No service principals exist in this workspace yet. A workspace admin can create one under
-          <strong> Workspace settings → Developer → Service principals</strong>, then come back here to grant it access
-          to this project.
+          {t("workspace_settings.settings.service_principals.project_access.list.empty_state_before_path")}{" "}
+          <strong>{t("workspace_settings.settings.service_principals.project_access.list.settings_path")}</strong>
+          {t("workspace_settings.settings.service_principals.project_access.list.empty_state_after_path")}
         </p>
       ) : (
         <ul className="divide-y divide-subtle rounded-md border border-subtle bg-layer-2">
@@ -233,7 +233,11 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
                   <div className="min-w-0">
                     <p className="truncate text-13 font-medium text-primary">{principal.name}</p>
                     {!principal.is_active && (
-                      <p className="text-warning truncate text-11">Inactive — token cannot authenticate</p>
+                      <p className="text-warning truncate text-11">
+                        {t(
+                          "workspace_settings.settings.service_principals.project_access.list.inactive_cannot_authenticate"
+                        )}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -245,7 +249,7 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
                         customButtonClassName="w-full"
                         customButton={
                           <div className="flex h-8 w-full items-center justify-between gap-2 rounded-md border-[0.5px] border-subtle px-2 text-13">
-                            <span className="truncate">{renderRoleCapLabel(grantForThisProject.role_cap)}</span>
+                            <span className="truncate">{renderRoleCapLabel(grantForThisProject.role_cap, t)}</span>
                             <ChevronDownIcon className="size-3 flex-shrink-0 text-tertiary" aria-hidden="true" />
                           </div>
                         }
@@ -258,7 +262,7 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
                       >
                         {SERVICE_PRINCIPAL_GRANT_ROLE_CAPS.map((roleCap) => (
                           <CustomSelect.Option key={roleCap} value={String(roleCap)}>
-                            {renderRoleCapLabel(roleCap)}
+                            {renderRoleCapLabel(roleCap, t)}
                           </CustomSelect.Option>
                         ))}
                       </CustomSelect>
@@ -267,26 +271,42 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
                           className={grantForThisProject.is_active ? "text-success-primary" : "text-warning"}
                           aria-hidden
                         >
-                          {grantForThisProject.is_active ? "Active" : "Inactive"}
+                          {t(
+                            grantForThisProject.is_active
+                              ? "workspace_settings.settings.service_principals.project_access.list.active"
+                              : "workspace_settings.settings.service_principals.project_access.list.inactive"
+                          )}
                         </span>
                         <Switch
                           size="sm"
                           checked={grantForThisProject.is_active}
                           onCheckedChange={(next: boolean) => void handleActiveChange(principal, projectId, next)}
                           disabled={isAnyMutationPending}
-                          aria-label={`Active grant for ${principal.name}`}
+                          aria-label={t(
+                            "workspace_settings.settings.service_principals.project_access.list.aria_active_grant_for",
+                            { name: principal.name }
+                          )}
                         />
                       </span>
                     </>
                   ) : null}
                   <span className="flex items-center gap-2 text-12 text-tertiary">
-                    <span>{isGranted ? "Granted" : "Not granted"}</span>
+                    <span>
+                      {t(
+                        isGranted
+                          ? "workspace_settings.settings.service_principals.project_access.list.granted"
+                          : "workspace_settings.settings.service_principals.project_access.list.not_granted"
+                      )}
+                    </span>
                     <Switch
                       size="sm"
                       checked={isGranted}
                       onCheckedChange={(next: boolean) => void handleToggleGrant(principal, next)}
                       disabled={isAnyMutationPending || !principal.is_active}
-                      aria-label={`Grant access to ${principal.name}`}
+                      aria-label={t(
+                        "workspace_settings.settings.service_principals.project_access.list.aria_grant_access_to",
+                        { name: principal.name }
+                      )}
                     />
                   </span>
                 </div>
@@ -314,14 +334,14 @@ function ErrorState(props: { message: string; onRetry: () => void; t: (key: stri
   );
 }
 
-function renderRoleCapLabel(roleCap: TServicePrincipalRoleCap): string {
+function renderRoleCapLabel(roleCap: TServicePrincipalRoleCap, t: (key: string) => string): string {
   switch (roleCap) {
     case 20:
-      return "Admin";
+      return t("workspace_settings.settings.service_principals.grants.role_caps.20");
     case 15:
-      return "Member";
+      return t("workspace_settings.settings.service_principals.grants.role_caps.15");
     case 5:
-      return "Guest";
+      return t("workspace_settings.settings.service_principals.grants.role_caps.5");
     default:
       return String(roleCap);
   }

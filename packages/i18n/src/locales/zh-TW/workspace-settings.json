@@ -657,6 +657,55 @@
             "title": "服務主體未更新",
             "message": "無法更新服務主體"
           }
+        },
+        "project_access": {
+          "section": {
+            "title": "服務主體存取",
+            "description": "服務主體（用於整合與自動化的機器帳戶）刻意不屬於本專案的成員。工作區管理員可於下方授予任何主體存取本專案的權限——開啟即新增授權，主體除了範圍（scopes）之外還需要該授權才能存取。僅工作區管理員可執行此操作。"
+          },
+          "list": {
+            "granted": "已授權",
+            "not_granted": "未授權",
+            "active": "啟用",
+            "inactive": "停用",
+            "inactive_cannot_authenticate": "已停用 — 權杖無法進行身分驗證",
+            "empty_state_before_path": "此工作區中尚無服務主體。工作區管理員可以在",
+            "empty_state_after_path": "建立一個，然後返回此處將其授權給本專案。",
+            "settings_path": "工作區設定 → 開發者 → 服務主體",
+            "error_loading": "無法載入此工作區的服務主體。您可能沒有權限，或工作區列表介面不可用。",
+            "aria_active_grant_for": "{name} 的啟用授權",
+            "aria_grant_access_to": "授權存取 {name}"
+          },
+          "errors": {
+            "update_grant_failed": "無法更新本專案的授權。該主體的其他授權未變更。",
+            "update_role_cap_failed": "無法更新角色上限。該主體的其他授權未變更。",
+            "update_status_failed": "無法更新授權狀態。該主體的其他授權未變更。"
+          },
+          "coverage": {
+            "load_failed_message_before": "無法載入工作區專案列表以比對授權。",
+            "empty_workspace": "此工作區尚無專案——一旦建立專案，此行將開始追蹤覆蓋情況。",
+            "granted_to_prefix": "已授權",
+            "granted_to_middle": "個，共",
+            "granted_to_suffix_one": "個工作區專案",
+            "granted_to_suffix_other": "個工作區專案",
+            "not_granted_prefix": "未授權：",
+            "not_granted_more": "，以及其他 {more} 個",
+            "all_covered": "所有工作區專案均已涵蓋。",
+            "manage_grants_cta": "管理授權 →"
+          },
+          "members_pointer": {
+            "sentence_1_prefix": "下方列表僅顯示",
+            "term_human_members": "人類成員",
+            "sentence_2": "。服務主體（供整合與自動化登入的 AI / 機器帳戶）刻意未列入——它們沒有",
+            "term_project_member_class": "ProjectMember",
+            "sentence_3_prefix": "記錄。它們對",
+            "term_this_project": "本",
+            "sentence_3_middle": "專案的存取由上方的",
+            "term_workspace_admin": "工作區管理員",
+            "sentence_3_suffix": "管理（僅當專案管理員同時也是工作區管理員時才能變更 AI 帳戶的授權；一般專案管理員無法變更）。服務主體的工作區級清單位於",
+            "term_settings_path": "工作區設定 → 開發者 → 服務主體",
+            "sentence_3_final": "。"
+          }
         }
       }
     },

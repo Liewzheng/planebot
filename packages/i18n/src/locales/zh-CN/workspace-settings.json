@@ -663,6 +663,55 @@
             "title": "服务主体未更新",
             "message": "无法更新服务主体"
           }
+        },
+        "project_access": {
+          "section": {
+            "title": "服务主体访问",
+            "description": "服务主体（用于集成和自动化的机器账户）特意不是本项目的成员。工作区管理员可以在下方授予任何主体访问本项目的权限——开启即添加授权，主体除了范围（scopes）之外还需要该授权才能访问。仅工作区管理员可以执行此操作。"
+          },
+          "list": {
+            "granted": "已授予",
+            "not_granted": "未授予",
+            "active": "启用",
+            "inactive": "停用",
+            "inactive_cannot_authenticate": "已停用 — 令牌无法进行身份验证",
+            "empty_state_before_path": "此工作区中尚无服务主体。工作区管理员可以在",
+            "empty_state_after_path": "创建一个，然后返回此处将其授权给本项目。",
+            "settings_path": "工作区设置 → 开发者 → 服务主体",
+            "error_loading": "无法加载此工作区的服务主体。您可能没有权限，或工作区列表接口不可用。",
+            "aria_active_grant_for": "{name} 的启用授权",
+            "aria_grant_access_to": "授权访问 {name}"
+          },
+          "errors": {
+            "update_grant_failed": "无法更新本项目的授权。该主体的其他授权未变更。",
+            "update_role_cap_failed": "无法更新角色上限。该主体的其他授权未变更。",
+            "update_status_failed": "无法更新授权状态。该主体的其他授权未变更。"
+          },
+          "coverage": {
+            "load_failed_message_before": "无法加载工作区项目列表以比对授权。",
+            "empty_workspace": "此工作区尚无项目——一旦创建项目，此行将开始跟踪覆盖情况。",
+            "granted_to_prefix": "已授予",
+            "granted_to_middle": "个，共",
+            "granted_to_suffix_one": "个工作区项目",
+            "granted_to_suffix_other": "个工作区项目",
+            "not_granted_prefix": "未授予：",
+            "not_granted_more": "，以及其他 {more} 个",
+            "all_covered": "所有工作区项目均已覆盖。",
+            "manage_grants_cta": "管理授权 →"
+          },
+          "members_pointer": {
+            "sentence_1_prefix": "下方列表仅显示",
+            "term_human_members": "人类成员",
+            "sentence_2": "。服务主体（供集成与自动化登录的 AI / 机器账户）刻意未列入——它们没有",
+            "term_project_member_class": "ProjectMember",
+            "sentence_3_prefix": "记录。它们对",
+            "term_this_project": "本",
+            "sentence_3_middle": "项目的访问由上方的",
+            "term_workspace_admin": "工作区管理员",
+            "sentence_3_suffix": "管理（仅当项目管理员同时也是工作区管理员时才能更改 AI 账户的授权；普通项目管理员无法更改）。服务主体的工作区级列表位于",
+            "term_settings_path": "工作区设置 → 开发者 → 服务主体",
+            "sentence_3_final": "。"
+          }
         }
       }
     },
