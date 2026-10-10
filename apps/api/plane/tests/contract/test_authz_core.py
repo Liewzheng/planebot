@@ -349,6 +349,44 @@ class TestGrantStep:
         assert not d.allowed
         assert d.reason == DENY_GRANT_MISS
 
+    def test_no_grant_detail_keeps_leading_phrase_and_appends_remedy(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        """M27 remedy guidance on the grant-missing 403.
+
+        The leading phrase stays byte-identical so the
+        ``_assert_chain_deny`` substring check in
+        ``tests/contract/api/test_sp_v1_wiring.py`` keeps passing; the
+        appended sentence points an admin at the right place to fix it.
+        A later reword that drops either side must fail here.
+        """
+        _add_scope(sp, ResourceType.WORK_ITEM, Action.READ, project=public_project)
+        # No ProjectGrant for this project — the grant step trips.
+        d = authorize(
+            sp_principal,
+            Action.READ,
+            ResourceType.WORK_ITEM,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_GRANT_MISS
+        # Original leading phrase — must keep passing unmodified; the
+        # substring is what test_sp_v1_wiring._assert_chain_deny asserts.
+        assert d.detail.startswith(
+            f"Service principal '{sp.name}' has no active grant "
+            f"for project {public_project.id}."
+        ), f"leading phrase drifted: {d.detail!r}"
+        assert "has no active grant for project" in d.detail
+        # New guidance — names the action and the place so an admin
+        # reading the CLI 403 knows where to grant.
+        assert "workspace admin" in d.detail
+        assert (
+            "Workspace settings -> Service principals -> Grants" in d.detail
+        ), f"remedy location dropped from detail: {d.detail!r}"
+
 
 # --------------------------------------------------------------------------- #
 # Step 3 — role_cap boundary                                                   #
