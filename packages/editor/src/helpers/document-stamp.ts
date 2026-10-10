@@ -14,10 +14,12 @@
  * can break the cycle, but the client can refuse to feed it: the cache is used
  * only when it provably descends from the revision the server is serving.
  *
- * The stamp is the page body the cache was last reconciled with. A client's own
- * unsaved edits do not change it (the stored body only changes when someone
- * saves), and the save path re-stamps with what it just wrote, so a client that
- * is simply editing keeps its cache.
+ * The stamp is the page body the cache was last reconciled with. The save path
+ * re-stamps with what it just wrote, so a client that simply saves keeps its
+ * cache; the sync effect in `use-yjs-setup` also re-stamps when the session
+ * reaches the server-synced state, so a client that only reads the page also
+ * leaves a usable stamp and the next open does not have to rebuild the cache
+ * from scratch.
  */
 
 const STAMP_KEY_PREFIX = "plane:doc-stamp:";
@@ -60,13 +62,38 @@ export const writeDocumentStamp = (docId: string, stamp?: string): void => {
 /**
  * True when the cached document must not be merged into the server's copy.
  *
- * Both unknown cases reset the cache on purpose: without a stamp there is no way
- * to prove the cache belongs to the revision being served, and merging a copy
- * that does not belong is exactly what duplicates a page. The reset costs the
- * offline cache of one page, which the server refills on the next sync.
+ * An undefined `contentStamp` is "the served revision is not known yet"
+ * (the pages-list mount path, where `description_html` is only added by
+ * the detail serializer and is fetched after the editor mounts). A
+ * guessed wipe in that window is what causes the multi-second "正在同步..."
+ * on long pages — wait for the served value and re-decide when it
+ * arrives. A known served stamp with no stored stamp is the first-visit
+ * case and still resets (we cannot prove the cache belongs to the served
+ * revision); a known mismatch still resets (the cache was built from an
+ * earlier revision and would merge as a second copy of every block,
+ * PLANE-76).
  */
 export const shouldResetLocalDocument = (storedStamp: string | null, contentStamp?: string): boolean => {
-  if (!contentStamp) return true;
+  if (contentStamp === undefined) return false;
   if (storedStamp === null) return true;
   return storedStamp !== contentStamp;
+};
+
+/**
+ * True when writing the served stamp preserves the evidence the
+ * PLANE-76 guard keys on.
+ *
+ * The sync-time stamp write must NOT overwrite a stored stamp that
+ * already differs from the served value: the reset flag set by the
+ * stamp effect is consumed only at the next persistence bind, and
+ * overwriting the stored stamp would let the next open skip the reset
+ * the guard asked for. A first visit (no stored stamp) writes so the
+ * next open has provenance; a matching stored stamp is an idempotent
+ * write; an unknown served stamp is a no-op (the caller does not have
+ * anything to write).
+ */
+export const shouldWriteStamp = (storedStamp: string | null, contentStamp: string | undefined): boolean => {
+  if (contentStamp === undefined) return false;
+  if (storedStamp === null) return true;
+  return storedStamp === contentStamp;
 };

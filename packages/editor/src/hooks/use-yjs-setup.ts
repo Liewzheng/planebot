@@ -13,7 +13,12 @@ import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 // helpers
 import { createDraftSideDoc } from "@/helpers/editing-document";
-import { readDocumentStamp, shouldResetLocalDocument } from "@/helpers/document-stamp";
+import {
+  readDocumentStamp,
+  shouldResetLocalDocument,
+  shouldWriteStamp,
+  writeDocumentStamp,
+} from "@/helpers/document-stamp";
 // types
 import type { CollaborationState, CollabStage, CollaborationError } from "@/types/collaboration";
 
@@ -79,7 +84,14 @@ type UseYjsSetupArgs = {
 
 const DEFAULT_MAX_RETRIES = 3;
 
-export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange, draftHtml, contentStamp }: UseYjsSetupArgs) => {
+export const useYjsSetup = ({
+  docId,
+  serverUrl,
+  authToken,
+  onStateChange,
+  draftHtml,
+  contentStamp,
+}: UseYjsSetupArgs) => {
   // Current collaboration stage
   const [stage, setStage] = useState<CollabStage>({ kind: "initial" });
 
@@ -113,6 +125,23 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange, draftH
   const lastReconnectTimeRef = useRef(0);
   const clearCacheOnNextSessionRef = useRef(false);
   /**
+   * The body stamp the API last served, captured by the provider effect
+   * closure so `onSynced` can stamp the cache even when another writer's
+   * publish bumps the stamp mid-session without recreating the provider.
+   * `useEffect` below keeps it in step with the prop.
+   */
+  const contentStampRef = useRef<string | undefined>(contentStamp);
+  /**
+   * Whether this provider session has already stamped its cache. Reset on
+   * every new provider so a fresh session always has one chance to stamp.
+   * Stamping more than once per session can bless an untrustworthy cache
+   * after a mid-session contentStamp change (the stamp effect sets the
+   * PLANE-76 reset flag, but the cache is only cleared on the next
+   * persistence bind; a re-sync before that bind would otherwise write
+   * the new value and the next open would skip the reset).
+   */
+  const stampedThisSessionRef = useRef(false);
+  /**
    * Identity of the draft the current side doc was built from. Lets the
    * side-doc effect tell "the same draft is still active" (no-op) apart
    * from "a fresh draft arrived" (rebuild).
@@ -126,6 +155,11 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange, draftH
     isDisposedRef.current = false;
     forcedCloseSignalRef.current = false;
     stageRef.current = { kind: "initial" };
+    // a fresh provider is a fresh chance to stamp: the pages-list route
+    // mounts the editor before `description_html` arrives (PLANE-76
+    // regression), so the previous session may have synced without a
+    // stamp to write; this session starts open.
+    stampedThisSessionRef.current = false;
 
     const provider = new HocuspocusProvider({
       name: docId,
@@ -167,6 +201,24 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange, draftH
       onSynced: () => {
         if (isDisposedRef.current) return;
         retryCountRef.current = 0;
+        // The cache and the server have just agreed on the served revision.
+        // Stamp once per provider session so the next open does not treat
+        // the cache as unprovable and force a full rebuild (the multi-second
+        // "正在同步..." the human reported on long pages). Stamping only on
+        // the first sync of a session preserves the PLANE-76 defense: if
+        // the served stamp moves mid-session, the stamp effect sets the
+        // reset flag, but the cache is only cleared on the next persistence
+        // bind — a re-sync here would otherwise write the new value and
+        // the next open would skip the reset. The `shouldWriteStamp` gate
+        // further ensures we never overwrite a stored mismatching stamp on
+        // the first sync either (mismatch-at-mount, session ends before a
+        // re-bind): the deferred clear must still fire on the next open.
+        if (!stampedThisSessionRef.current && contentStampRef.current) {
+          if (shouldWriteStamp(readDocumentStamp(docId), contentStampRef.current)) {
+            writeDocumentStamp(docId, contentStampRef.current);
+          }
+          stampedThisSessionRef.current = true;
+        }
         // Document sync complete
         const newStage = { kind: "synced" as const };
         stageRef.current = newStage;
@@ -379,6 +431,55 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange, draftH
     };
   }, [docId, serverUrl, authToken, sessionEpoch]);
 
+  // Stamp effects must be declared *before* the IndexedDB persistence
+  // effect: React runs effects in declaration order, and the persistence
+  // bind consumes `clearCacheOnNextSessionRef` synchronously at the top
+  // of its setup. If the stamp effect ran after, the first visit and any
+  // mid-session contentStamp change would set the flag *after* the
+  // bind had already checked it as false, and the PLANE-76 reset would
+  // never fire on this mount.
+
+  // Refuse a locally cached document that no longer descends from the served
+  // revision (PLANE-76 ballooning defense). The cache writes the served
+  // stamp on every save; on a later visit, if the stamp we have locally
+  // does not match the stamp the API just served, the cache is from an
+  // earlier revision and a merge would duplicate every block. Clear the
+  // cache before the next session binds to it.
+  useEffect(() => {
+    if (!yjsSession) return;
+    const stored = readDocumentStamp(docId);
+    if (!shouldResetLocalDocument(stored, contentStamp)) return;
+    clearCacheOnNextSessionRef.current = true;
+  }, [contentStamp, yjsSession, docId]);
+
+  // Keep the stamp ref in step with the prop so the provider's `onSynced`
+  // callback (captured inside the provider effect and bound to this doc's
+  // websocket session) always stamps with the current served revision.
+  useEffect(() => {
+    contentStampRef.current = contentStamp;
+  }, [contentStamp]);
+
+  // Catch the case where the served revision arrives *after* the session
+  // has already reached the synced state. The pages-list route mounts the
+  // editor before `description_html` arrives (the list serializer omits
+  // it; only the detail serializer adds it — see apps/api .../page.py and
+  // .../views/page/base.py), so `contentStamp` starts undefined and the
+  // first `onSynced` finds nothing to write. This effect stamps as soon as
+  // the prop arrives, so the read-only open → second open path still leaves
+  // `stored === contentStamp` and the cache survives the next open. The
+  // same `shouldWriteStamp` gate protects against overwriting a stored
+  // mismatching stamp.
+  useEffect(() => {
+    if (!yjsSession) return;
+    if (stampedThisSessionRef.current) return;
+    if (!contentStamp) return;
+    if (stageRef.current.kind !== "synced") return;
+    if (shouldWriteStamp(readDocumentStamp(docId), contentStamp)) {
+      writeDocumentStamp(docId, contentStamp);
+    }
+    stampedThisSessionRef.current = true;
+  }, [contentStamp, yjsSession, docId]);
+
   // IndexedDB persistence lifecycle
   useEffect(() => {
     if (!yjsSession) return;
@@ -504,19 +605,6 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange, draftH
       setDraftSideDoc(null);
     };
   }, []);
-
-  // Refuse a locally cached document that no longer descends from the served
-  // revision (PLANE-76 ballooning defense). The cache writes the served
-  // stamp on every save; on a later visit, if the stamp we have locally
-  // does not match the stamp the API just served, the cache is from an
-  // earlier revision and a merge would duplicate every block. Clear the
-  // cache before the next session binds to it.
-  useEffect(() => {
-    if (!yjsSession) return;
-    const stored = readDocumentStamp(docId);
-    if (!shouldResetLocalDocument(stored, contentStamp)) return;
-    clearCacheOnNextSessionRef.current = true;
-  }, [contentStamp, yjsSession, docId]);
 
   // Notify state changes callback (use ref to avoid dependency on handler)
   const stateChangeCallbackRef = useRef(onStateChange);
