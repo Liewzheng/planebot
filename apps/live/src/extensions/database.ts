@@ -155,6 +155,13 @@ export const storeDocument = async ({
     // long-line uniqueness. Compared against the last content the server
     // successfully stored, so it catches a merge that the line-only
     // duplication heuristic lets through. Primed by the store path below.
+    //
+    // Refuse without force-closing: the heuristic is not time-boxed and
+    // can flag legitimately repetitive content (large pasted tables,
+    // templated rows). Force-closing unloads the document and wipes the
+    // author's in-memory edit; dropping just the write keeps the
+    // database authoritative and lets the author revise the content
+    // rather than lose their changes to a reload-from-DB.
     const growth = looksLikeDuplicatedGrowth(pageId, contentHTML);
     if (growth.duplicated) {
       logger.warn("DOCUMENT_STORE_GUARD: refusing to persist a duplicated-growth document", {
@@ -162,30 +169,22 @@ export const storeDocument = async ({
         ratio: growth.ratio,
         uniqueRatio: growth.uniqueRatio,
       });
-      await forceCloseDocumentAcrossServers(
-        instance,
-        pageId,
-        ForceCloseReason.CONTENT_REPLACED,
-        CloseCode.CONTENT_REPLACED
-      );
       return;
     }
 
     // Guard: a body that holds a quarter of itself verbatim twice (the rolling-
     // hash block detector). Independent of the line-statistics heuristic, so it
     // catches duplication shapes that the per-line checks let through.
+    //
+    // Same refusal-without-force-close reasoning as the duplicated-growth
+    // check: the rolling-hash can fire on templated content (repeated
+    // rows, recurring boilerplate) that an author legitimately saved.
     const repeatedBlockLength = duplicatedBlockLength(contentHTML);
     if (repeatedBlockLength > 0) {
       logger.warn("DOCUMENT_STORE_GUARD: refusing to persist a document with a repeated body block", {
         pageId,
         repeatedBlockLength,
       });
-      await forceCloseDocumentAcrossServers(
-        instance,
-        pageId,
-        ForceCloseReason.CONTENT_REPLACED,
-        CloseCode.CONTENT_REPLACED
-      );
       return;
     }
 
