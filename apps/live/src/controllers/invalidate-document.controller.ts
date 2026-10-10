@@ -15,10 +15,17 @@ import { logger } from "@plane/logger";
 import { env } from "@/env";
 // extensions
 import { forceCloseDocumentAcrossServers } from "@/extensions/force-close-handler";
+// utils
+import { recordContentReplacement } from "@/utils/content-replacement";
 import { CloseCode, ForceCloseReason } from "@/types/admin-commands";
 
 const invalidateDocumentSchema = z.object({
   docId: z.string().min(1, "docId is required"),
+  // Optional; the API sends the visible-text length of the content it just
+  // wrote so the live server can refuse the first stale-client revert before
+  // it overwrites the freshly imported page. Mirrors `page_content_text_length`
+  // on the API side.
+  contentTextLength: z.number().nonnegative().int().optional(),
 });
 
 @Controller("/invalidate-document")
@@ -56,10 +63,15 @@ export class InvalidateDocumentController {
       });
     }
 
-    const { docId } = parsedBody.data;
+    const { docId, contentTextLength } = parsedBody.data;
     logger.info(`[INVALIDATE_DOCUMENT] Invalidating document ${docId} after external content replacement`);
 
     try {
+      // Arm the replacement-window shrink guard before the force-close so the
+      // first store that arrives from a still-connected stale client is refused.
+      if (typeof contentTextLength === "number") {
+        recordContentReplacement(docId, contentTextLength);
+      }
       await forceCloseDocumentAcrossServers(
         this.hocuspocusServer,
         docId,

@@ -21,13 +21,23 @@ import { getPageService } from "@/services/page/handler";
 import type { FetchPayloadWithContext, StorePayloadWithContext } from "@/types";
 import { ForceCloseReason, CloseCode } from "@/types/admin-commands";
 import { broadcastError } from "@/utils/broadcast-error";
+import {
+  clearContentReplacement,
+  contentTextLength,
+  getContentReplacementFloor,
+  looksLikeDuplicatedGrowth,
+  recordDocumentContent,
+} from "@/utils/content-replacement";
+import { duplicatedBlockLength } from "@/utils/document-balloon";
 import { detectDocumentDuplication } from "@/utils/document-duplication";
 // force close utility
 import { forceCloseDocumentAcrossServers } from "./force-close-handler";
 
 const ISSUE_EVENTS_DOCUMENT_PREFIX = "issue-events:";
 
-const fetchDocument = async ({ context, documentName: pageId, instance }: FetchPayloadWithContext) => {
+// Exported so the store path can be exercised from tests and so Hocuspocus
+// can reference them from the Database extension below.
+export const fetchDocument = async ({ context, documentName: pageId, instance }: FetchPayloadWithContext) => {
   // issue-events documents are ephemeral broadcast channels without any persisted content
   if (pageId.startsWith(ISSUE_EVENTS_DOCUMENT_PREFIX)) {
     return Y.encodeStateAsUpdate(new Y.Doc());
@@ -77,7 +87,7 @@ const fetchDocument = async ({ context, documentName: pageId, instance }: FetchP
   }
 };
 
-const storeDocument = async ({
+export const storeDocument = async ({
   context,
   state: pageBinaryData,
   documentName: pageId,
@@ -118,6 +128,66 @@ const storeDocument = async ({
       return;
     }
 
+    // Guard: an external write (API/CLI re-upload) was just invalidated. Until
+    // the new content is in the shared document, a store that drops most of
+    // it (a stale client reverting the external write) is refused so the fresh
+    // content survives. The invalidate-document controller arms the floor.
+    const replacementFloor = getContentReplacementFloor(pageId);
+    if (replacementFloor !== null) {
+      const candidateTextLength = contentTextLength(contentHTML);
+      if (candidateTextLength < replacementFloor) {
+        logger.warn("DOCUMENT_STORE_GUARD: refusing to persist a content-replacement revert", {
+          pageId,
+          floor: replacementFloor,
+          candidateTextLength,
+        });
+        await forceCloseDocumentAcrossServers(
+          instance,
+          pageId,
+          ForceCloseReason.CONTENT_REPLACED,
+          CloseCode.CONTENT_REPLACED
+        );
+        return;
+      }
+    }
+
+    // Guard: a stale client merge grows the document by >=1.3x with low
+    // long-line uniqueness. Compared against the last content the server
+    // successfully stored, so it catches a merge that the line-only
+    // duplication heuristic lets through. Primed by the store path below.
+    //
+    // Refuse without force-closing: the heuristic is not time-boxed and
+    // can flag legitimately repetitive content (large pasted tables,
+    // templated rows). Force-closing unloads the document and wipes the
+    // author's in-memory edit; dropping just the write keeps the
+    // database authoritative and lets the author revise the content
+    // rather than lose their changes to a reload-from-DB.
+    const growth = looksLikeDuplicatedGrowth(pageId, contentHTML);
+    if (growth.duplicated) {
+      logger.warn("DOCUMENT_STORE_GUARD: refusing to persist a duplicated-growth document", {
+        pageId,
+        ratio: growth.ratio,
+        uniqueRatio: growth.uniqueRatio,
+      });
+      return;
+    }
+
+    // Guard: a body that holds a quarter of itself verbatim twice (the rolling-
+    // hash block detector). Independent of the line-statistics heuristic, so it
+    // catches duplication shapes that the per-line checks let through.
+    //
+    // Same refusal-without-force-close reasoning as the duplicated-growth
+    // check: the rolling-hash can fire on templated content (repeated
+    // rows, recurring boilerplate) that an author legitimately saved.
+    const repeatedBlockLength = duplicatedBlockLength(contentHTML);
+    if (repeatedBlockLength > 0) {
+      logger.warn("DOCUMENT_STORE_GUARD: refusing to persist a document with a repeated body block", {
+        pageId,
+        repeatedBlockLength,
+      });
+      return;
+    }
+
     // create payload
     const payload: TDocumentPayload = {
       description_binary: contentBinaryEncoded,
@@ -125,6 +195,13 @@ const storeDocument = async ({
       description_json: contentJSON,
     };
     await service.updateDescriptionBinary(pageId, payload);
+
+    // The replacement window only has to cover the first store after an
+    // external write: clear it so subsequent legitimate edits are not blocked.
+    clearContentReplacement(pageId);
+    // Remember the content we just persisted as the reference for the next
+    // duplicated-growth check.
+    recordDocumentContent(pageId, contentHTML);
   } catch (error) {
     const appError = new AppError(error, { context: { pageId } });
     logger.error("Error in updating document:", appError);
