@@ -5,6 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { StorePayloadWithContext } from "@/types";
 
 // Mock the workspace packages so the test can import the live server module
 // without the rest of the monorepo being built.
@@ -12,6 +13,7 @@ const workspace = vi.hoisted(() => ({
   // Returned by `getAllDocumentFormatsFromDocumentEditorBinaryData`. Each
   // test sets `contentHTML` to drive the four store-path guards.
   conversion: vi.fn(),
+  logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
 vi.mock("@plane/editor", () => ({
@@ -20,7 +22,7 @@ vi.mock("@plane/editor", () => ({
 }));
 
 vi.mock("@plane/logger", () => ({
-  logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
+  logger: workspace.logger,
 }));
 
 vi.mock("@plane/types", () => ({}));
@@ -90,27 +92,45 @@ const duplicatedLongBody = (): string => {
   return base + base;
 };
 
-// A body that triggers `looksLikeDuplicatedGrowth` only: 80 lines (below
-// the 120-line gate of `detectDocumentDuplication`) plus 30 lines that
-// each repeat one of the 80, so growth ratio = 110/80 = 1.375 and the
-// unique-line ratio in the candidate = 80/110 ≈ 0.727. With the
-// baseline primed, the growth guard fires while the other three stay
-// quiet.
+// A body that triggers `looksLikeDuplicatedGrowth`. The candidate has
+// 50 unique baseline paragraphs and 20 paragraphs that each repeat one
+// of the 50, interleaved so no ≥600-char substring is contiguous in
+// the result. With the baseline primed (recordDocumentContent primed
+// with the first half = the unique-paragraph prefix):
+//   - detectDocumentDuplication: 70 lines < 120, does not fire
+//   - looksLikeDuplicatedGrowth: ratio 70/50 = 1.4 ≥ 1.3,
+//     uniqueRatio 50/70 ≈ 0.714 ≤ 0.85, fires
+//   - duplicatedBlockLength: no contiguous ≥600-char block appears twice
+//     (the repeats are interleaved), returns 0
+//
+// Pinning the refusal through the mocked logger is the second line of
+// defence: if `looksLikeDuplicatedGrowth` is removed/gated in
+// storeDocument, `duplicatedBlockLength` would also refuse WITHOUT
+// force-closing on this body, and the no-force-close assertion alone
+// would stay green. Asserting the marker string forces the test to
+// observe which guard actually fired.
 const growthCandidateBody = (): string => {
-  const baseline = Array.from(
-    { length: 80 },
-    (_, i) => `第${i}段内容，记录一次实测的数据与结论，详尽描述这一段的内容。`
-  )
-    .map(paragraph)
-    .join("");
-  const extraRepeats = Array.from(
-    { length: 30 },
-    (_, i) => `第${i}段内容，记录一次实测的数据与结论，详尽描述这一段的内容。`
-  )
-    .map(paragraph)
-    .join("");
-  return baseline + extraRepeats;
+  const lines: string[] = [];
+  for (let i = 0; i < 50; i++) {
+    lines.push(`第${i}段内容，记录一次实测的数据与结论，详尽描述这一段的内容。`);
+  }
+  for (let i = 0; i < 20; i++) {
+    // Interleave repeats so no contiguous block of ~20 paragraphs
+    // (~660 chars visible text) appears twice. Each repeat sits
+    // between two unique lines, so the longest contiguous repeat is
+    // a single paragraph (~33 chars), well below DUPLICATED_BLOCK_MIN_LENGTH.
+    lines.splice(2 * i + 1, 0, `第${i}段内容，记录一次实测的数据与结论，详尽描述这一段的内容。`);
+  }
+  return lines.map(paragraph).join("");
 };
+
+// The growth guard fires after a primed baseline. The first `count`
+// unique paragraphs, with no interleaved repeats, give us a clean
+// baseline that has no repeated blocks and a uniqueLine ratio of 1.0.
+const growthBaselineBody = (count: number): string =>
+  Array.from({ length: count }, (_, i) => `第${i}段内容，记录一次实测的数据与结论，详尽描述这一段的内容。`)
+    .map(paragraph)
+    .join("");
 
 // A body that triggers `duplicatedBlockLength` only: a single 700-char
 // block appears verbatim twice. Lines (after the >20-char filter) are
@@ -135,13 +155,18 @@ const context = () => ({
 // force-close helper, so an empty object is fine.
 const instance = {} as never;
 
+// `StorePayloadWithContext` requires hocuspocus bookkeeping fields
+// (clientsCount / document / requestHeaders / requestParameters /
+// socketId) that the store path never reads. The cast keeps the call
+// honest without forcing the test to construct fake hocuspocus plumbing
+// — TypeScript's structural type check would block the build otherwise.
 const callStore = (pageId: string) =>
   storeDocument({
     context: context(),
     state: new Uint8Array([1]) as never,
     documentName: pageId,
     instance,
-  });
+  } as unknown as StorePayloadWithContext);
 
 const setupConversion = (contentHTML: string) =>
   workspace.conversion.mockReturnValue({
@@ -154,6 +179,7 @@ beforeEach(() => {
   workspace.conversion.mockReset();
   pageServiceMock.updateDescriptionBinary.mockClear();
   forceCloseMock.mockClear();
+  workspace.logger.warn.mockClear();
 });
 
 afterEach(() => {
@@ -209,8 +235,13 @@ describe("storeDocument — guard chain", () => {
     // store is refused (the DB stays authoritative) but the client's
     // in-memory edit survives — no force-close, no reload loop, no
     // lost author edit.
-    const baseline = growthCandidateBody().slice(0, growthCandidateBody().length / 2);
-    recordDocumentContent(DOC, baseline);
+    //
+    // Pin the refused guard through the marker string
+    // 'duplicated-growth document' so a neutralized or removed
+    // looksLikeDuplicatedGrowth call cannot be hidden behind the
+    // duplicatedBlockLength guard (which would also refuse without
+    // force-closing on this body in a regression).
+    recordDocumentContent(DOC, growthBaselineBody(50));
 
     const merged = growthCandidateBody();
     setupConversion(merged);
@@ -219,6 +250,14 @@ describe("storeDocument — guard chain", () => {
 
     expect(pageServiceMock.updateDescriptionBinary).not.toHaveBeenCalled();
     expect(forceCloseMock).not.toHaveBeenCalled();
+    expect(workspace.logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("duplicated-growth document"),
+      expect.anything()
+    );
+    expect(workspace.logger.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining("repeated body block"),
+      expect.anything()
+    );
   });
 
   it("duplicatedBlockLength refuses WITHOUT forcing a close (false-positive guard)", async () => {
