@@ -106,6 +106,8 @@ def visible_project_pages(request, slug, project_id):
 class PageListCreateAPIEndpoint(BaseAPIView):
     """Page List and Create Endpoint"""
 
+    resource_type = "page"
+
     serializer_class = PageSerializer
     model = Page
     permission_classes = [ProjectEntityPermission]
@@ -218,6 +220,8 @@ class PageListCreateAPIEndpoint(BaseAPIView):
 
 class PageDetailAPIEndpoint(BaseAPIView):
     """Page Detail Endpoint"""
+
+    resource_type = "page"
 
     serializer_class = PageSerializer
     model = Page
