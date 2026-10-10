@@ -2,18 +2,28 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See the LICENSE file for details.
 
-"""Contract tests: SP requests on un-annotated v1 endpoints default-deny.
+"""Contract tests: SP default-deny on un-annotated views.
 
 Every v1 view that should accept service-principal requests must declare
-``resource_type = "<name>"``. Endpoints that have not yet been onboarded
-or that explicitly opt SPs out (``UserEndpoint``) return 403 for any
-``plane_svc_`` token. The fail-closed semantics are what keeps an SP from
-accidentally acting through surface area M8 didn't vet.
+``resource_type = "<name>"``. A view that has not yet been onboarded —
+or that explicitly opts SPs out — returns 403 for any ``plane_svc_``
+token via the default-deny branch in
+``AIScopeEnforcementMixin._enforce_sp_permission``
+(``apps/api/plane/api/views/base.py``), which raises
+``PermissionDenied("Endpoint is not exposed to service principals.")``.
+
+After M23 and M24 every v1 view declares a ``resource_type``, so the
+default-deny branch is no longer reachable at the URL level. These
+tests drive it directly via a test-only subclass of
+``AIScopeEnforcementMixin`` that intentionally omits ``resource_type``,
+fed through ``_enforce_sp_permission`` with an SP principal. The
+annotated-view paths (e.g. the scope-miss deny on
+``/api/v1/users/me/``) keep their own coverage in
+``TestSPDefaultDeny`` below and in ``test_sp_self_identity.py``.
 """
 
 import pytest
 from rest_framework import status
-from rest_framework.test import APIClient
 
 from plane.db.models.api import APIToken
 from plane.service_principals.constants import PrincipalType
@@ -40,11 +50,16 @@ def _make_sp(workspace, owner, name="bot-deny", token_value=None):
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestSPDefaultDeny:
-    def test_users_me_endpoint_denies_sp(
+    """Annotated views still deny SPs that hold no scope row — just
+    not at the default-deny branch. The endpoint is reachable, the
+    engine answers 403 (DENY_SCOPE_MISS)."""
+
+    def test_users_me_endpoint_denies_sp_without_scope(
         self, workspace, create_user, api_client
     ):
-        """``/users/me/`` has no ``resource_type`` — SP requests must
-        not pass even with a fully granted SP."""
+        """``/users/me/`` is annotated ``resource_type="user"``; an SP
+        without a matching ``(user, read)`` scope row reaches the
+        engine and is denied (scope-miss), not via default-deny."""
         _make_sp(workspace, create_user, name="me-deny")
 
         api_client.credentials(HTTP_X_API_KEY="plane_svc_token_me-deny")
@@ -55,34 +70,83 @@ class TestSPDefaultDeny:
     def test_users_me_endpoint_still_allows_humans(
         self, api_key_client
     ):
-        """The default-deny path is SP-only. Humans keep working."""
+        """Human callers see the legacy ``UserLiteSerializer`` payload."""
         response = api_key_client.get("/api/v1/users/me/")
         assert response.status_code == status.HTTP_200_OK
 
     def test_unknown_route_denies_sp(
         self, workspace, create_user, api_client
     ):
-        """A non-mapped URL prefix is a 404 from Django, but the SP
-        path runs first and must produce 403 before the lookup."""
+        """An SP request against a well-formed but unresolvable URL
+        never reaches 200. The exact deny origin (scope-miss vs. 404
+        from Django's resolver) is not asserted — what matters is that
+        an SP token holder cannot accidentally retrieve the owner's
+        resource through a junk URL."""
         _make_sp(workspace, create_user, name="route-deny")
 
         api_client.credentials(HTTP_X_API_KEY="plane_svc_token_route-deny")
-        # Trailing space URL — Django won't even resolve it. But the SP
-        # request still flows through the auth layer's branch on
-        # ``_sp_principal`` at authorization time, which short-circuits
-        # with the default-deny response.
         response = api_client.get(
             "/api/v1/workspaces/no-such-workspace/projects/"
             "00000000-0000-0000-0000-000000000000/work-items/"
         )
 
-        # SP path: 403 (default-deny before resolve completes is not
-        # guaranteed; what we need is "owner as SP never gets 200",
-        # which a 403 / 404 / 401 status satisfies).
         assert response.status_code in (
             status.HTTP_403_FORBIDDEN,
             status.HTTP_404_NOT_FOUND,
             status.HTTP_401_UNAUTHORIZED,
+        )
+
+
+@pytest.mark.contract
+class TestSPDefaultDenyBranchUnit:
+    """Drive the un-annotated-view default-deny branch directly.
+
+    After M23 + M24 every v1 view declares ``resource_type`` (verified
+    by grepping ``apps/api/plane/api/views/*.py`` on the merged tree),
+    so this branch is no longer reachable at the URL level. The honest
+    coverage is a test-only subclass of ``AIScopeEnforcementMixin``
+    that intentionally omits ``resource_type``, fed through
+    ``_enforce_sp_permission`` with an SP principal.
+
+    This pins the safety net for any future v1 view that forgets the
+    annotation — the day someone adds a new v1 endpoint without
+    setting ``resource_type``, the existing per-view deny tests stop
+    exercising this branch silently, and this unit-level test is the
+    only thing still pinning the message.
+    """
+
+    def test_default_deny_raises_with_exact_message(self):
+        """A view without ``resource_type`` denies SPs at the
+        default-deny branch with the exact production message."""
+        from plane.api.views.base import AIScopeEnforcementMixin
+        from rest_framework.exceptions import PermissionDenied
+        from rest_framework.test import APIRequestFactory
+
+        class _UnannotatedView(AIScopeEnforcementMixin):
+            # No ``resource_type`` set on purpose — exercises the
+            # default-deny branch (the bare default of ``None``).
+            pass
+
+        view = _UnannotatedView()
+        request = APIRequestFactory().get("/")
+        # The default-deny branch never reads ``sp_principal``'s fields
+        # (it raises before the authorize() chain runs), so a
+        # ``SimpleNamespace`` is enough — no DB hit, no fixture churn.
+        from types import SimpleNamespace
+
+        sp_principal = SimpleNamespace(
+            service_principal=SimpleNamespace(id="sp-id", name="sp"),
+        )
+
+        with pytest.raises(PermissionDenied) as excinfo:
+            view._enforce_sp_permission(request, sp_principal)
+
+        assert str(excinfo.value.detail) == (
+            "Endpoint is not exposed to service principals."
+        ), (
+            "Default-deny message drifted — production code in "
+            "AIScopeEnforcementMixin._enforce_sp_permission and this "
+            "test must stay in lockstep."
         )
 
 

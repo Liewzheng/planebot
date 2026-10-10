@@ -92,14 +92,16 @@ class AIScopeEnforcementMixin:
     #: view should accept SP requests. ``None`` (the default) means
     #: SP-authenticated calls are 403'd at ``check_permissions`` time.
     #:
-    #: Note (review m8 P2-4): ``users`` (``/api/v1/users/me/``,
-    #: ``UserEndpoint``) is intentionally left default-deny even though
-    #: the legacy ``URL_RESOURCE_MAP`` mapped it to ``ResourceType.USER``.
-    #: The endpoint exists to return the authenticated principal's own
-    #: profile; under the SP wiring that would print the human owner's
-    #: profile to whatever bot holds the SP token. A future ``self``
-    #: resource type (or a guarded identity endpoint) is the right shape;
-    #: M8 leaves the endpoint inert to avoid even the surface.
+    #: ``users`` (``/api/v1/users/me/``, ``UserEndpoint``) is annotated
+    #: ``resource_type = "user"`` so SP requests reach the authorize()
+    #: chain instead of the default-deny branch. The view then short-
+    #: circuits ``get`` for SP callers and returns a hand-built
+    #: ``{id, name, type: "service_principal"}`` payload describing the
+    #: SP itself; the human owner is never serialized. The human
+    #: ``UserLiteSerializer`` path is byte-for-byte unchanged. This is
+    #: the invariant: a token holder can learn the SP's own identity
+    #: from this endpoint, never the owner's profile (closes the
+    #: reviewer-m8 P2-4 surface — see ``apps/api/plane/api/views/user.py``).
     resource_type: str | None = None
 
     def get_permissions(self):
