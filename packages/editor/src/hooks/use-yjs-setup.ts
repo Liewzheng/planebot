@@ -127,6 +127,16 @@ export const useYjsSetup = ({
    */
   const contentStampRef = useRef<string | undefined>(contentStamp);
   /**
+   * Whether this provider session has already stamped its cache. Reset on
+   * every new provider so a fresh session always has one chance to stamp.
+   * Stamping more than once per session can bless an untrustworthy cache
+   * after a mid-session contentStamp change (the stamp effect sets the
+   * PLANE-76 reset flag, but the cache is only cleared on the next
+   * persistence bind; a re-sync before that bind would otherwise write
+   * the new value and the next open would skip the reset).
+   */
+  const stampedThisSessionRef = useRef(false);
+  /**
    * Identity of the draft the current side doc was built from. Lets the
    * side-doc effect tell "the same draft is still active" (no-op) apart
    * from "a fresh draft arrived" (rebuild).
@@ -140,6 +150,11 @@ export const useYjsSetup = ({
     isDisposedRef.current = false;
     forcedCloseSignalRef.current = false;
     stageRef.current = { kind: "initial" };
+    // a fresh provider is a fresh chance to stamp: the pages-list route
+    // mounts the editor before `description_html` arrives (PLANE-76
+    // regression), so the previous session may have synced without a
+    // stamp to write; this session starts open.
+    stampedThisSessionRef.current = false;
 
     const provider = new HocuspocusProvider({
       name: docId,
@@ -181,15 +196,19 @@ export const useYjsSetup = ({
       onSynced: () => {
         if (isDisposedRef.current) return;
         retryCountRef.current = 0;
-        // The cache and the server have just agreed on the served revision:
-        // record it as the stamp the next open will check against. Without
-        // this a read-only visit leaves `stored === null`, and the next open
-        // refuses the unverifiable cache and forces a full rebuild (the
-        // multi-second "正在同步..." the human reported on long pages). The
-        // PLANE-76 defense still fires when the served stamp moves: the
-        // stamp effect above sees `stored !== contentStamp` and clears the
-        // cache before the next session binds.
-        writeDocumentStamp(docId, contentStampRef.current);
+        // The cache and the server have just agreed on the served revision.
+        // Stamp once per provider session so the next open does not treat
+        // the cache as unprovable and force a full rebuild (the multi-second
+        // "正在同步..." the human reported on long pages). Stamping only on
+        // the first sync of a session preserves the PLANE-76 defense: if
+        // the served stamp moves mid-session, the stamp effect sets the
+        // reset flag, but the cache is only cleared on the next persistence
+        // bind — a re-sync here would otherwise write the new value and
+        // the next open would skip the reset.
+        if (!stampedThisSessionRef.current && contentStampRef.current) {
+          writeDocumentStamp(docId, contentStampRef.current);
+          stampedThisSessionRef.current = true;
+        }
         // Document sync complete
         const newStage = { kind: "synced" as const };
         stageRef.current = newStage;
@@ -547,6 +566,23 @@ export const useYjsSetup = ({
   useEffect(() => {
     contentStampRef.current = contentStamp;
   }, [contentStamp]);
+
+  // Catch the case where the served revision arrives *after* the session
+  // has already reached the synced state. The pages-list route mounts the
+  // editor before `description_html` arrives (the list serializer omits
+  // it; only the detail serializer adds it — see apps/api .../page.py and
+  // .../views/page/base.py), so `contentStamp` starts undefined and the
+  // first `onSynced` finds nothing to write. This effect stamps as soon as
+  // the prop arrives, so the read-only open → second open path still leaves
+  // `stored === contentStamp` and the cache survives the next open.
+  useEffect(() => {
+    if (!yjsSession) return;
+    if (stampedThisSessionRef.current) return;
+    if (!contentStamp) return;
+    if (stageRef.current.kind !== "synced") return;
+    writeDocumentStamp(docId, contentStamp);
+    stampedThisSessionRef.current = true;
+  }, [contentStamp, yjsSession, docId]);
 
   // Notify state changes callback (use ref to avoid dependency on handler)
   const stateChangeCallbackRef = useRef(onStateChange);
