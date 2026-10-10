@@ -240,6 +240,11 @@ def authorize(
                 f"Service principal '{sp.name}' lacks scope for "
                 f"{action} {resource_type}"
                 + (f" in project {project_id}." if project_id else ".")
+                + (
+                    " A workspace admin must add the required scope for "
+                    "this service principal at Workspace settings -> "
+                    "Developer -> Service principals -> Manage scopes."
+                )
             ),
         )
 
@@ -261,7 +266,8 @@ def authorize(
                     f"Service principal '{sp.name}' has no active grant "
                     f"for project {project_id}. A workspace admin must "
                     f"grant this project to the service principal at "
-                    f"Workspace settings -> Service principals -> Grants."
+                    f"Workspace settings -> Developer -> Service "
+                    f"principals -> Manage grants."
                 ),
             )
 
@@ -281,7 +287,9 @@ def authorize(
                 (
                     f"Grant role_cap ({grant.role_cap}) is below the "
                     f"required role ({required}) for {action} "
-                    f"{resource_type}."
+                    f"{resource_type}. A workspace admin can raise that "
+                    f"project's grant role cap at Workspace settings -> "
+                    f"Developer -> Service principals -> Manage grants."
                 ),
             )
 

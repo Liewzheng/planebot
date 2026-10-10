@@ -237,6 +237,47 @@ class TestScopeStep:
         assert not d.allowed
         assert d.reason == DENY_SCOPE_MISS
 
+    def test_scope_miss_detail_keeps_leading_phrase_and_appends_remedy(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        """M30 remedy guidance on the scope-missing 403.
+
+        Mirror of the grant-missing pinning test: the leading phrase
+        stays byte-identical so the ``"lacks scope for read page"``
+        substring check in ``tests/contract/api/test_sp_v1_wiring.py``
+        keeps passing; the appended sentence points an admin at the
+        right place to add a scope. The tail wording tracks the frozen
+        front-end labels — the section lives under the **Developer**
+        sidebar category, the row control reads **Manage scopes**.
+        """
+        _add_grant(sp, public_project, role_cap=20)
+        # No scope row at all — the scope step trips.
+        d = authorize(
+            sp_principal,
+            Action.READ,
+            ResourceType.WORK_ITEM,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_SCOPE_MISS
+        # Original leading phrase — must keep passing unmodified; the
+        # substring is what test_sp_v1_wiring._assert_chain_deny asserts.
+        assert d.detail.startswith(
+            f"Service principal '{sp.name}' lacks scope for "
+            f"read work_item in project {public_project.id}."
+        ), f"leading phrase drifted: {d.detail!r}"
+        assert "lacks scope for read work_item" in d.detail
+        # New guidance — names the action and the place so an admin
+        # reading the CLI 403 knows where to add the scope.
+        assert "workspace admin" in d.detail
+        assert (
+            "Workspace settings -> Developer -> Service principals "
+            "-> Manage scopes" in d.detail
+        ), f"remedy location drifted from M30 frozen labels: {d.detail!r}"
+
     def test_exact_scope_match_allows(
         self, sp, sp_principal, public_project, workspace
     ):
@@ -352,13 +393,16 @@ class TestGrantStep:
     def test_no_grant_detail_keeps_leading_phrase_and_appends_remedy(
         self, sp, sp_principal, public_project, workspace
     ):
-        """M27 remedy guidance on the grant-missing 403.
+        """M27/M30 remedy guidance on the grant-missing 403.
 
         The leading phrase stays byte-identical so the
         ``_assert_chain_deny`` substring check in
         ``tests/contract/api/test_sp_v1_wiring.py`` keeps passing; the
         appended sentence points an admin at the right place to fix it.
-        A later reword that drops either side must fail here.
+        The tail wording was frozen for M30 to match the front-end
+        labels: the section lives under the **Developer** sidebar
+        category, and the row control reads **Manage grants**. A later
+        reword that drops either side must fail here.
         """
         _add_scope(sp, ResourceType.WORK_ITEM, Action.READ, project=public_project)
         # No ProjectGrant for this project — the grant step trips.
@@ -381,11 +425,14 @@ class TestGrantStep:
         ), f"leading phrase drifted: {d.detail!r}"
         assert "has no active grant for project" in d.detail
         # New guidance — names the action and the place so an admin
-        # reading the CLI 403 knows where to grant.
+        # reading the CLI 403 knows where to grant. The tail wording
+        # tracks the frozen front-end labels (Developer category,
+        # Manage grants control).
         assert "workspace admin" in d.detail
         assert (
-            "Workspace settings -> Service principals -> Grants" in d.detail
-        ), f"remedy location dropped from detail: {d.detail!r}"
+            "Workspace settings -> Developer -> Service principals "
+            "-> Manage grants" in d.detail
+        ), f"remedy location drifted from M30 frozen labels: {d.detail!r}"
 
 
 # --------------------------------------------------------------------------- #
@@ -455,6 +502,53 @@ class TestRoleCapStep:
         )
         assert not d.allowed
         assert d.reason == DENY_ROLE_CAP
+
+    def test_role_cap_detail_keeps_leading_phrase_and_appends_remedy(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        """M30 remedy guidance on the role-cap 403.
+
+        Mirror of the grant-missing pinning test: the leading phrase
+        stays byte-identical so the
+        ``"role_cap (5) is below the required role (15)"`` substring
+        check in ``tests/contract/api/test_sp_v1_wiring.py`` keeps
+        passing; the appended sentence points an admin at the right
+        place to raise the cap. The tail wording tracks the frozen
+        front-end labels — the section lives under the **Developer**
+        sidebar category, the row control reads **Manage grants**.
+        """
+        # CREATE on work_item requires MEMBER (15); a GUEST-cap (5)
+        # grant trips the role_cap step with the exact numbers the
+        # wiring test asserts.
+        _add_scope(
+            sp, ResourceType.WORK_ITEM, Action.CREATE, project=public_project
+        )
+        _add_grant(sp, public_project, role_cap=5)
+        d = authorize(
+            sp_principal,
+            Action.CREATE,
+            ResourceType.WORK_ITEM,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_ROLE_CAP
+        # Original leading phrase — must keep passing unmodified; the
+        # substring is what test_sp_v1_wiring._assert_chain_deny asserts.
+        assert d.detail.startswith(
+            f"Grant role_cap (5) is below the required role (15) for "
+            f"create work_item."
+        ), f"leading phrase drifted: {d.detail!r}"
+        assert "role_cap (5) is below the required role (15)" in d.detail
+        # New guidance — names the action and the place so an admin
+        # reading the CLI 403 knows where to raise the cap.
+        assert "workspace admin" in d.detail
+        assert (
+            "Workspace settings -> Developer -> Service principals "
+            "-> Manage grants" in d.detail
+        ), f"remedy location drifted from M30 frozen labels: {d.detail!r}"
 
 
 # --------------------------------------------------------------------------- #
