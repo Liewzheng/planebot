@@ -13,7 +13,7 @@ import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 // helpers
 import { createDraftSideDoc } from "@/helpers/editing-document";
-import { readDocumentStamp, shouldResetLocalDocument } from "@/helpers/document-stamp";
+import { readDocumentStamp, shouldResetLocalDocument, writeDocumentStamp } from "@/helpers/document-stamp";
 // types
 import type { CollaborationState, CollabStage, CollaborationError } from "@/types/collaboration";
 
@@ -79,7 +79,14 @@ type UseYjsSetupArgs = {
 
 const DEFAULT_MAX_RETRIES = 3;
 
-export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange, draftHtml, contentStamp }: UseYjsSetupArgs) => {
+export const useYjsSetup = ({
+  docId,
+  serverUrl,
+  authToken,
+  onStateChange,
+  draftHtml,
+  contentStamp,
+}: UseYjsSetupArgs) => {
   // Current collaboration stage
   const [stage, setStage] = useState<CollabStage>({ kind: "initial" });
 
@@ -112,6 +119,13 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange, draftH
   const stageRef = useRef<CollabStage>({ kind: "initial" });
   const lastReconnectTimeRef = useRef(0);
   const clearCacheOnNextSessionRef = useRef(false);
+  /**
+   * The body stamp the API last served, captured by the provider effect
+   * closure so `onSynced` can stamp the cache even when another writer's
+   * publish bumps the stamp mid-session without recreating the provider.
+   * `useEffect` below keeps it in step with the prop.
+   */
+  const contentStampRef = useRef<string | undefined>(contentStamp);
   /**
    * Identity of the draft the current side doc was built from. Lets the
    * side-doc effect tell "the same draft is still active" (no-op) apart
@@ -167,6 +181,15 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange, draftH
       onSynced: () => {
         if (isDisposedRef.current) return;
         retryCountRef.current = 0;
+        // The cache and the server have just agreed on the served revision:
+        // record it as the stamp the next open will check against. Without
+        // this a read-only visit leaves `stored === null`, and the next open
+        // refuses the unverifiable cache and forces a full rebuild (the
+        // multi-second "正在同步..." the human reported on long pages). The
+        // PLANE-76 defense still fires when the served stamp moves: the
+        // stamp effect above sees `stored !== contentStamp` and clears the
+        // cache before the next session binds.
+        writeDocumentStamp(docId, contentStampRef.current);
         // Document sync complete
         const newStage = { kind: "synced" as const };
         stageRef.current = newStage;
@@ -517,6 +540,13 @@ export const useYjsSetup = ({ docId, serverUrl, authToken, onStateChange, draftH
     if (!shouldResetLocalDocument(stored, contentStamp)) return;
     clearCacheOnNextSessionRef.current = true;
   }, [contentStamp, yjsSession, docId]);
+
+  // Keep the stamp ref in step with the prop so the provider's `onSynced`
+  // callback (captured inside the provider effect and bound to this doc's
+  // websocket session) always stamps with the current served revision.
+  useEffect(() => {
+    contentStampRef.current = contentStamp;
+  }, [contentStamp]);
 
   // Notify state changes callback (use ref to avoid dependency on handler)
   const stateChangeCallbackRef = useRef(onStateChange);

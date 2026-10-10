@@ -14,10 +14,12 @@
  * can break the cycle, but the client can refuse to feed it: the cache is used
  * only when it provably descends from the revision the server is serving.
  *
- * The stamp is the page body the cache was last reconciled with. A client's own
- * unsaved edits do not change it (the stored body only changes when someone
- * saves), and the save path re-stamps with what it just wrote, so a client that
- * is simply editing keeps its cache.
+ * The stamp is the page body the cache was last reconciled with. The save path
+ * re-stamps with what it just wrote, so a client that simply saves keeps its
+ * cache; the sync effect in `use-yjs-setup` also re-stamps when the session
+ * reaches the server-synced state, so a client that only reads the page also
+ * leaves a usable stamp and the next open does not have to rebuild the cache
+ * from scratch.
  */
 
 const STAMP_KEY_PREFIX = "plane:doc-stamp:";
