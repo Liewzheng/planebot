@@ -32,7 +32,7 @@ function MembersSettingsPage({ params }: Route.ComponentProps) {
   const { currentProjectDetails } = useProject();
   const { workspaceUserInfo, allowPermissions } = useUserPermissions();
   // derived values
-  const pageTitle = currentProjectDetails?.name ? `${currentProjectDetails?.name} - Members` : undefined;
+  const pageTitle = currentProjectDetails?.name ? `${currentProjectDetails?.name} - ${t("common.members")}` : undefined;
   const isProjectMemberOrAdmin = allowPermissions(
     [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
     EUserPermissionsLevel.PROJECT
@@ -50,12 +50,25 @@ function MembersSettingsPage({ params }: Route.ComponentProps) {
       <SettingsHeading title={t("common.members")} />
       <ProjectServicePrincipalAccessSection workspaceSlug={workspaceSlug} projectId={projectId} />
       <div className="my-6 rounded-md border border-subtle bg-surface-1 p-3 text-12 text-tertiary">
-        The list below shows <strong className="text-secondary">human members only</strong>. Service principals (AI /
-        machine accounts that integrations and automation sign in as) are intentionally absent — they have no{" "}
-        <code>ProjectMember</code> row. Their access to <em>this</em> project is managed in the section above by a{" "}
-        <strong className="text-secondary">workspace admin</strong> (a project admin who is not also a workspace admin
-        cannot change grants for AI accounts). The workspace-wide list of service principals lives under{" "}
-        <strong>Workspace settings → Developer → Service principals</strong>.
+        {t("workspace_settings.settings.service_principals.project_access.members_pointer.sentence_1_prefix")}{" "}
+        <strong className="text-secondary">
+          {t("workspace_settings.settings.service_principals.project_access.members_pointer.term_human_members")}
+        </strong>
+        {t("workspace_settings.settings.service_principals.project_access.members_pointer.sentence_2")}{" "}
+        <code>
+          {t("workspace_settings.settings.service_principals.project_access.members_pointer.term_project_member_class")}
+        </code>{" "}
+        {t("workspace_settings.settings.service_principals.project_access.members_pointer.sentence_3_prefix")}{" "}
+        <em>{t("workspace_settings.settings.service_principals.project_access.members_pointer.term_this_project")}</em>{" "}
+        {t("workspace_settings.settings.service_principals.project_access.members_pointer.sentence_3_middle")}{" "}
+        <strong className="text-secondary">
+          {t("workspace_settings.settings.service_principals.project_access.members_pointer.term_workspace_admin")}
+        </strong>{" "}
+        {t("workspace_settings.settings.service_principals.project_access.members_pointer.sentence_3_suffix")}{" "}
+        <strong>
+          {t("workspace_settings.settings.service_principals.project_access.members_pointer.term_settings_path")}
+        </strong>
+        {t("workspace_settings.settings.service_principals.project_access.members_pointer.sentence_3_final")}
       </div>
       <ProjectSettingsMemberDefaults projectId={projectId} workspaceSlug={workspaceSlug} />
       <ProjectMemberList projectId={projectId} workspaceSlug={workspaceSlug} />

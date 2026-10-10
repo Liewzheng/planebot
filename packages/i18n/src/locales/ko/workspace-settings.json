@@ -657,6 +657,55 @@
             "title": "서비스 프린시펄이 업데이트되지 않았습니다",
             "message": "서비스 프린시펄을 업데이트할 수 없습니다"
           }
+        },
+        "project_access": {
+          "section": {
+            "title": "Service principal access",
+            "description": "Service principals (machine accounts for integrations and automation) are intentionally NOT members of this project. A workspace admin can grant any principal access to this project below — toggling on adds a grant, which the principal needs in addition to its scopes. Only workspace admins can perform this action."
+          },
+          "list": {
+            "granted": "Granted",
+            "not_granted": "Not granted",
+            "active": "Active",
+            "inactive": "Inactive",
+            "inactive_cannot_authenticate": "Inactive — token cannot authenticate",
+            "empty_state_before_path": "No service principals exist in this workspace yet. A workspace admin can create one under",
+            "empty_state_after_path": ", then come back here to grant it access to this project.",
+            "settings_path": "Workspace settings → Developer → Service principals",
+            "error_loading": "Could not load service principals for this workspace. You may not have permission, or the workspace list endpoint is unavailable.",
+            "aria_active_grant_for": "Active grant for {name}",
+            "aria_grant_access_to": "Grant access to {name}"
+          },
+          "errors": {
+            "update_grant_failed": "Could not update grant for this project. The principal's other grants were not changed.",
+            "update_role_cap_failed": "Could not update the role cap. The principal's other grants were not changed.",
+            "update_status_failed": "Could not update the grant status. The principal's other grants were not changed."
+          },
+          "coverage": {
+            "load_failed_message_before": "could not load the workspace project list to compare grants against.",
+            "empty_workspace": "This workspace has no projects yet — once one is created, this row will start tracking coverage.",
+            "granted_to_prefix": "Granted to",
+            "granted_to_middle": "of",
+            "granted_to_suffix_one": "workspace project.",
+            "granted_to_suffix_other": "workspace projects.",
+            "not_granted_prefix": "Not granted: ",
+            "not_granted_more": " and {more} more",
+            "all_covered": "All workspace projects covered.",
+            "manage_grants_cta": "Manage grants →"
+          },
+          "members_pointer": {
+            "sentence_1_prefix": "The list below shows",
+            "term_human_members": "human members only",
+            "sentence_2": ". Service principals (AI / machine accounts that integrations and automation sign in as) are intentionally absent — they have no",
+            "term_project_member_class": "ProjectMember",
+            "sentence_3_prefix": "row. Their access to",
+            "term_this_project": "this",
+            "sentence_3_middle": "project is managed in the section above by a",
+            "term_workspace_admin": "workspace admin",
+            "sentence_3_suffix": "(a project admin who is not also a workspace admin cannot change grants for AI accounts). The workspace-wide list of service principals lives under",
+            "term_settings_path": "Workspace settings → Developer → Service principals",
+            "sentence_3_final": "."
+          }
         }
       }
     },

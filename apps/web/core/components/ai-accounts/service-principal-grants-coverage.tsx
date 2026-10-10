@@ -64,7 +64,8 @@ export const ServicePrincipalGrantsCoverage = observer(function ServicePrincipal
     return (
       <div className="flex items-start justify-between gap-3">
         <p className="text-warning text-11">
-          {t("error")}: could not load the workspace project list to compare grants against.
+          {t("error")}:{" "}
+          {t("workspace_settings.settings.service_principals.project_access.coverage.load_failed_message_before")}
         </p>
         <Button
           variant="secondary"
@@ -95,7 +96,7 @@ export const ServicePrincipalGrantsCoverage = observer(function ServicePrincipal
   if (workspaceProjects.length === 0) {
     return (
       <p className="text-11 text-placeholder">
-        This workspace has no projects yet — once one is created, this row will start tracking coverage.
+        {t("workspace_settings.settings.service_principals.project_access.coverage.empty_workspace")}
       </p>
     );
   }
@@ -118,24 +119,33 @@ export const ServicePrincipalGrantsCoverage = observer(function ServicePrincipal
   return (
     <div className="flex flex-col gap-1">
       <p className="text-11 text-tertiary">
-        Granted to <span className="font-medium text-secondary">{visibleGrantedProjectIds.size}</span> of{" "}
-        <span className="font-medium text-secondary">{workspaceProjects.length}</span> workspace project
-        {workspaceProjects.length === 1 ? "" : "s"}.
+        {t("workspace_settings.settings.service_principals.project_access.coverage.granted_to_prefix")}{" "}
+        <span className="font-medium text-secondary">{visibleGrantedProjectIds.size}</span>{" "}
+        {t("workspace_settings.settings.service_principals.project_access.coverage.granted_to_middle")}{" "}
+        <span className="font-medium text-secondary">{workspaceProjects.length}</span>{" "}
+        {t(
+          workspaceProjects.length === 1
+            ? "workspace_settings.settings.service_principals.project_access.coverage.granted_to_suffix_one"
+            : "workspace_settings.settings.service_principals.project_access.coverage.granted_to_suffix_other"
+        )}
       </p>
       {missingCount > 0 ? (
         missingCount <= 3 ? (
           <p className="truncate text-11 text-placeholder">
-            Not granted: {missingProjects.map((p) => p.name).join(", ")}
+            {t("workspace_settings.settings.service_principals.project_access.coverage.not_granted_prefix")}
+            {missingProjects.map((p) => p.name).join(", ")}
           </p>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <p className="truncate text-11 text-placeholder">
-              Not granted:{" "}
+              {t("workspace_settings.settings.service_principals.project_access.coverage.not_granted_prefix")}
               {missingProjects
                 .slice(0, 3)
                 .map((p) => p.name)
-                .join(", ")}{" "}
-              and {missingCount - 3} more
+                .join(", ")}
+              {t("workspace_settings.settings.service_principals.project_access.coverage.not_granted_more", {
+                more: missingCount - 3,
+              })}
             </p>
             {showOverflowCta && onManageGrants && (
               <button
@@ -143,13 +153,15 @@ export const ServicePrincipalGrantsCoverage = observer(function ServicePrincipal
                 onClick={onManageGrants}
                 className="cursor-pointer text-11 text-accent-primary underline-offset-2 hover:text-accent-secondary hover:underline"
               >
-                Manage grants →
+                {t("workspace_settings.settings.service_principals.project_access.coverage.manage_grants_cta")}
               </button>
             )}
           </div>
         )
       ) : (
-        <p className="text-11 text-success-primary">All workspace projects covered.</p>
+        <p className="text-11 text-success-primary">
+          {t("workspace_settings.settings.service_principals.project_access.coverage.all_covered")}
+        </p>
       )}
     </div>
   );
