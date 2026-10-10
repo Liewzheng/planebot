@@ -124,6 +124,7 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
         title: t("error"),
         message:
           (err as { message?: string })?.message ??
+          (err as { detail?: string })?.detail ??
           "Could not update grant for this project. The principal's other grants were not changed.",
       });
     } finally {
@@ -152,6 +153,7 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
         title: t("error"),
         message:
           (err as { message?: string })?.message ??
+          (err as { detail?: string })?.detail ??
           "Could not update the role cap. The principal's other grants were not changed.",
       });
     } finally {
@@ -176,6 +178,7 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
         title: t("error"),
         message:
           (err as { message?: string })?.message ??
+          (err as { detail?: string })?.detail ??
           "Could not update the grant status. The principal's other grants were not changed.",
       });
     } finally {
@@ -201,7 +204,6 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
         <ErrorState
           message="Could not load service principals for this workspace. You may not have permission, or the workspace list endpoint is unavailable."
           onRetry={() => mutate(SERVICE_PRINCIPALS_LIST(workspaceSlug))}
-          isWorkspaceAdmin={isWorkspaceAdmin}
           t={t}
         />
       ) : !principals || principals.length === 0 ? (
@@ -297,23 +299,13 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
   );
 });
 
-function ErrorState(props: {
-  message: string;
-  onRetry: () => void;
-  isWorkspaceAdmin: boolean;
-  t: (key: string) => string;
-}) {
-  const { message, onRetry, isWorkspaceAdmin, t } = props;
+function ErrorState(props: { message: string; onRetry: () => void; t: (key: string) => string }) {
+  const { message, onRetry, t } = props;
   return (
     <div className="flex items-start justify-between gap-4 rounded-md border border-subtle bg-layer-2 p-4">
       <div className="flex flex-col gap-1">
         <p className="text-13 font-medium text-secondary">{t("error")}</p>
-        <p className="text-13 text-tertiary">
-          {message}
-          {!isWorkspaceAdmin && (
-            <span> Only a workspace admin can manage service principal access for this project.</span>
-          )}
-        </p>
+        <p className="text-13 text-tertiary">{message}</p>
       </div>
       <Button variant="secondary" size="sm" onClick={onRetry}>
         {t("common.retry")}

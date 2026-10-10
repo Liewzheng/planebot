@@ -51,10 +51,11 @@ export const ServicePrincipalGrantsCoverage = observer(function ServicePrincipal
   // Triggers the workspace project fetch and shares its SWR cache with
   // grants-modal / scopes-modal so every surface sees the same data.
   const swrKey = workspaceSlug ? `WORKSPACE_PROJECTS_${workspaceSlug}` : null;
-  const { isLoading, error } = useSWR(swrKey, () => fetchProjects(workspaceSlug), {
-    revalidateIfStale: false,
-    revalidateOnFocus: false,
-  });
+  const {
+    isLoading,
+    error,
+    mutate: revalidateWorkspaceProjects,
+  } = useSWR(swrKey, () => fetchProjects(workspaceSlug), { revalidateIfStale: false, revalidateOnFocus: false });
 
   if (isLoading) {
     return <p className="text-11 text-placeholder">{t("loading")}…</p>;
@@ -69,11 +70,12 @@ export const ServicePrincipalGrantsCoverage = observer(function ServicePrincipal
           variant="secondary"
           size="sm"
           onClick={() => {
-            // SWR provides a revalidation function via the same key; the
-            // hook destructuring above intentionally omits it because we
-            // are inside a child component, so we trigger a revalidation
-            // by writing a placeholder error and re-mounting via key.
-            window.location.reload();
+            // Retry the failed workspace-project fetch in place. SWR's
+            // `mutate()` re-runs the fetcher for the same key without a
+            // route remount, which is the right tool for a settings-page
+            // error pane (the sibling service-principals page already
+            // does the same thing).
+            void revalidateWorkspaceProjects();
           }}
         >
           {t("common.retry")}
@@ -81,8 +83,6 @@ export const ServicePrincipalGrantsCoverage = observer(function ServicePrincipal
       </div>
     );
   }
-
-  const grantedProjectIds = new Set((principal.grants ?? []).map((g: TProjectGrant) => g.project));
 
   const workspaceProjects = (workspaceProjectIds ?? [])
     .map((projectId) => projectMap?.[projectId])
@@ -100,14 +100,25 @@ export const ServicePrincipalGrantsCoverage = observer(function ServicePrincipal
     );
   }
 
-  const missingProjects = workspaceProjects.filter((project) => !grantedProjectIds.has(project.id));
+  // Build the granted-ids set keyed on the non-archived workspace project
+  // list only. Grants whose project was archived — and therefore dropped
+  // from `workspaceProjectIds` by the project store — are excluded from
+  // the coverage count, so archiving a granted project can no longer
+  // render 'Granted to 4 of 3 workspace projects.'; they also can't
+  // surface as 'missing' below (archived projects are not grantable).
+  const workspaceProjectIdSet = new Set(workspaceProjects.map((p) => p.id));
+  const visibleGrantedProjectIds = new Set(
+    (principal.grants ?? []).filter((g: TProjectGrant) => workspaceProjectIdSet.has(g.project)).map((g) => g.project)
+  );
+
+  const missingProjects = workspaceProjects.filter((project) => !visibleGrantedProjectIds.has(project.id));
   const missingCount = missingProjects.length;
   const showOverflowCta = onManageGrants !== undefined && missingCount > 3;
 
   return (
     <div className="flex flex-col gap-1">
       <p className="text-11 text-tertiary">
-        Granted to <span className="font-medium text-secondary">{grantedProjectIds.size}</span> of{" "}
+        Granted to <span className="font-medium text-secondary">{visibleGrantedProjectIds.size}</span> of{" "}
         <span className="font-medium text-secondary">{workspaceProjects.length}</span> workspace project
         {workspaceProjects.length === 1 ? "" : "s"}.
       </p>
