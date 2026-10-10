@@ -89,6 +89,45 @@ def _page_detail_url(workspace_slug, project_id, page_id):
     )
 
 
+# Rendered by AIScopeEnforcementMixin (apps/api/plane/api/views/base.py:133)
+# when the view has no ``resource_type`` annotation. A regression to an
+# unannotated view must never satisfy any deny reason test below — that
+# string is what the default-deny looks like to a real client.
+DEFAULT_DENY_TEXT = "Endpoint is not exposed to service principals."
+
+
+def _assert_chain_deny(response, expected_phrase):
+    """Assert the 403 was raised by the authorize() chain at a specific
+    step rather than by the view's permission_classes or by the
+    unannotated-default-deny.
+
+    ``expected_phrase`` is a substring of the ``Decision.detail`` rendered
+    by ``enforce()`` (apps/api/plane/core/authz/exceptions.py:20). Each
+    step's full string is in ``apps/api/plane/core/authz/engine.py``; the
+    substrings used here are the step-unique anchors so the assertion
+    survives wording tweaks.
+
+    The default-deny guard catches a regression where the new annotation
+    is removed: the same request would 403 but with ``DEFAULT_DENY_TEXT``
+    in the body, and the chain assertion would still pass on its own.
+    """
+    body = response.json()
+    assert response.status_code == status.HTTP_403_FORBIDDEN, (
+        f"Expected 403, got {response.status_code} body={body!r}"
+    )
+    assert "detail" in body, f"403 body missing 'detail': {body!r}"
+    detail = body["detail"]
+    assert expected_phrase in detail, (
+        f"Expected chain phrase '{expected_phrase}' in detail "
+        f"(the request reached authorize() and a specific step denied), "
+        f"got: {detail!r}"
+    )
+    assert DEFAULT_DENY_TEXT not in detail, (
+        f"Detail '{detail!r}' matches the unannotated default-deny; "
+        "this request never reached the four-step chain."
+    )
+
+
 @pytest.fixture
 def spv1_client():
     """APIClient helper that sends the ``X-Api-Key`` header."""
@@ -599,7 +638,13 @@ class TestSPPageAllowDenyMatrix:
         self, workspace, create_user, page_project, spv1_client
     ):
         """A grant without a ``page`` scope row is rejected at the scope
-        layer (DENY_SCOPE_MISS) regardless of role_cap."""
+        layer (DENY_SCOPE_MISS) regardless of role_cap.
+
+        Asserts the rendered detail so a regression to an unannotated
+        view (default-deny) cannot satisfy this test — the chain's
+        ``"lacks scope"`` phrasing is unique to DENY_SCOPE_MISS in
+        :mod:`plane.core.authz.engine`.
+        """
         sp = _make_sp(workspace, create_user, name="pg-no-scope")
         # Grant only, no scope row
         _grant(sp, page_project, role_cap=20)
@@ -609,14 +654,22 @@ class TestSPPageAllowDenyMatrix:
             _page_list_url(workspace.slug, page_project.id)
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        _assert_chain_deny(
+            response,
+            "lacks scope for read page",
+        )
 
     def test_no_grant_denies_with_deny_grant_miss(
         self, workspace, create_user, page_project, spv1_client
     ):
         """A scope row without an active ProjectGrant is rejected at the
         grant layer (DENY_GRANT_MISS). For project-scoped resources there
-        is no workspace-wide get-out, so the request 403s."""
+        is no workspace-wide get-out, so the request 403s.
+
+        Pins the ``"has no active grant"`` detail so the assertion cannot
+        be satisfied by the chain default-deny or by a regression to the
+        unannotated path.
+        """
         sp = _make_sp(workspace, create_user, name="pg-no-grant")
         _scope(sp, "page", "read", project=page_project)
         # No ProjectGrant
@@ -626,13 +679,21 @@ class TestSPPageAllowDenyMatrix:
             _page_list_url(workspace.slug, page_project.id)
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        _assert_chain_deny(
+            response,
+            "has no active grant for project",
+        )
 
     def test_role_cap_below_required_denies_create(
         self, workspace, create_user, page_project, spv1_client
     ):
         """CREATE on page requires MEMBER (15); a GUEST-cap (5) grant must
-        be rejected by the role_cap step (DENY_ROLE_CAP)."""
+        be rejected by the role_cap step (DENY_ROLE_CAP).
+
+        Pins the ``"role_cap (N) is below the required role (M)"`` detail
+        so the assertion cannot be satisfied by an unannotated default-deny
+        (which has no role numbers in its body).
+        """
         sp = _make_sp(workspace, create_user, name="pg-low-cap")
         _scope(sp, "page", "create", project=page_project)
         _grant(sp, page_project, role_cap=5)
@@ -644,7 +705,10 @@ class TestSPPageAllowDenyMatrix:
             format="json",
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        _assert_chain_deny(
+            response,
+            "role_cap (5) is below the required role (15)",
+        )
 
     def test_human_session_path_unaffected(
         self,
@@ -676,3 +740,157 @@ class TestSPPageAllowDenyMatrix:
             )
         )
         assert response.status_code == status.HTTP_200_OK
+
+    def test_fully_granted_sp_can_patch_page(
+        self, workspace, create_user, page_project, existing_page, spv1_client
+    ):
+        """PATCH (UPDATE) verb on the detail endpoint: a granted SP at
+        the UPDATE floor (MEMBER=15) edits a page (200).
+
+        Closes reviewer-m23 P2-2: a removed matrix row or a mistake in
+        ``_METHOD_TO_ACTION`` mapping PATCH to UPDATE would otherwise
+        silently default-deny every PATCH from a converted bot, with no
+        test catching it.
+        """
+        sp = _make_sp(workspace, create_user, name="pg-patch-ok")
+        _scope(sp, "page", "update", project=page_project)
+        _grant(sp, page_project, role_cap=15)
+
+        spv1_client.credentials(HTTP_X_API_KEY="plane_svc_token_pg-patch-ok")
+        response = spv1_client.patch(
+            _page_detail_url(
+                workspace.slug, page_project.id, existing_page.id
+            ),
+            data={"name": "Patched Page"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_low_cap_sp_cannot_patch_page(
+        self, workspace, create_user, page_project, existing_page, spv1_client
+    ):
+        """PATCH (UPDATE) at GUEST-cap (5) must hit DENY_ROLE_CAP
+        (``UPDATE`` requires MEMBER=15). Pins the render chain detail."""
+        sp = _make_sp(workspace, create_user, name="pg-patch-deny")
+        _scope(sp, "page", "update", project=page_project)
+        _grant(sp, page_project, role_cap=5)
+
+        spv1_client.credentials(
+            HTTP_X_API_KEY="plane_svc_token_pg-patch-deny"
+        )
+        response = spv1_client.patch(
+            _page_detail_url(
+                workspace.slug, page_project.id, existing_page.id
+            ),
+            data={"name": "Should Not Stick"},
+            format="json",
+        )
+
+        _assert_chain_deny(
+            response,
+            "role_cap (5) is below the required role (15)",
+        )
+
+    def test_fully_granted_sp_can_delete_archived_page(
+        self, workspace, create_user, page_project, existing_page, spv1_client
+    ):
+        """DELETE on the detail endpoint: a granted SP at cap=15 deletes
+        an archived page (204). The pre-delete ownership check in the view
+        (page.owned_by_id vs request.user.id) passes because the SP owner
+        is the page owner.
+        """
+        from django.utils import timezone
+
+        sp = _make_sp(workspace, create_user, name="pg-delete-ok")
+        _scope(sp, "page", "delete", project=page_project)
+        _grant(sp, page_project, role_cap=15)
+
+        # The page-detail view requires archived_at before delete; that
+        # guard belongs to the view, not to authz. Set it here so the
+        # only gate the request actually trips is the chain.
+        existing_page.archived_at = timezone.now().date()
+        existing_page.save()
+
+        spv1_client.credentials(
+            HTTP_X_API_KEY="plane_svc_token_pg-delete-ok"
+        )
+        response = spv1_client.delete(
+            _page_detail_url(
+                workspace.slug, page_project.id, existing_page.id
+            )
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    def test_low_cap_sp_cannot_delete_page(
+        self, workspace, create_user, page_project, existing_page, spv1_client
+    ):
+        """DELETE at GUEST-cap (5) must hit DENY_ROLE_CAP (``DELETE``
+        requires MEMBER=15). Pins the render chain detail even though
+        the underlying page is not archived — the chain runs before
+        the view's archived-at guard, so a regression that lets the
+        request through to the view would still 400 the body-check,
+        not 403 the chain. The chain assertion discriminates."""
+        sp = _make_sp(workspace, create_user, name="pg-delete-deny")
+        _scope(sp, "page", "delete", project=page_project)
+        _grant(sp, page_project, role_cap=5)
+
+        spv1_client.credentials(
+            HTTP_X_API_KEY="plane_svc_token_pg-delete-deny"
+        )
+        response = spv1_client.delete(
+            _page_detail_url(
+                workspace.slug, page_project.id, existing_page.id
+            )
+        )
+
+        _assert_chain_deny(
+            response,
+            "role_cap (5) is below the required role (15)",
+        )
+
+    def test_production_all_all_scope_shape_matches_pbot(
+        self, workspace, create_user, page_project, spv1_client
+    ):
+        """Mirrors the converted production bots' shape exactly:
+        workspace-wide ``all``/``all`` ServiceScope
+        (``resource_type='all'``, ``action='all'``, ``project=None``) plus
+        one active ProjectGrant per project at ``role_cap=15``.
+
+        The tower's live ``pbot doc ls -p OB`` check uses this shape; this
+        test predicts it instead of approximating it with a per-resource
+        scope row.
+
+        Reviewer-m23 P2-3: the engine's scope step matches because
+        ``resource_type__in=[resource_type, 'all']`` covers ``'all'`` and
+        ``action__in=_scope_action_set(action)`` covers ``'all'``, the
+        grant step matches the active row, and ``role_cap=15`` covers
+        both READ (GUEST=5) and CREATE (MEMBER=15).
+        """
+        sp = _make_sp(workspace, create_user, name="pbot-shape")
+        # Workspace-wide all/all scope, exactly as the migration leaves
+        # converted bots. project=None keeps it workspace-wide.
+        ServiceScope.objects.create(
+            service_principal=sp,
+            project=None,
+            resource_type="all",
+            action="all",
+        )
+        _grant(sp, page_project, role_cap=15)
+
+        spv1_client.credentials(HTTP_X_API_KEY="plane_svc_token_pbot-shape")
+        list_response = spv1_client.get(
+            _page_list_url(workspace.slug, page_project.id)
+        )
+        assert list_response.status_code == status.HTTP_200_OK
+
+        create_response = spv1_client.post(
+            _page_list_url(workspace.slug, page_project.id),
+            data={
+                "name": "Pbot Page",
+                "description_html": "<p>published via all/all scope</p>",
+            },
+            format="json",
+        )
+        assert create_response.status_code == status.HTTP_201_CREATED
