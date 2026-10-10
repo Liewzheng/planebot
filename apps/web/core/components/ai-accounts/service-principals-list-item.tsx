@@ -149,7 +149,11 @@ export function ServicePrincipalsListItem(props: Props) {
           </div>
         </div>
         <div className="border-t border-subtle pt-3">
-          <ServicePrincipalGrantsCoverage principal={principal} workspaceSlug={workspaceSlug} />
+          <ServicePrincipalGrantsCoverage
+            principal={principal}
+            workspaceSlug={workspaceSlug}
+            onManageGrants={() => setShowGrantsModal(true)}
+          />
         </div>
       </div>
     </>

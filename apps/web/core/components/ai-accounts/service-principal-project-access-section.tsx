@@ -19,6 +19,7 @@ import { SettingsBoxedControlItem } from "@/components/settings/boxed-control-it
 import { CustomSelect } from "@plane/ui";
 import { Switch } from "@makeplane/propel/components/switch";
 import { ChevronDownIcon } from "@plane/propel/icons";
+import { Button } from "@plane/propel/button";
 // hooks
 import { useUserPermissions } from "@/hooks/store/user";
 // services
@@ -41,6 +42,13 @@ type Props = {
  * `/api/workspaces/<slug>/service-principals/<pk>/grants/`. PUT replaces
  * the entire grant set, so all grant-state mutations go through
  * `applyServicePrincipalGrantMutation` which reads the full set first.
+ *
+ * **Permission gate**: the endpoints behind this section require
+ * `level="WORKSPACE"` admin (`@allow_permission([ROLE.ADMIN], level="WORKSPACE")`
+ * on `apps/api/plane/service_principals/views.py`), so we gate the visible
+ * rows on `EUserPermissionsLevel.WORKSPACE` rather than `PROJECT`. A project
+ * admin who is not also a workspace admin cannot drive these endpoints and
+ * would otherwise see a fully actionable-looking list that 403s on fetch.
  */
 export const ProjectServicePrincipalAccessSection = observer(function ProjectServicePrincipalAccessSection(
   props: Props
@@ -48,51 +56,63 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
   const { workspaceSlug, projectId } = props;
   const { t } = useTranslation();
   const { allowPermissions } = useUserPermissions();
-  const isProjectAdmin = allowPermissions(
-    [EUserPermissions.ADMIN],
-    EUserPermissionsLevel.PROJECT,
-    workspaceSlug,
-    projectId
-  );
-  // Tracks which principal currently has a grant mutation in flight, so
-  // each row's switch can disable itself without us needing a per-row
-  // loading flag.
+  // The endpoints this section calls require WORKSPACE admin. A project
+  // admin who is not a workspace admin would 403 on the list fetch, and
+  // we explicitly want to hide them from the section rather than show
+  // them an actionable-looking list that breaks on every action.
+  const isWorkspaceAdmin = allowPermissions([EUserPermissions.ADMIN], EUserPermissionsLevel.WORKSPACE, workspaceSlug);
+
+  // Tracks any in-flight mutation for this section. We deliberately do
+  // not track per-row: while one grant mutation is pending we disable
+  // every row's toggles, so a double-tap cannot race a parallel
+  // read-modify-write for the same principal and silently drop the
+  // first change (the lost-update failure the wrapper exists to prevent).
   const [pendingPrincipalId, setPendingPrincipalId] = useState<string | null>(null);
+  const isAnyMutationPending = pendingPrincipalId !== null;
 
-  // List of all workspace SPs. Each item already carries the `grants`
-  // array, but we treat that as advisory and always re-read via
-  // `fetchServicePrincipalGrants` before mutating, otherwise concurrent
-  // grants modifications from other tabs could be silently overwritten.
-  const { data: principals, isLoading } = useSWR<TServicePrincipal[]>(
-    isProjectAdmin ? SERVICE_PRINCIPALS_LIST(workspaceSlug) : null,
-    isProjectAdmin ? () => servicePrincipalService.fetchServicePrincipalsList(workspaceSlug) : null,
-    { revalidateIfStale: false, revalidateOnFocus: false }
-  );
+  // The list endpoint requires WORKSPACE admin. We deliberately keep the
+  // SWR key null for non-admins (so no request is issued) and let the
+  // downstream `data`/`error`/`isLoading` distinguish the four states:
+  // (1) not yet fetched (key null)            → render nothing,
+  // (2) loading                               → spinner,
+  // (3) backend rejected (403 / 401 / etc.)   → explicit error / retry,
+  // (4) fetch succeeded, list is empty        → "no SPs yet" empty state.
+  const swrKey = isWorkspaceAdmin ? SERVICE_PRINCIPALS_LIST(workspaceSlug) : null;
+  const {
+    data: principals,
+    error: principalsError,
+    isLoading: principalsLoading,
+  } = useSWR<TServicePrincipal[]>(swrKey, () => servicePrincipalService.fetchServicePrincipalsList(workspaceSlug), {
+    revalidateIfStale: false,
+    revalidateOnFocus: false,
+  });
 
-  // Hide the whole panel from non-admins — matches how the rest of project
-  // settings behaves. Workspace admins can still see the section because
-  // they're effectively project admins too.
-  if (!isProjectAdmin) return null;
+  // Hide from non-admins entirely — same UX as the rest of project
+  // settings surfaces that require workspace admin.
+  if (!isWorkspaceAdmin) return null;
 
   const handleToggleGrant = async (principal: TServicePrincipal, nextIsGranted: boolean) => {
+    if (isAnyMutationPending) return;
     setPendingPrincipalId(principal.id);
     try {
       await servicePrincipalService.applyServicePrincipalGrantMutation(workspaceSlug, principal.id, (current) => {
         const existingForThisProject = current.find((grant) => grant.project === projectId);
-        const preserved = current.filter((grant) => grant.project !== projectId);
+        const preserved: TProjectGrantInput[] = current
+          .filter((grant) => grant.project !== projectId)
+          .map(({ project, role_cap, is_active }) => ({ project, role_cap, is_active }));
         if (nextIsGranted) {
-          // Re-granting a project that was previously disabled: keep the
-          // previous role_cap / is_active state if it existed, otherwise
-          // pick the lowest non-admin cap so we don't accidentally elevate
-          // the principal to admin on a first-time grant. Revokes simply
-          // drop the row — the filter above already excludes it.
+          // First-time grant for this project: preserve any prior
+          // role_cap / is_active from a previous grant, otherwise
+          // default to the Member role cap (15) so we never grant Admin
+          // implicitly. Revoke simply drops the row — the filter above
+          // already excludes it.
           preserved.push({
             project: projectId,
             role_cap: existingForThisProject?.role_cap ?? 15,
             is_active: existingForThisProject?.is_active ?? true,
           });
         }
-        return preserved as TProjectGrantInput[];
+        return preserved;
       });
       // Refresh the per-SP grants cache so coverage panels elsewhere see
       // the change, plus the principal list (which embeds `grants`).
@@ -116,6 +136,7 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
     targetProjectId: string,
     nextRoleCap: TServicePrincipalRoleCap
   ) => {
+    if (isAnyMutationPending) return;
     setPendingPrincipalId(principal.id);
     try {
       await servicePrincipalService.applyServicePrincipalGrantMutation(workspaceSlug, principal.id, (current) => {
@@ -139,6 +160,7 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
   };
 
   const handleActiveChange = async (principal: TServicePrincipal, targetProjectId: string, nextActive: boolean) => {
+    if (isAnyMutationPending) return;
     setPendingPrincipalId(principal.id);
     try {
       await servicePrincipalService.applyServicePrincipalGrantMutation(workspaceSlug, principal.id, (current) => {
@@ -166,13 +188,25 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
       <SettingsBoxedControlItem
         className="flex-col items-stretch"
         title="Service principal access"
-        description="Service principals (machine accounts for integrations and automation) are intentionally NOT members of this project. To give one access to this project, toggle on a principal below — that adds a grant, which the principal needs in addition to its scopes."
+        description="Service principals (machine accounts for integrations and automation) are intentionally NOT members of this project. A workspace admin can grant any principal access to this project below — toggling on adds a grant, which the principal needs in addition to its scopes. Only workspace admins can perform this action."
       />
-      {isLoading ? (
-        <p className="text-13 text-placeholder">Loading service principals…</p>
+      {principalsLoading ? (
+        <p className="text-13 text-placeholder">{t("loading")}…</p>
+      ) : principalsError ? (
+        // The list endpoint requires WORKSPACE admin, so a 403 here is
+        // the most likely failure mode for an admin whose permissions
+        // were reduced. Surface it plainly instead of pretending the
+        // workspace has no principals — that misleads admins into
+        // creating duplicates.
+        <ErrorState
+          message="Could not load service principals for this workspace. You may not have permission, or the workspace list endpoint is unavailable."
+          onRetry={() => mutate(SERVICE_PRINCIPALS_LIST(workspaceSlug))}
+          isWorkspaceAdmin={isWorkspaceAdmin}
+          t={t}
+        />
       ) : !principals || principals.length === 0 ? (
         <p className="rounded-md border border-subtle bg-layer-2 p-4 text-13 text-tertiary">
-          No service principals exist in this workspace yet. Create one under
+          No service principals exist in this workspace yet. A workspace admin can create one under
           <strong> Workspace settings → Developer → Service principals</strong>, then come back here to grant it access
           to this project.
         </p>
@@ -181,7 +215,6 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
           {principals.map((principal) => {
             const grantForThisProject = (principal.grants ?? []).find((g: TProjectGrant) => g.project === projectId);
             const isGranted = Boolean(grantForThisProject);
-            const isPending = pendingPrincipalId === principal.id;
             return (
               <li
                 key={principal.id}
@@ -219,7 +252,7 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
                         onChange={(val: string) =>
                           void handleRoleCapChange(principal, projectId, Number(val) as TServicePrincipalRoleCap)
                         }
-                        disabled={isPending || !isProjectAdmin}
+                        disabled={isAnyMutationPending}
                       >
                         {SERVICE_PRINCIPAL_GRANT_ROLE_CAPS.map((roleCap) => (
                           <CustomSelect.Option key={roleCap} value={String(roleCap)}>
@@ -238,7 +271,7 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
                           size="sm"
                           checked={grantForThisProject.is_active}
                           onCheckedChange={(next: boolean) => void handleActiveChange(principal, projectId, next)}
-                          disabled={isPending || !isProjectAdmin}
+                          disabled={isAnyMutationPending}
                           aria-label={`Active grant for ${principal.name}`}
                         />
                       </span>
@@ -250,7 +283,7 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
                       size="sm"
                       checked={isGranted}
                       onCheckedChange={(next: boolean) => void handleToggleGrant(principal, next)}
-                      disabled={isPending || !isProjectAdmin || !principal.is_active}
+                      disabled={isAnyMutationPending || !principal.is_active}
                       aria-label={`Grant access to ${principal.name}`}
                     />
                   </span>
@@ -263,6 +296,31 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
     </div>
   );
 });
+
+function ErrorState(props: {
+  message: string;
+  onRetry: () => void;
+  isWorkspaceAdmin: boolean;
+  t: (key: string) => string;
+}) {
+  const { message, onRetry, isWorkspaceAdmin, t } = props;
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-md border border-subtle bg-layer-2 p-4">
+      <div className="flex flex-col gap-1">
+        <p className="text-13 font-medium text-secondary">{t("error")}</p>
+        <p className="text-13 text-tertiary">
+          {message}
+          {!isWorkspaceAdmin && (
+            <span> Only a workspace admin can manage service principal access for this project.</span>
+          )}
+        </p>
+      </div>
+      <Button variant="secondary" size="sm" onClick={onRetry}>
+        {t("common.retry")}
+      </Button>
+    </div>
+  );
+}
 
 function renderRoleCapLabel(roleCap: TServicePrincipalRoleCap): string {
   switch (roleCap) {

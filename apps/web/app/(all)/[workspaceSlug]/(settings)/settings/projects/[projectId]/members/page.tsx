@@ -52,8 +52,10 @@ function MembersSettingsPage({ params }: Route.ComponentProps) {
       <div className="my-6 rounded-md border border-subtle bg-surface-1 p-3 text-12 text-tertiary">
         The list below shows <strong className="text-secondary">human members only</strong>. Service principals (AI /
         machine accounts that integrations and automation sign in as) are intentionally absent — they have no{" "}
-        <code>ProjectMember</code> row. Their access to <em>this</em> project is managed in the section above; the
-        workspace-wide list lives under <strong>Workspace settings → Developer → Service principals</strong>.
+        <code>ProjectMember</code> row. Their access to <em>this</em> project is managed in the section above by a{" "}
+        <strong className="text-secondary">workspace admin</strong> (a project admin who is not also a workspace admin
+        cannot change grants for AI accounts). The workspace-wide list of service principals lives under{" "}
+        <strong>Workspace settings → Developer → Service principals</strong>.
       </div>
       <ProjectSettingsMemberDefaults projectId={projectId} workspaceSlug={workspaceSlug} />
       <ProjectMemberList projectId={projectId} workspaceSlug={workspaceSlug} />
