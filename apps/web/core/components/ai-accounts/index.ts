@@ -5,6 +5,8 @@
  */
 
 export * from "./service-principal-form";
+export * from "./service-principal-grants-coverage";
+export * from "./service-principal-project-access-section";
 export * from "./service-principals-list";
 export * from "./service-principals-list-item";
 export * from "./create-service-principal-modal";

@@ -15,6 +15,7 @@ import { ProjectMemberList } from "@/components/project/member-list";
 import { ProjectSettingsMemberDefaults } from "@/components/project/project-settings-member-defaults";
 import { SettingsContentWrapper } from "@/components/settings/content-wrapper";
 import { SettingsHeading } from "@/components/settings/heading";
+import { ProjectServicePrincipalAccessSection } from "@/components/ai-accounts";
 // hooks
 import { useProject } from "@/hooks/store/use-project";
 import { useUserPermissions } from "@/hooks/store/user";
@@ -47,6 +48,15 @@ function MembersSettingsPage({ params }: Route.ComponentProps) {
     <SettingsContentWrapper header={<MembersProjectSettingsHeader />} hugging>
       <PageHead title={pageTitle} />
       <SettingsHeading title={t("common.members")} />
+      <ProjectServicePrincipalAccessSection workspaceSlug={workspaceSlug} projectId={projectId} />
+      <div className="my-6 rounded-md border border-subtle bg-surface-1 p-3 text-12 text-tertiary">
+        The list below shows <strong className="text-secondary">human members only</strong>. Service principals (AI /
+        machine accounts that integrations and automation sign in as) are intentionally absent — they have no{" "}
+        <code>ProjectMember</code> row. Their access to <em>this</em> project is managed in the section above by a{" "}
+        <strong className="text-secondary">workspace admin</strong> (a project admin who is not also a workspace admin
+        cannot change grants for AI accounts). The workspace-wide list of service principals lives under{" "}
+        <strong>Workspace settings → Developer → Service principals</strong>.
+      </div>
       <ProjectSettingsMemberDefaults projectId={projectId} workspaceSlug={workspaceSlug} />
       <ProjectMemberList projectId={projectId} workspaceSlug={workspaceSlug} />
     </SettingsContentWrapper>
