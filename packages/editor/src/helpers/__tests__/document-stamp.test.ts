@@ -12,6 +12,7 @@ import {
   documentStamp,
   readDocumentStamp,
   shouldResetLocalDocument,
+  shouldWriteStamp,
   writeDocumentStamp,
 } from "@/helpers/document-stamp";
 
@@ -51,10 +52,32 @@ describe("shouldResetLocalDocument", () => {
     expect(shouldResetLocalDocument(null, documentStamp("<p>正文</p>"))).toBe(true);
   });
 
-  it("resets when the served revision is not known yet", () => {
-    // the page details may still be loading: do not merge an unverifiable copy
-    expect(shouldResetLocalDocument(documentStamp("<p>正文</p>") ?? null, undefined)).toBe(true);
-    expect(shouldResetLocalDocument(null, undefined)).toBe(true);
+  it("does not reset when the served revision is not known yet (pages-list mount)", () => {
+    // the page details may still be loading: a guessed wipe is what causes
+    // the multi-second "正在同步..." on long pages — wait for the served value
+    // and re-decide when it arrives.
+    expect(shouldResetLocalDocument(documentStamp("<p>正文</p>") ?? null, undefined)).toBe(false);
+    expect(shouldResetLocalDocument(null, undefined)).toBe(false);
+  });
+});
+
+describe("shouldWriteStamp", () => {
+  it("writes on a first visit (no stored stamp)", () => {
+    expect(shouldWriteStamp(null, documentStamp("<p>正文</p>"))).toBe(true);
+  });
+
+  it("writes when the stored stamp already matches (idempotent)", () => {
+    const stamp = documentStamp("<p>正文</p>")!;
+    expect(shouldWriteStamp(stamp, stamp)).toBe(true);
+  });
+
+  it("does not write when the stored stamp differs (preserve the PLANE-76 reset)", () => {
+    expect(shouldWriteStamp(documentStamp("<p>旧版本</p>") ?? null, documentStamp("<p>新版本</p>"))).toBe(false);
+  });
+
+  it("does not write when the served value is unknown", () => {
+    expect(shouldWriteStamp(null, undefined)).toBe(false);
+    expect(shouldWriteStamp(documentStamp("<p>正文</p>") ?? null, undefined)).toBe(false);
   });
 });
 

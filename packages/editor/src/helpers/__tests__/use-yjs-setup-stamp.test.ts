@@ -17,14 +17,20 @@
  * cache when the session reaches the server-synced state, so a read-only
  * visit leaves `stored === contentStamp` and the next open does not wipe
  * the cache and rebuild from scratch (the multi-second "正在同步..." the
- * human reported on long pages).
+ * human reported on long pages). The fix must also:
+ *
+ *   - not wipe the cache when `contentStamp` is undefined at the reset
+ *     decision (the pages-list mount path) and decide again when the
+ *     served value arrives;
+ *   - not overwrite a stored mismatching stamp on the first sync of a
+ *     session (the deferred PLANE-76 reset must still fire on the next
+ *     open).
  *
  * The helper-only suite (`document-stamp.test.ts`) cannot pin this: it
- * exercises unchanged primitives and passes 13/13 on both the pre-fix and
- * post-fix revisions. This file mocks `@hocuspocus/provider` and
- * `y-indexeddb`, renders `useYjsSetup`, and fires the captured `onSynced`
- * callback so the test fails when the hook does not write the stamp and
- * passes once it does.
+ * exercises primitives that are also exposed unchanged. This file mocks
+ * `@hocuspocus/provider` and `y-indexeddb`, renders `useYjsSetup`, and
+ * fires the captured `onSynced` callback so the test fails when the hook
+ * does not write (or wrongly clears) the cache and passes once it does.
  */
 
 import { act, createElement } from "react";
@@ -37,6 +43,10 @@ type MockProviderInstance = {
 };
 
 const mockProviderInstances: MockProviderInstance[] = [];
+
+/** Each entry is "clearData" (the cleaner that the persistence effect
+ *  spawns when the PLANE-76 reset flag is set). Empty = no reset. */
+const mockClearDataCalls: string[] = [];
 
 vi.mock("@hocuspocus/provider", () => ({
   HocuspocusProvider: class {
@@ -82,7 +92,9 @@ vi.mock("y-indexeddb", () => ({
     }
     on() {}
     destroy() {}
-    async clearData() {}
+    async clearData() {
+      mockClearDataCalls.push("clearData");
+    }
   },
 }));
 
@@ -116,6 +128,7 @@ describe("useYjsSetup stamps the cache on sync (PLANE-76 regression)", () => {
   beforeEach(() => {
     window.localStorage.clear();
     mockProviderInstances.length = 0;
+    mockClearDataCalls.length = 0;
   });
 
   afterEach(async () => {
@@ -130,6 +143,7 @@ describe("useYjsSetup stamps the cache on sync (PLANE-76 regression)", () => {
     }
     container = null;
     mockProviderInstances.length = 0;
+    mockClearDataCalls.length = 0;
   });
 
   async function render(props: ProbeProps) {
@@ -194,7 +208,7 @@ describe("useYjsSetup stamps the cache on sync (PLANE-76 regression)", () => {
     expect(window.localStorage.getItem(stampKey("page-3"))).toBe("stamp-abc");
   });
 
-  it("stamps when the served contentStamp arrives after sync (PLANE-76 pages-list path)", async () => {
+  it("stamps when the served contentStamp arrives after sync and does not wipe the cache (PLANE-76 pages-list path)", async () => {
     // Pages-list navigation mounts the editor before `description_html` arrives
     // (the list serializer omits it; only the detail serializer adds it), so
     // `contentStamp` starts undefined. The websocket can sync before the
@@ -211,5 +225,100 @@ describe("useYjsSetup stamps the cache on sync (PLANE-76 regression)", () => {
     await rerender({ docId: "page-4", contentStamp: "stamp-abc" });
 
     expect(window.localStorage.getItem(stampKey("page-4"))).toBe("stamp-abc");
+    // The reset flag must NOT have fired while the served value was unknown;
+    // otherwise the cache would be wiped before the stamp arrives and the
+    // multi-second "正在同步..." returns on the list flow.
+    expect(mockClearDataCalls).toEqual([]);
+  });
+
+  it("does not clear the cache when contentStamp is undefined at the reset decision (PLANE-76 pages-list mount)", async () => {
+    // The pages-list layout renders the editor while SWR fetches the list,
+    // and the list serializer omits description_html, so `contentStamp`
+    // is undefined at the first persistence bind. Pre-fix the stamp
+    // effect set the reset flag on the unknown served stamp. The flag
+    // survived the initial bind (which ran before the stamp effect in
+    // the old declaration order) and any subsequent provider rebuild
+    // — e.g. the docId bump below — would consume it and call clearData.
+    // Post-fix the helper returns false for an unknown served stamp so
+    // the flag is never set; the cache survives the mount and the
+    // rebuild.
+    await render({ docId: "page-5", contentStamp: undefined });
+    expect(mockClearDataCalls).toEqual([]);
+
+    // Trigger a provider rebuild by switching docIds (both the stamp
+    // effect and the persistence effect have docId in their deps, so
+    // both re-run on the new docId). Pre-fix the stamp effect set the
+    // flag during the first mount and the rebuild consumes it; post-fix
+    // the helper never sets the flag.
+    await rerender({ docId: "page-5-other", contentStamp: undefined });
+    expect(mockClearDataCalls).toEqual([]);
+  });
+
+  it("does not overwrite a stored mismatching stamp on first sync (PLANE-76 reset still fires on next open)", async () => {
+    // Pre-populate localStorage with a stale stamp (the page was updated
+    // elsewhere between sessions).
+    window.localStorage.setItem(stampKey("page-6"), "stamp-old");
+
+    // First open with the new served revision. The PLANE-76 reset flag is
+    // set by the stamp effect, but the cache is only cleared on the next
+    // persistence bind. If the first sync overwrote the stored stamp, the
+    // next open would see stored === served and skip the reset.
+    await render({ docId: "page-6", contentStamp: "stamp-new" });
+    await act(async () => {
+      mockProviderInstances[0].fireSynced();
+    });
+    expect(window.localStorage.getItem(stampKey("page-6"))).toBe("stamp-old");
+
+    // Simulate the next open: unmount and remount with the same contentStamp.
+    await act(async () => {
+      root!.unmount();
+    });
+    root = null;
+    mockProviderInstances.length = 0;
+    mockClearDataCalls.length = 0;
+
+    await render({ docId: "page-6", contentStamp: "stamp-new" });
+
+    // The deferred reset must still fire: stored ("stamp-old") !== served
+    // ("stamp-new"), so the persistence bind spawns the cleaner.
+    expect(mockClearDataCalls.length).toBeGreaterThan(0);
+  });
+
+  it("does not overwrite a stored mismatching stamp when the served value arrives after sync", async () => {
+    // Pre-populate localStorage with a stale stamp (the page was updated
+    // elsewhere before this session even opened).
+    window.localStorage.setItem(stampKey("page-8"), "stamp-old");
+
+    // Mount with contentStamp undefined (pages-list path). Sync fires
+    // with no stamp to write.
+    await render({ docId: "page-8", contentStamp: undefined });
+    await act(async () => {
+      mockProviderInstances[0].fireSynced();
+    });
+    expect(window.localStorage.getItem(stampKey("page-8"))).toBe("stamp-old");
+
+    // The served value arrives post-sync, but it differs from the stored
+    // stamp. The catch-up stamp write must not overwrite the stored
+    // evidence — the PLANE-76 reset still has to fire on the next open.
+    await rerender({ docId: "page-8", contentStamp: "stamp-new" });
+    expect(window.localStorage.getItem(stampKey("page-8"))).toBe("stamp-old");
+
+    // A provider rebuild (sessionEpoch bump) must now consume the reset
+    // flag that the stamp effect set when the served value became known.
+    // Pre-fix the P2a effect doesn't exist, so the flag is still set
+    // but no write happened either — same outcome here. To pin the P2a
+    // gate specifically we rebuild with a fresh flag and assert the
+    // reset fires (stored "stamp-old" !== served "stamp-new"). On a
+    // post-fix mount the stamp effect runs first and the persistence
+    // bind (after my reorder) consumes the flag.
+    await act(async () => {
+      root!.unmount();
+    });
+    root = null;
+    mockProviderInstances.length = 0;
+    mockClearDataCalls.length = 0;
+
+    await render({ docId: "page-8", contentStamp: "stamp-new" });
+    expect(mockClearDataCalls.length).toBeGreaterThan(0);
   });
 });
