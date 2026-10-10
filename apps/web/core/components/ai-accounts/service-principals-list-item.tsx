@@ -22,6 +22,7 @@ import { SERVICE_PRINCIPALS_LIST } from "./constants";
 import { DeleteServicePrincipalModal } from "./delete-service-principal-modal";
 import { EditServicePrincipalModal } from "./edit-service-principal-modal";
 import { RotateServicePrincipalTokenModal } from "./rotate-token-modal";
+import { ServicePrincipalGrantsCoverage } from "./service-principal-grants-coverage";
 import { ServicePrincipalGrantsModal } from "./grants-modal";
 import { ServicePrincipalScopesModal } from "./scopes-modal";
 
@@ -93,57 +94,62 @@ export function ServicePrincipalsListItem(props: Props) {
         onClose={() => setShowRotateTokenModal(false)}
         workspaceSlug={workspaceSlug}
       />
-      <div className="flex items-center justify-between gap-4 rounded-lg border border-subtle bg-layer-2 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <Avatar
-            src={getFileURL(principal.avatar)}
-            alt={principal.name}
-            fallback={principal.name.charAt(0)}
-            size="md"
-            tooltip
-          />
-          <div className="min-w-0">
-            <h5 className="truncate text-body-sm-medium">{principal.name}</h5>
-            {principal.description && <p className="truncate text-11 text-placeholder">{principal.description}</p>}
-            <p className="text-11 text-placeholder">
-              {t("workspace_settings.settings.service_principals.list.created_on")}{" "}
-              {renderFormattedDate(principal.created_at)}
-            </p>
-            <p className="text-11 text-placeholder">
-              {principal.token_last_used
-                ? t("token_last_used", { time: calculateTimeAgo(principal.token_last_used, currentLocale) })
-                : t("token_never_used")}
-            </p>
+      <div className="flex flex-col gap-3 rounded-lg border border-subtle bg-layer-2 px-4 py-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <Avatar
+              src={getFileURL(principal.avatar)}
+              alt={principal.name}
+              fallback={principal.name.charAt(0)}
+              size="md"
+              tooltip
+            />
+            <div className="min-w-0">
+              <h5 className="truncate text-body-sm-medium">{principal.name}</h5>
+              {principal.description && <p className="truncate text-11 text-placeholder">{principal.description}</p>}
+              <p className="text-11 text-placeholder">
+                {t("workspace_settings.settings.service_principals.list.created_on")}{" "}
+                {renderFormattedDate(principal.created_at)}
+              </p>
+              <p className="text-11 text-placeholder">
+                {principal.token_last_used
+                  ? t("token_last_used", { time: calculateTimeAgo(principal.token_last_used, currentLocale) })
+                  : t("token_never_used")}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowScopesModal(true)}>
+              {t("workspace_settings.settings.service_principals.list.manage_scopes")}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowGrantsModal(true)}>
+              {t("workspace_settings.settings.service_principals.list.manage_grants")}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowEditModal(true)}>
+              <EditIcon className="size-3" />
+              {t("workspace_settings.settings.service_principals.list.edit")}
+            </Button>
+            {principal.is_active && (
+              <Button variant="secondary" size="sm" onClick={() => setShowRotateTokenModal(true)}>
+                {t("workspace_settings.settings.service_principals.list.rotate_token")}
+              </Button>
+            )}
+            <Button variant="error-outline" size="sm" onClick={() => setShowDeleteModal(true)}>
+              <TrashIcon className="size-3" />
+              {t("workspace_settings.settings.service_principals.list.delete")}
+            </Button>
+            <Switch
+              size="sm"
+              checked={principal.is_active}
+              onCheckedChange={() => {
+                void handleToggle();
+              }}
+              aria-label={principal.name}
+            />
           </div>
         </div>
-        <div className="flex flex-shrink-0 items-center gap-3">
-          <Button variant="secondary" size="sm" onClick={() => setShowScopesModal(true)}>
-            {t("workspace_settings.settings.service_principals.list.manage_scopes")}
-          </Button>
-          <Button variant="secondary" size="sm" onClick={() => setShowGrantsModal(true)}>
-            {t("workspace_settings.settings.service_principals.list.manage_grants")}
-          </Button>
-          <Button variant="secondary" size="sm" onClick={() => setShowEditModal(true)}>
-            <EditIcon className="size-3" />
-            {t("workspace_settings.settings.service_principals.list.edit")}
-          </Button>
-          {principal.is_active && (
-            <Button variant="secondary" size="sm" onClick={() => setShowRotateTokenModal(true)}>
-              {t("workspace_settings.settings.service_principals.list.rotate_token")}
-            </Button>
-          )}
-          <Button variant="error-outline" size="sm" onClick={() => setShowDeleteModal(true)}>
-            <TrashIcon className="size-3" />
-            {t("workspace_settings.settings.service_principals.list.delete")}
-          </Button>
-          <Switch
-            size="sm"
-            checked={principal.is_active}
-            onCheckedChange={() => {
-              void handleToggle();
-            }}
-            aria-label={principal.name}
-          />
+        <div className="border-t border-subtle pt-3">
+          <ServicePrincipalGrantsCoverage principal={principal} workspaceSlug={workspaceSlug} />
         </div>
       </div>
     </>

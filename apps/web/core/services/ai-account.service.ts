@@ -121,6 +121,21 @@ export class ServicePrincipalService extends APIService {
       });
   }
 
+  /** Read the current grant set, apply a mutation, and PUT the result.
+   *  Required by every UI that touches a single project's grant, because
+   *  `PUT .../grants/` REPLACES the entire grant set — sending only the
+   *  one project we just toggled would silently revoke access to every
+   *  other project this principal had. */
+  async applyServicePrincipalGrantMutation(
+    workspaceSlug: string,
+    principalId: string,
+    mutate: (current: TProjectGrant[]) => TProjectGrantInput[]
+  ): Promise<TProjectGrant[]> {
+    const current = await this.fetchServicePrincipalGrants(workspaceSlug, principalId);
+    const next = mutate(current);
+    return this.updateServicePrincipalGrants(workspaceSlug, principalId, next);
+  }
+
   // Read the per-workspace SP settings (sp_assignable toggle).
   // Backend endpoint /api/workspaces/<slug>/sp-settings/ is not yet wired
   // by M6; the GET returns 404 today and the UI treats 404 as the
