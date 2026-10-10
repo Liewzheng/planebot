@@ -259,7 +259,9 @@ def authorize(
                 DENY_GRANT_MISS,
                 (
                     f"Service principal '{sp.name}' has no active grant "
-                    f"for project {project_id}."
+                    f"for project {project_id}. A workspace admin must "
+                    f"grant this project to the service principal at "
+                    f"Workspace settings -> Service principals -> Grants."
                 ),
             )
 
