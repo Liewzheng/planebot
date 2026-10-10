@@ -304,8 +304,192 @@ class TestMigrationCommand:
         assert scope.project_id is None
         assert scope.resource_type == "project"
         assert scope.action == "read"
-        # No ProjectGrant for workspace-wide scopes
+        # Bot had no active ProjectMember rows at all, so no grants.
         assert not ProjectGrant.objects.filter(service_principal=sp).exists()
+
+    # ------------------------------------------------------------------ #
+    # M20 — workspace-global policies + active project memberships must    #
+    # produce one ProjectGrant per project the bot is reachable in.        #
+    # ------------------------------------------------------------------ #
+
+    def test_workspace_global_policies_grant_for_each_project_membership(
+        self, workspace, create_user, bot_factory, project
+    ):
+        """Repro of the M20 production incident.
+
+        Accounts whose every ``AIScopePolicy`` is workspace-wide
+        (``project_id IS NULL``) used to be converted with zero
+        ``ProjectGrant`` rows while the same command soft-deleted the
+        bot's ``ProjectMember`` rows — locking the bot out of every
+        project at ``authorize()`` step 2 (``DENY_GRANT_MISS``). After
+        the fix, the union of project-scoped policies and active
+        ``ProjectMember`` projects must drive a grant per project, and
+        ``authorize()`` must ALLOW a project-scoped read in each.
+        """
+        from plane.core.authz.actions import Action
+        from plane.core.authz.engine import AuthzContext, authorize
+        from plane.core.authz.principal import ServicePrincipal_
+        from plane.core.authz.resources import ResourceType
+
+        bot = bot_factory()
+        WorkspaceMember.objects.create(
+            workspace=workspace, member=bot, role=15, is_active=True
+        )
+
+        # Two extra projects alongside the existing ``project`` fixture so
+        # the bot ends up reachable in three projects total — the exact
+        # shape production deployed with.
+        more_projects = []
+        for i, (name, ident) in enumerate(
+            [("Alpha", "AL"), ("Beta", "BE")], start=1
+        ):
+            p = Project.objects.create(
+                name=name,
+                identifier=ident,
+                workspace=workspace,
+                created_by=create_user,
+                network=2,
+            )
+            ProjectMember.objects.create(
+                workspace=workspace, project=p, member=create_user, role=20,
+                is_active=True,
+            )
+            # Bot holds a ProjectMember seat with role=15 in each.
+            ProjectMember.objects.create(
+                workspace=workspace, project=p, member=bot, role=15,
+                is_active=True,
+            )
+            more_projects.append(p)
+
+        ProjectMember.objects.create(
+            workspace=workspace, project=project, member=bot, role=20,
+            is_active=True,
+        )
+
+        account = _make_ai_account(
+            workspace, create_user, bot, name="global-only-bot"
+        )
+        # Workspace-global ``all``/``all`` only — the bug shape. No
+        # project_id anywhere on the policy side.
+        AIScopePolicy.objects.create(
+            ai_account=account,
+            project=None,
+            resource_type=ResourceType.ALL,
+            action=Action.ALL,
+        )
+
+        out = StringIO()
+        call_command(
+            "migrate_ai_accounts_to_service_principals", stdout=out
+        )
+
+        sp = ServicePrincipal.objects.get(id=account.id)
+        grants = list(ProjectGrant.objects.filter(service_principal=sp))
+        granted_pids = {g.project_id for g in grants}
+
+        # One grant per project the bot was a member of: three total.
+        expected_pids = {project.id, more_projects[0].id, more_projects[1].id}
+        assert granted_pids == expected_pids, (
+            f"expected grants for {expected_pids}, got {granted_pids}"
+        )
+        assert len(grants) == 3
+        # role_cap mirrors the bot's ProjectMember role for each project.
+        cap_by_pid = {g.project_id: g.role_cap for g in grants}
+        assert cap_by_pid[project.id] == 20  # the fixture membership
+        assert cap_by_pid[more_projects[0].id] == 15
+        assert cap_by_pid[more_projects[1].id] == 15
+
+        # Memberships are still soft-deleted — the grant is the only
+        # forward path; ProjectMember rows must NOT remain active.
+        assert not ProjectMember.objects.filter(
+            member=bot, is_active=True
+        ).exists()
+
+        # And authorize() must ALLOW a work_item read in each project —
+        # the exact request that 403'd in production.
+        principal = ServicePrincipal_(service_principal=sp)
+        ctx = AuthzContext(
+            workspace_slug=workspace.slug, project_id=str(project.id)
+        )
+        decision = authorize(
+            principal,
+            Action.READ,
+            ResourceType.WORK_ITEM,
+            ctx=ctx,
+        )
+        assert decision.allowed, (
+            f"authorize() denied a work_item read in project "
+            f"{project.id}: {decision.reason} — {decision.detail}"
+        )
+
+        for p in more_projects:
+            ctx_p = AuthzContext(
+                workspace_slug=workspace.slug, project_id=str(p.id)
+            )
+            decision_p = authorize(
+                principal,
+                Action.READ,
+                ResourceType.WORK_ITEM,
+                ctx=ctx_p,
+            )
+            assert decision_p.allowed, (
+                f"authorize() denied a work_item read in project "
+                f"{p.id}: {decision_p.reason} — {decision_p.detail}"
+            )
+
+        # Migration record stores the real grant count, not the
+        # misleading workspace-only count from the pre-fix dry-run.
+        rec = AIAccountMigrationRecord.objects.get(ai_account=account)
+        assert rec.grants_migrated == 3
+
+    def test_dry_run_grant_count_matches_apply(
+        self, workspace, create_user, bot_factory, project
+    ):
+        """``--dry-run`` and the apply path must agree on the grant count
+        per account — M20 found dry-run printed ``projects_granted=10``
+        while the apply path created ``grants=0`` for the same input.
+        """
+        bot = bot_factory()
+        WorkspaceMember.objects.create(
+            workspace=workspace, member=bot, role=15, is_active=True
+        )
+        ProjectMember.objects.create(
+            workspace=workspace, project=project, member=bot, role=15,
+            is_active=True,
+        )
+        account = _make_ai_account(
+            workspace, create_user, bot, name="agreement-bot"
+        )
+        # Workspace-global policy only — the divergence case.
+        AIScopePolicy.objects.create(
+            ai_account=account,
+            project=None,
+            resource_type="work_item",
+            action="read",
+        )
+
+        dry_out = StringIO()
+        call_command(
+            "migrate_ai_accounts_to_service_principals",
+            "--dry-run",
+            stdout=dry_out,
+        )
+        dry_text = dry_out.getvalue()
+        # Lock the surface so a future label change does not silently
+        # break the agreement. Pre-fix this would have read
+        # ``projects_granted=1`` while apply reported ``grants=0``.
+        assert "grants=1" in dry_text, dry_text
+
+        apply_out = StringIO()
+        call_command(
+            "migrate_ai_accounts_to_service_principals", stdout=apply_out
+        )
+        apply_text = apply_out.getvalue()
+        assert "grants=1" in apply_text, apply_text
+
+        # Sanity: dry-run wrote nothing; apply wrote one SP and grant.
+        assert ServicePrincipal.objects.count() == 1
+        assert ProjectGrant.objects.count() == 1
 
 
 @pytest.mark.contract

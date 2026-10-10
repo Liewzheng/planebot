@@ -14,12 +14,19 @@ Conversion rules — these match the migration contract in M12:
 * ``AIAccount`` → ``ServicePrincipal`` (id carried over deterministically;
   ``name`` / ``description`` / ``owner`` / ``is_active`` preserved;
   ``avatar`` populated from the backing bot's ``avatar_asset.asset_url``).
-* ``AIScopePolicy(project=X)`` → ``ServiceScope(project=X)`` plus a
-  ``ProjectGrant(role_cap=<bot's ProjectMember.role>)`` for the same
-  project.
+* ``AIScopePolicy(project=X)`` → ``ServiceScope(project=X)``.
 * ``AIScopePolicy(project=None)`` → workspace-wide ``ServiceScope``
   (action preserved verbatim; the SP engine's Q4 guard rejects
   workspace-level writes at request time anyway).
+* ``ProjectGrant(project=X, role_cap=<bot's ProjectMember.role>)`` is
+  emitted for every project the bot is reachable in: the union of
+  project-scoped ``AIScopePolicy`` projects and the bot's active
+  ``ProjectMember`` projects, deduped per project. The
+  ``ProjectMember`` arm is required because the conversion soft-deletes
+  the bot's memberships in the same transaction — without it, bots that
+  only ever held workspace-global policies would lose every project grant
+  on the very conversion that retires their ``ProjectMember`` rows, and
+  ``authorize()`` would ``DENY_GRANT_MISS`` every project-scoped read.
 * Bot ``WorkspaceMember`` / ``ProjectMember`` rows are soft-deleted
   (``is_active=False``).
 * Existing ``is_service=True`` legacy tokens are reassigned to point at
@@ -30,6 +37,9 @@ Idempotency: a row in :class:`AIAccountMigrationRecord` per converted AI
 account is the marker. Re-running the command on top of an already-
 converted database is a no-op for converted accounts and picks up any
 that were created after the last run.
+
+``--dry-run`` reports the same grant and scope counts the apply path
+would produce, so the two never disagree (M20 regression).
 
 Usage::
 
@@ -175,13 +185,43 @@ class Command(BaseCommand):
             ).values_list("project_id", "role")
         }
 
+        # ProjectGrant projects are the union of:
+        #   * project-scoped AIScopePolicy rows (the bot was authorized
+        #     for those projects by policy at the time of provisioning),
+        #     and
+        #   * active ProjectMember rows (the bot held a project seat,
+        #     which authorize() needs an explicit grant to honor once
+        #     those ProjectMember rows are soft-deleted below).
+        # The ProjectMember arm is non-negotiable: it is what stops an
+        # account whose every AIScopePolicy is workspace-global from
+        # being converted into an SP with zero ProjectGrants, which
+        # would lock the bot out of every project at authorize() step 2
+        # (``DENY_GRANT_MISS``). It is also deduplicated: a project named
+        # by both sources produces exactly one grant, preserving the
+        # existing project-scoped-policy behaviour.
+        policy_projects = set(
+            AIScopePolicy.objects.filter(
+                ai_account=account, project_id__isnull=False
+            ).values_list("project_id", flat=True)
+        )
+        membership_projects = set(project_roles_snapshot.keys())
+        seen_project_grants = policy_projects | membership_projects
+        scopes_count = AIScopePolicy.objects.filter(
+            ai_account=account
+        ).count()
+        grants_planned = len(seen_project_grants)
+
         bot_user = account.bot_user
 
         if dry_run:
+            # Same numbers the apply path would produce, so dry-run and
+            # apply agree. Previously dry-run printed the bot's project
+            # membership count under ``projects_granted`` while apply
+            # printed ``grants`` -- the two diverged on accounts whose
+            # policies were all workspace-global.
             self.stdout.write(
                 f"  - {account.id} ({account.name}): "
-                f"scopes={account.scope_policies.count()}, "
-                f"projects_granted={len(project_roles_snapshot)}"
+                f"scopes={scopes_count}, grants={grants_planned}"
             )
             return True
 
@@ -200,7 +240,6 @@ class Command(BaseCommand):
 
             scopes_created = 0
             grants_created = 0
-            seen_project_grants = set()
 
             for policy in AIScopePolicy.objects.filter(ai_account=account):
                 ServiceScope.objects.create(
@@ -211,20 +250,15 @@ class Command(BaseCommand):
                 )
                 scopes_created += 1
 
-                if policy.project_id is not None:
-                    if policy.project_id in seen_project_grants:
-                        continue
-                    seen_project_grants.add(policy.project_id)
-                    role = project_roles_snapshot.get(
-                        policy.project_id, _DEFAULT_ROLE_CAP
-                    )
-                    ProjectGrant.objects.create(
-                        service_principal=sp,
-                        project_id=policy.project_id,
-                        role_cap=_coerce_role_cap(role),
-                        is_active=True,
-                    )
-                    grants_created += 1
+            for pid in seen_project_grants:
+                role = project_roles_snapshot.get(pid, _DEFAULT_ROLE_CAP)
+                ProjectGrant.objects.create(
+                    service_principal=sp,
+                    project_id=pid,
+                    role_cap=_coerce_role_cap(role),
+                    is_active=True,
+                )
+                grants_created += 1
 
             # Soft-delete memberships. Order doesn't matter — the bot User
             # row is no longer an active member of any project / workspace.
