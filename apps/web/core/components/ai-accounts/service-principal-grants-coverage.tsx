@@ -132,17 +132,17 @@ export const ServicePrincipalGrantsCoverage = observer(function ServicePrincipal
       {missingCount > 0 ? (
         missingCount <= 3 ? (
           <p className="truncate text-11 text-placeholder">
-            {t("workspace_settings.settings.service_principals.project_access.coverage.not_granted_prefix")}{" "}
+            {t("workspace_settings.settings.service_principals.project_access.coverage.not_granted_prefix")}
             {missingProjects.map((p) => p.name).join(", ")}
           </p>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <p className="truncate text-11 text-placeholder">
-              {t("workspace_settings.settings.service_principals.project_access.coverage.not_granted_prefix")}{" "}
+              {t("workspace_settings.settings.service_principals.project_access.coverage.not_granted_prefix")}
               {missingProjects
                 .slice(0, 3)
                 .map((p) => p.name)
-                .join(", ")}{" "}
+                .join(", ")}
               {t("workspace_settings.settings.service_principals.project_access.coverage.not_granted_more", {
                 more: missingCount - 3,
               })}
