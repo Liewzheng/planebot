@@ -6,6 +6,12 @@
 
 Implements the chain from ``sp-design.md`` §5.2:
 
+0. **workspace-level write guard** — runs after project resolution (Q4
+   from the design review). Genuinely workspace-only types (project,
+   member, user, invite) reject writes unconditionally; ``label`` and
+   ``estimate`` (which have project-scoped surfaces) reject writes only
+   when no project_id is resolved, so a workspace-wide label write is
+   refused the same way.
 1. **scope hit** — ``(resource_type, action)`` must be in the SP's
    :class:`ServiceScope` set (wildcards honored). A ``read`` scope row
    also satisfies a ``list`` request (LIST is authz-internal; the SP
@@ -200,12 +206,35 @@ def authorize(
             f"Service principal '{sp.name}' is inactive.",
         )
 
-    # Workspace-level resources can only be read. Writes must land on a
-    # project-scoped resource through a ProjectGrant (Q4 from the design
-    # review).
-    if (
+    # Step 1 — scope hit. Project-scoped scope wins over workspace-wide scope.
+    # LIST requests are satisfied by a READ scope row (see _scope_action_set).
+    from plane.service_principals.models import ServiceScope
+
+    project_id = _resolve_project_id(resource, ctx)
+
+    # Workspace-level write guard (Q4 from the design review). Two flavours:
+    #
+    # 1. Genuinely workspace-only resources (project, member, user, invite)
+    #    reject writes unconditionally — even when the request carries a
+    #    project_id, the resource type has no project semantics, so a write
+    #    cannot be anchored on a project.
+    # 2. ``label`` and ``estimate`` have project-scoped surfaces on the
+    #    v1 URL; a write with no resolved project_id is a workspace-level
+    #    write and must still be refused. ``Label.project`` is nullable
+    #    (workspace-wide labels exist), so this branch is reachable.
+    #
+    # Either branch keeps the same reason and message so existing 403
+    # bodies do not drift on the no-project path.
+    if action not in resources.ALLOWED_WORKSPACE_LEVEL_ACTIONS and (
         resources.is_workspace_level(resource_type)
-        and action not in resources.ALLOWED_WORKSPACE_LEVEL_ACTIONS
+        or (
+            resource_type
+            in (
+                resources.ResourceType.LABEL,
+                resources.ResourceType.ESTIMATE,
+            )
+            and not project_id
+        )
     ):
         return Decision.deny(
             DENY_WORKSPACE_LEVEL_WRITE,
@@ -214,12 +243,6 @@ def authorize(
                 "are not permitted; route through a project-scoped grant."
             ),
         )
-
-    # Step 1 — scope hit. Project-scoped scope wins over workspace-wide scope.
-    # LIST requests are satisfied by a READ scope row (see _scope_action_set).
-    from plane.service_principals.models import ServiceScope
-
-    project_id = _resolve_project_id(resource, ctx)
 
     scope_qs = ServiceScope.objects.filter(
         service_principal=sp,

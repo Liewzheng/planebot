@@ -66,14 +66,19 @@ RESOURCE_CHOICES = (
 # Resource types that exist only at the workspace level — they have no
 # project scope. authorize() routes these through workspace-wide grants and
 # rejects writes on them outright (Q4 from the design review).
+#
+# ``LABEL`` and ``ESTIMATE`` are deliberately NOT in this set. Their v1
+# surfaces live under ``workspaces/<slug>/projects/<project_id>/labels/``
+# and the matching ``…/estimates/`` URL, so they have project-scoped
+# writes that the Q4 guard would otherwise dead-end. A label/estimate
+# write with no resolved project is treated as a workspace-level write
+# and denied by an explicit no-project guard in :mod:`engine`.
 WORKSPACE_LEVEL_RESOURCES = frozenset(
     {
         ResourceType.PROJECT,
         ResourceType.MEMBER,
         ResourceType.USER,
         ResourceType.INVITE,
-        ResourceType.ESTIMATE,
-        ResourceType.LABEL,
     }
 )
 

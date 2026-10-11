@@ -727,6 +727,259 @@ class TestWorkspaceLevelResources:
 
 
 # --------------------------------------------------------------------------- #
+# Label / estimate: project-scoped surfaces with a workspace-wide fallback    #
+# (M31 — fix workspace-level misclassification)                                #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestLabelProjectScoped:
+    """``label`` is project-scoped on its v1 surface
+    (``workspaces/<slug>/projects/<project_id>/labels/``). M31 removes it
+    from the ``WORKSPACE_LEVEL_RESOURCES`` set so a granted SP can write
+    labels through a project grant; a workspace-wide label write
+    (no project_id) must still be refused as a workspace-level write.
+    """
+
+    def test_create_label_with_grant_allowed(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        """Happy path: scope + active grant at the matrix CREATE floor
+        (MEMBER=15) lets the SP create a label in that project."""
+        _add_scope(sp, ResourceType.LABEL, Action.CREATE, project=public_project)
+        _add_grant(sp, public_project, role_cap=15)
+        d = authorize(
+            sp_principal,
+            Action.CREATE,
+            ResourceType.LABEL,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert d.allowed, f"label CREATE should allow; got {d}"
+        assert d.reason == ALLOWED
+
+    def test_create_label_no_grant_denies_grant_miss(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        """With only a scope row and no ProjectGrant, the grant step
+        rejects label CREATE (the grant requirement is now live for
+        label/estimate after M31)."""
+        _add_scope(sp, ResourceType.LABEL, Action.CREATE, project=public_project)
+        # No ProjectGrant for public_project.
+        d = authorize(
+            sp_principal,
+            Action.CREATE,
+            ResourceType.LABEL,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_GRANT_MISS
+
+    def test_create_label_no_project_still_denies_workspace_level_write(
+        self, sp, sp_principal, workspace
+    ):
+        """A label write with no resolved project_id (a workspace-wide
+        label — ``Label.project`` is nullable) must still trip the Q4
+        guard with ``DENY_WORKSPACE_LEVEL_WRITE``. Same reason and
+        same message as the original Q4 guard for project/member/etc."""
+        _add_scope(sp, ResourceType.LABEL, Action.CREATE, project=None)
+        d = authorize(
+            sp_principal,
+            Action.CREATE,
+            ResourceType.LABEL,
+            ctx=AuthzContext(workspace_slug=workspace.slug),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_WORKSPACE_LEVEL_WRITE
+        # Detail message mirrors the project/member/etc. path so existing
+        # 403-body asserts and any dashboard text keep matching.
+        assert d.detail.startswith(
+            "Writes on workspace-level resource 'label' are not permitted;"
+        ), f"workspace-level detail drifted: {d.detail!r}"
+
+    def test_update_label_with_grant_allowed(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        """UPDATE on label requires MEMBER (15); a 15-cap grant allows."""
+        _add_scope(sp, ResourceType.LABEL, Action.UPDATE, project=public_project)
+        _add_grant(sp, public_project, role_cap=15)
+        d = authorize(
+            sp_principal,
+            Action.UPDATE,
+            ResourceType.LABEL,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert d.allowed
+        assert d.reason == ALLOWED
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestEstimateProjectScoped:
+    """``estimate`` shares the project-scoped surface shape with
+    ``label``. The matrix keeps ``ADMIN`` (20) for estimate writes, so a
+    15-cap grant trips ``DENY_ROLE_CAP`` instead of allowing. Reads at
+    GUEST (5) allow at any cap >= 5.
+    """
+
+    def test_create_estimate_guest_cap_denies_role_cap(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        """The matrix pins estimate CREATE at ADMIN (20). M31 leaves the
+        matrix untouched; with a MEMBER (15) grant and a scope row,
+        role_cap must reject — the no-project guard no longer trips
+        because the URL provides a project_id."""
+        _add_scope(
+            sp, ResourceType.ESTIMATE, Action.CREATE, project=public_project
+        )
+        _add_grant(sp, public_project, role_cap=15)
+        d = authorize(
+            sp_principal,
+            Action.CREATE,
+            ResourceType.ESTIMATE,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_ROLE_CAP
+
+    def test_create_estimate_no_project_still_denies_workspace_level_write(
+        self, sp, sp_principal, workspace
+    ):
+        """No-project guard still fires for estimate writes (estimate
+        with no project anchor is a workspace-level write)."""
+        _add_scope(sp, ResourceType.ESTIMATE, Action.CREATE, project=None)
+        d = authorize(
+            sp_principal,
+            Action.CREATE,
+            ResourceType.ESTIMATE,
+            ctx=AuthzContext(workspace_slug=workspace.slug),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_WORKSPACE_LEVEL_WRITE
+        assert d.detail.startswith(
+            "Writes on workspace-level resource 'estimate' are not permitted;"
+        ), f"workspace-level detail drifted: {d.detail!r}"
+
+    def test_read_estimate_with_grant_allowed(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        """With label/estimate removed from the workspace-only set, the
+        grant step now applies to reads too. A granted SP at GUEST (5)
+        reads estimates in the project (the matrix requires GUEST for
+        READ/LIST)."""
+        _add_scope(sp, ResourceType.ESTIMATE, Action.READ, project=public_project)
+        _add_grant(sp, public_project, role_cap=5)
+        d = authorize(
+            sp_principal,
+            Action.READ,
+            ResourceType.ESTIMATE,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert d.allowed
+        assert d.reason == ALLOWED
+
+    def test_read_estimate_no_grant_denies_grant_miss(
+        self, sp, sp_principal, public_project, workspace
+    ):
+        """A scope row without an active ProjectGrant must now deny at
+        the grant step — M31 tightened the read path so SPs cannot read
+        estimates outside the projects they were explicitly granted."""
+        _add_scope(sp, ResourceType.ESTIMATE, Action.READ, project=public_project)
+        # No ProjectGrant.
+        d = authorize(
+            sp_principal,
+            Action.READ,
+            ResourceType.ESTIMATE,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_GRANT_MISS
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestGenuinelyWorkspaceOnlyNoRegression:
+    """M31 must not change behavior for the genuinely workspace-only
+    types: project, member, user, invite. The Q4 guard fires
+    unconditionally on writes — even when the request carries a
+    project_id — because these types have no project semantics.
+
+    This class pins each of those writes so a future regression that
+    widens the project-aware branch to these types is caught here.
+    """
+
+    @pytest.mark.parametrize(
+        "resource_type",
+        [
+            ResourceType.PROJECT,
+            ResourceType.MEMBER,
+            ResourceType.USER,
+            ResourceType.INVITE,
+        ],
+    )
+    @pytest.mark.parametrize(
+        "action", [Action.CREATE, Action.UPDATE, Action.DELETE]
+    )
+    def test_write_with_no_project_denies(
+        self, sp, sp_principal, workspace, resource_type, action
+    ):
+        _add_scope(sp, resource_type, action, project=None)
+        d = authorize(
+            sp_principal,
+            action,
+            resource_type,
+            ctx=AuthzContext(workspace_slug=workspace.slug),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_WORKSPACE_LEVEL_WRITE
+
+    @pytest.mark.parametrize(
+        "resource_type",
+        [
+            ResourceType.PROJECT,
+            ResourceType.MEMBER,
+            ResourceType.USER,
+            ResourceType.INVITE,
+        ],
+    )
+    def test_write_with_project_id_still_denies(
+        self, sp, sp_principal, workspace, public_project, resource_type
+    ):
+        """Even when a project_id is in context, writes on workspace-only
+        types are unconditionally refused — there is no project anchor."""
+        _add_scope(sp, resource_type, Action.CREATE, project=public_project)
+        d = authorize(
+            sp_principal,
+            Action.CREATE,
+            resource_type,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_WORKSPACE_LEVEL_WRITE
+
+
+# --------------------------------------------------------------------------- #
 # End-to-end: the four steps in concert                                        #
 # --------------------------------------------------------------------------- #
 

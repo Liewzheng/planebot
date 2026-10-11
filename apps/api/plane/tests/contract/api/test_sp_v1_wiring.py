@@ -894,3 +894,117 @@ class TestSPPageAllowDenyMatrix:
             format="json",
         )
         assert create_response.status_code == status.HTTP_201_CREATED
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestSPLabelAllowDenyMatrix:
+    """The labels list/create endpoint
+    (``workspaces/<slug>/projects/<project_id>/labels/``) is project-scoped
+    and annotated ``resource_type="label"``.
+
+    M31 removed ``label`` from the workspace-level set, so an SP with a
+    project scope row + active ProjectGrant can now create a label (201).
+    Before M31 the same request hit the Q4 guard and 403'd with
+    ``DENY_WORKSPACE_LEVEL_WRITE`` even when the URL carried a
+    ``project_id`` — the bug the AI service bot reported
+    (``Writes on workspace-level resource 'label' are not permitted``).
+
+    The exact wiring test the mission pinned: an SP with a project grant
+    plus a ``label`` scope creates a label via the v1 project labels
+    endpoint → 201. Same SP without the ``label`` scope → 403
+    DENY_SCOPE_MISS (the deny comes from the engine's scope step, not
+    from the chain default-deny guard).
+    """
+
+    @pytest.fixture
+    def label_project(self, db, workspace, create_user):
+        proj = Project.objects.create(
+            name="Label Project",
+            identifier="LP",
+            workspace=workspace,
+            created_by=create_user,
+            network=2,
+        )
+        ProjectMember.objects.create(
+            project=proj, member=create_user, role=20, is_active=True
+        )
+        return proj
+
+    @staticmethod
+    def _label_url(workspace_slug, project_id):
+        return (
+            f"/api/v1/workspaces/{workspace_slug}/"
+            f"projects/{project_id}/labels/"
+        )
+
+    def test_fully_granted_sp_can_create_label(
+        self, workspace, create_user, label_project, spv1_client
+    ):
+        """The AI-bot scenario: SP with a ``label:create`` scope +
+        active ProjectGrant at the matrix floor (MEMBER=15) creates a
+        label in the granted project (201)."""
+        sp = _make_sp(workspace, create_user, name="label-create")
+        _scope(sp, "label", "create", project=label_project)
+        _grant(sp, label_project, role_cap=15)
+
+        spv1_client.credentials(
+            HTTP_X_API_KEY="plane_svc_token_label-create"
+        )
+        response = spv1_client.post(
+            self._label_url(workspace.slug, label_project.id),
+            data={
+                "name": "Bot Label",
+                "color": "#abcdef",
+                "description": "created via the AI service bot",
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED, (
+            f"label create should allow (M31); got "
+            f"{response.status_code} body={response.json()!r}"
+        )
+
+    def test_no_label_scope_denies_with_deny_scope_miss(
+        self, workspace, create_user, label_project, spv1_client
+    ):
+        """No ``label`` scope row → scope step trips (DENY_SCOPE_MISS),
+        403 from the chain — not the unannotated default-deny. The
+        chain phrase ``"lacks scope for create label in project"`` pins
+        it to the engine, not the view's permission_classes."""
+        sp = _make_sp(workspace, create_user, name="label-no-scope")
+        # Grant only, no scope row.
+        _grant(sp, label_project, role_cap=15)
+
+        spv1_client.credentials(
+            HTTP_X_API_KEY="plane_svc_token_label-no-scope"
+        )
+        response = spv1_client.post(
+            self._label_url(workspace.slug, label_project.id),
+            data={"name": "Should Deny"},
+            format="json",
+        )
+
+        _assert_chain_deny(
+            response,
+            "lacks scope for create label in project",
+        )
+
+    def test_fully_granted_sp_can_list_labels(
+        self, workspace, create_user, label_project, spv1_client
+    ):
+        """List (GET) on the labels endpoint honors the same flow: an
+        SP with a ``label:read`` scope + active grant reads the label
+        collection (200). The read path is now grant-gated after M31
+        (label is no longer workspace-only)."""
+        sp = _make_sp(workspace, create_user, name="label-list")
+        _scope(sp, "label", "read", project=label_project)
+        _grant(sp, label_project, role_cap=15)
+
+        spv1_client.credentials(
+            HTTP_X_API_KEY="plane_svc_token_label-list"
+        )
+        response = spv1_client.get(
+            self._label_url(workspace.slug, label_project.id)
+        )
+        assert response.status_code == status.HTTP_200_OK
