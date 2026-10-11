@@ -50,7 +50,7 @@ Remotes on this checkout: `planebot` = our home repo, `origin` = upstream `makep
 Branch policy:
 
 - `main` — stable line: what is deployed and verified on the self-host instance. Fast-forward only.
-- `dev` — development line: local `integration/selfhost` tracks it, so a plain `git push` from that branch lands on `dev`.
+- `dev` — development line: local `integration/selfhost` tracks `planebot/dev`, and this checkout sets `push.default=upstream`, so a plain `git push` from that branch lands on `dev`.
 - Any other branch on `planebot` is a short-lived topic branch and gets deleted once merged.
 
 ```bash
