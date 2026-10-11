@@ -41,6 +41,25 @@ Known test-stack issue: `requirements/test.txt` pins httpx 0.24.1, which breaks 
 docker compose -f docker-compose-test.yml run --rm api-tests sh -c 'pip install -q "anyio<4.15" && pytest <args>'
 ```
 
+## Repo topology and branch policy (planebot)
+
+This fork's own home is **https://github.com/Liewzheng/planebot** (git remote `planebot`) — it is our repo, independent of `makeplane/plane`. Do not confuse the two nearby names: `planebot` is this fork's home repo, `planebotcli` (`Liewzheng/planebotcli`) is the Rust CLI that gets driven as `pbot`.
+
+Remotes on this checkout: `planebot` = our home repo, `origin` = upstream `makeplane/plane`, `fork` = `Liewzheng/plane` (a ~600-branch mirror of upstream — never work or clean branches there).
+
+Branch policy:
+
+- `main` — stable line: what is deployed and verified on the self-host instance. Fast-forward only.
+- `dev` — development line: local `integration/selfhost` tracks it, so a plain `git push` from that branch lands on `dev`.
+- Any other branch on `planebot` is a short-lived topic branch and gets deleted once merged.
+
+```bash
+# ordinary development push (upstream is already configured)
+git push
+# promote the current tip to stable, fast-forward only
+git push planebot integration/selfhost:main
+```
+
 ## Self-host images (integration/selfhost only)
 
 The deployment in `~/docker/plane` runs images built from the `integration/selfhost` branch. Rebuild and redeploy procedure:
