@@ -16,8 +16,13 @@ Conversion rules — these match the migration contract in M12:
   ``avatar`` populated from the backing bot's ``avatar_asset.asset_url``).
 * ``AIScopePolicy(project=X)`` → ``ServiceScope(project=X)``.
 * ``AIScopePolicy(project=None)`` → workspace-wide ``ServiceScope``
-  (action preserved verbatim; the SP engine's Q4 guard rejects
-  workspace-level writes at request time anyway).
+  (the SP engine's Q4 guard rejects workspace-level writes at request
+  time anyway).
+* ``action`` is copied through, except for the legacy ``list`` action,
+  which the SP vocabulary does not carry: a ``list`` policy whose
+  ``(project, resource_type)`` already has a ``read`` policy is dropped
+  (permission-equivalent), otherwise it is written as ``read`` with a
+  warning. See ``_plan_scope_rows``.
 * ``ProjectGrant(project=X, role_cap=<bot's ProjectMember.role>)`` is
   emitted for every project the bot is reachable in: the union of
   project-scoped ``AIScopePolicy`` projects and the bot's active
@@ -71,11 +76,74 @@ from plane.service_principals.models import (
 _VALID_ROLE_CAPS = {20, 15, 5}
 _DEFAULT_ROLE_CAP = 15
 
+# The legacy AI-account policy vocabulary has a ``list`` action that the SP
+# scope vocabulary deliberately does not (``service_principals.constants``
+# ACTION_CHOICES has no ``list``; ``core.authz.actions`` does). Copying it
+# verbatim is what produced the unreachable SP scope rows retired by
+# ``service_principals/migrations/0003_retire_list_scope_rows.py``.
+_LEGACY_LIST_ACTION = "list"
+_READ_ACTION = "read"
+
 
 def _coerce_role_cap(raw_role):
     if raw_role in _VALID_ROLE_CAPS:
         return raw_role
     return _DEFAULT_ROLE_CAP
+
+
+def _plan_scope_rows(policies):
+    """Map legacy ``AIScopePolicy`` rows onto the SP scope rows to write.
+
+    Returns ``(rows, skipped, widened)``: ``rows`` is the list of
+    ``(project_id, resource_type, action)`` triples to persist, ``skipped``
+    counts legacy ``list`` policies dropped because an equivalent ``read``
+    row is written for the same ``(project_id, resource_type)``, and
+    ``widened`` counts the ``list`` policies that became ``read`` because no
+    such sibling exists.
+
+    ``list`` is not part of the SP vocabulary — the management API only
+    exposes ``read``, and ``core/authz/engine.py::_scope_action_set`` already
+    lets a ``read`` row satisfy a ``list`` request — so a copied ``list`` row
+    is unreachable in practice *and* strictly dominated by a ``read`` row on
+    the same resource. Two cases:
+
+    * a ``read`` policy exists for the same ``(project_id, resource_type)``:
+      the legacy row grants nothing the ``read`` row does not already grant
+      (``_scope_action_set('list')`` includes ``read``), so it is dropped —
+      permission for permission identical.
+    * no ``read`` sibling exists: dropping the row would lose the account's
+      read access, so it is widened to ``read`` and reported as a warning.
+      That is the deliberate trade-off — ``read`` still satisfies the ``list``
+      request, so nothing the account could do before is lost, but the row may
+      now also authorize plain ``read`` requests, which the operator should
+      re-check.
+
+    The decision is taken against the whole policy set, not row order, so it
+    does not depend on the queryset's ordering. Only an exact ``read`` policy
+    counts as a sibling: an ``action='all'`` policy would cover a ``list``
+    request too, but it is not treated as one here — widening is always the
+    safe direction, so the rule errs where it cannot lose reach.
+    """
+    read_keys = {
+        (policy.project_id, policy.resource_type)
+        for policy in policies
+        if policy.action == _READ_ACTION
+    }
+
+    rows = []
+    skipped = 0
+    widened = 0
+    for policy in policies:
+        if policy.action == _LEGACY_LIST_ACTION:
+            if (policy.project_id, policy.resource_type) in read_keys:
+                skipped += 1
+                continue
+            rows.append((policy.project_id, policy.resource_type, _READ_ACTION))
+            widened += 1
+            continue
+        rows.append((policy.project_id, policy.resource_type, policy.action))
+
+    return rows, skipped, widened
 
 
 def _avatar_for_bot(bot_user):
@@ -206,12 +274,25 @@ class Command(BaseCommand):
         )
         membership_projects = set(project_roles_snapshot.keys())
         seen_project_grants = policy_projects | membership_projects
-        scopes_count = AIScopePolicy.objects.filter(
-            ai_account=account
-        ).count()
+
+        policies = list(AIScopePolicy.objects.filter(ai_account=account))
+        planned_scopes, skipped_list_scopes, widened_list_scopes = _plan_scope_rows(policies)
+        scopes_count = len(planned_scopes)
         grants_planned = len(seen_project_grants)
 
         bot_user = account.bot_user
+
+        if skipped_list_scopes or widened_list_scopes:
+            # Reported on both the dry-run and the apply path so the two
+            # never disagree about what the conversion does.
+            self.stderr.write(
+                self.style.WARNING(
+                    f"  ! {account.id} ({account.name}): legacy 'list' scopes: "
+                    f"{skipped_list_scopes} skipped (a 'read' sibling covers "
+                    f"them), {widened_list_scopes} widened to 'read' (no "
+                    f"'read' sibling — re-check those grants by hand)"
+                )
+            )
 
         if dry_run:
             # Same numbers the apply path would produce, so dry-run and
@@ -241,12 +322,12 @@ class Command(BaseCommand):
             scopes_created = 0
             grants_created = 0
 
-            for policy in AIScopePolicy.objects.filter(ai_account=account):
+            for project_id, resource_type, action in planned_scopes:
                 ServiceScope.objects.create(
                     service_principal=sp,
-                    project_id=policy.project_id,
-                    resource_type=policy.resource_type,
-                    action=policy.action,
+                    project_id=project_id,
+                    resource_type=resource_type,
+                    action=action,
                 )
                 scopes_created += 1
 
