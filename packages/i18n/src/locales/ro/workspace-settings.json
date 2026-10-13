@@ -586,6 +586,7 @@
           "actions": {
             "all": "Toate",
             "read": "Citire",
+            "list": "Listare",
             "create": "Creează",
             "update": "Actualizează",
             "delete": "Șterge"

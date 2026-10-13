@@ -586,6 +586,7 @@
           "actions": {
             "all": "全部",
             "read": "讀取",
+            "list": "列表",
             "create": "建立",
             "update": "更新",
             "delete": "刪除"

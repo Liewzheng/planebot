@@ -24,11 +24,14 @@ import { useProject } from "@/hooks/store/use-project";
 import { servicePrincipalService } from "@/services/ai-account.service";
 // local imports
 import {
+  getScopeValueLabel,
   SERVICE_PRINCIPALS_LIST,
   SERVICE_PRINCIPAL_SCOPES,
   SERVICE_PRINCIPAL_SCOPE_ACTIONS,
   SERVICE_PRINCIPAL_SCOPE_RESOURCE_TYPES,
 } from "./constants";
+
+const SCOPES_KEY_PREFIX = "workspace_settings.settings.service_principals.scopes";
 
 type Props = {
   principal: TServicePrincipal;
@@ -169,7 +172,7 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
             {t("workspace_settings.settings.service_principals.scopes.description")}
           </p>
           <div className="space-y-1.5">
-            <div className="grid grid-cols-[1fr_1fr_1fr_2rem] gap-2 text-11 text-tertiary">
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_2rem] gap-2 text-11 text-tertiary">
               <div>{t("workspace_settings.settings.service_principals.scopes.project")}</div>
               <div>{t("workspace_settings.settings.service_principals.scopes.resource_type")}</div>
               <div>{t("workspace_settings.settings.service_principals.scopes.action")}</div>
@@ -178,8 +181,11 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
               <div className="py-4 text-13 text-placeholder">{t("loading")}</div>
             ) : (
               scopeRows.map((row) => (
-                <div key={row.key} className="grid grid-cols-[1fr_1fr_1fr_2rem] items-center gap-2">
-                  <div>
+                <div
+                  key={row.key}
+                  className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_2rem] items-center gap-2"
+                >
+                  <div className="min-w-0">
                     <CustomSelect
                       className="w-full"
                       customButtonClassName="w-full"
@@ -188,7 +194,7 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
                           <span className="truncate">
                             {row.project
                               ? (projectMap?.[row.project]?.name ?? row.project)
-                              : t("workspace_settings.settings.service_principals.scopes.all_projects")}
+                              : getScopeValueLabel(`${SCOPES_KEY_PREFIX}.all_projects`, t)}
                           </span>
                           <ChevronDownIcon className="size-3 flex-shrink-0 text-tertiary" aria-hidden="true" />
                         </div>
@@ -198,7 +204,7 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
                       onChange={(val: string) => updateScopeRow(row.key, { project: val === "all" ? null : val })}
                     >
                       <CustomSelect.Option value="all">
-                        {t("workspace_settings.settings.service_principals.scopes.all_projects")}
+                        {getScopeValueLabel(`${SCOPES_KEY_PREFIX}.all_projects`, t)}
                       </CustomSelect.Option>
                       {workspaceProjects.map((project) => (
                         <CustomSelect.Option key={project.id} value={project.id}>
@@ -207,14 +213,14 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
                       ))}
                     </CustomSelect>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <CustomSelect
                       className="w-full"
                       customButtonClassName="w-full"
                       customButton={
                         <div className="flex h-8 w-full items-center justify-between gap-2 rounded-md border-[0.5px] border-subtle px-2 text-13">
                           <span className="truncate">
-                            {t(`workspace_settings.settings.service_principals.scopes.resources.${row.resource_type}`)}
+                            {getScopeValueLabel(`${SCOPES_KEY_PREFIX}.resources.${row.resource_type}`, t)}
                           </span>
                           <ChevronDownIcon className="size-3 flex-shrink-0 text-tertiary" aria-hidden="true" />
                         </div>
@@ -225,19 +231,19 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
                     >
                       {SERVICE_PRINCIPAL_SCOPE_RESOURCE_TYPES.map((resourceType) => (
                         <CustomSelect.Option key={resourceType} value={resourceType}>
-                          {t(`workspace_settings.settings.service_principals.scopes.resources.${resourceType}`)}
+                          {getScopeValueLabel(`${SCOPES_KEY_PREFIX}.resources.${resourceType}`, t)}
                         </CustomSelect.Option>
                       ))}
                     </CustomSelect>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <CustomSelect
                       className="w-full"
                       customButtonClassName="w-full"
                       customButton={
                         <div className="flex h-8 w-full items-center justify-between gap-2 rounded-md border-[0.5px] border-subtle px-2 text-13">
                           <span className="truncate">
-                            {t(`workspace_settings.settings.service_principals.scopes.actions.${row.action}`)}
+                            {getScopeValueLabel(`${SCOPES_KEY_PREFIX}.actions.${row.action}`, t)}
                           </span>
                           <ChevronDownIcon className="size-3 flex-shrink-0 text-tertiary" aria-hidden="true" />
                         </div>
@@ -248,7 +254,7 @@ export const ServicePrincipalScopesModal = observer(function ServicePrincipalSco
                     >
                       {SERVICE_PRINCIPAL_SCOPE_ACTIONS.map((action) => (
                         <CustomSelect.Option key={action} value={action}>
-                          {t(`workspace_settings.settings.service_principals.scopes.actions.${action}`)}
+                          {getScopeValueLabel(`${SCOPES_KEY_PREFIX}.actions.${action}`, t)}
                         </CustomSelect.Option>
                       ))}
                     </CustomSelect>

@@ -18,7 +18,14 @@ import { CustomSelect, EModalPosition, EModalWidth, ModalCore, AlertModalCore } 
 import { useProject } from "@/hooks/store/use-project";
 import { servicePrincipalService } from "@/services/ai-account.service";
 // local imports
-import { SERVICE_PRINCIPALS_LIST, SERVICE_PRINCIPAL_GRANTS, SERVICE_PRINCIPAL_GRANT_ROLE_CAPS } from "./constants";
+import {
+  getScopeValueLabel,
+  SERVICE_PRINCIPALS_LIST,
+  SERVICE_PRINCIPAL_GRANTS,
+  SERVICE_PRINCIPAL_GRANT_ROLE_CAPS,
+} from "./constants";
+
+const GRANTS_KEY_PREFIX = "workspace_settings.settings.service_principals.grants";
 
 type Props = {
   principal: TServicePrincipal;
@@ -175,7 +182,7 @@ export const ServicePrincipalGrantsModal = observer(function ServicePrincipalGra
             {t("workspace_settings.settings.service_principals.grants.description")}
           </p>
           <div className="space-y-1.5">
-            <div className="grid grid-cols-[1fr_1fr_1fr_2rem] gap-2 text-11 text-tertiary">
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_2rem] gap-2 text-11 text-tertiary">
               <div>{t("workspace_settings.settings.service_principals.grants.project")}</div>
               <div>{t("workspace_settings.settings.service_principals.grants.role_cap")}</div>
               <div>{t("workspace_settings.settings.service_principals.grants.status")}</div>
@@ -184,8 +191,11 @@ export const ServicePrincipalGrantsModal = observer(function ServicePrincipalGra
               <div className="py-4 text-13 text-placeholder">{t("loading")}</div>
             ) : (
               grantRows.map((row) => (
-                <div key={row.key} className="grid grid-cols-[1fr_1fr_1fr_2rem] items-center gap-2">
-                  <div>
+                <div
+                  key={row.key}
+                  className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_2rem] items-center gap-2"
+                >
+                  <div className="min-w-0">
                     <CustomSelect
                       className="w-full"
                       customButtonClassName="w-full"
@@ -208,14 +218,14 @@ export const ServicePrincipalGrantsModal = observer(function ServicePrincipalGra
                       ))}
                     </CustomSelect>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <CustomSelect
                       className="w-full"
                       customButtonClassName="w-full"
                       customButton={
                         <div className="flex h-8 w-full items-center justify-between gap-2 rounded-md border-[0.5px] border-subtle px-2 text-13">
                           <span className="truncate">
-                            {t(`workspace_settings.settings.service_principals.grants.role_caps.${row.role_cap}`)}
+                            {getScopeValueLabel(`${GRANTS_KEY_PREFIX}.role_caps.${row.role_cap}`, t)}
                           </span>
                           <ChevronDownIcon className="size-3 flex-shrink-0 text-tertiary" aria-hidden="true" />
                         </div>
@@ -226,20 +236,21 @@ export const ServicePrincipalGrantsModal = observer(function ServicePrincipalGra
                     >
                       {SERVICE_PRINCIPAL_GRANT_ROLE_CAPS.map((roleCap) => (
                         <CustomSelect.Option key={roleCap} value={roleCap}>
-                          {t(`workspace_settings.settings.service_principals.grants.role_caps.${roleCap}`)}
+                          {getScopeValueLabel(`${GRANTS_KEY_PREFIX}.role_caps.${roleCap}`, t)}
                         </CustomSelect.Option>
                       ))}
                     </CustomSelect>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <CustomSelect
                       className="w-full"
                       customButtonClassName="w-full"
                       customButton={
                         <div className="flex h-8 w-full items-center justify-between gap-2 rounded-md border-[0.5px] border-subtle px-2 text-13">
                           <span className="truncate">
-                            {t(
-                              `workspace_settings.settings.service_principals.grants.statuses.${row.is_active ? "active" : "inactive"}`
+                            {getScopeValueLabel(
+                              `${GRANTS_KEY_PREFIX}.statuses.${row.is_active ? "active" : "inactive"}`,
+                              t
                             )}
                           </span>
                           <ChevronDownIcon className="size-3 flex-shrink-0 text-tertiary" aria-hidden="true" />

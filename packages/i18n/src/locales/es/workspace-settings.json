@@ -586,6 +586,7 @@
           "actions": {
             "all": "Todo",
             "read": "Leer",
+            "list": "Listar",
             "create": "Crear",
             "update": "Actualizar",
             "delete": "Eliminar"

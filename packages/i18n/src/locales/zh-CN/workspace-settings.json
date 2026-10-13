@@ -592,6 +592,7 @@
           "actions": {
             "all": "全部",
             "read": "读取",
+            "list": "列表",
             "create": "创建",
             "update": "更新",
             "delete": "删除"

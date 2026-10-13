@@ -586,6 +586,7 @@
           "actions": {
             "all": "Tất cả",
             "read": "Đọc",
+            "list": "Liệt kê",
             "create": "Tạo",
             "update": "Cập nhật",
             "delete": "Xóa"
