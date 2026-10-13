@@ -586,6 +586,7 @@
           "actions": {
             "all": "Vše",
             "read": "Čtení",
+            "list": "Výpis",
             "create": "Vytvořit",
             "update": "Aktualizovat",
             "delete": "Smazat"

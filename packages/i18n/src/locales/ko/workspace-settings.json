@@ -586,6 +586,7 @@
           "actions": {
             "all": "모두",
             "read": "읽기",
+            "list": "목록",
             "create": "만들기",
             "update": "업데이트",
             "delete": "삭제"

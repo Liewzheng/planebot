@@ -586,6 +586,7 @@
           "actions": {
             "all": "Semua",
             "read": "Baca",
+            "list": "Daftar",
             "create": "Buat",
             "update": "Perbarui",
             "delete": "Hapus"

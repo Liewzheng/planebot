@@ -586,6 +586,7 @@
           "actions": {
             "all": "すべて",
             "read": "読み取り",
+            "list": "一覧",
             "create": "作成",
             "update": "更新",
             "delete": "削除"
