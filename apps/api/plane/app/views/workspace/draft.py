@@ -41,6 +41,7 @@ from .. import BaseViewSet
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.issue_filters import issue_filters
 from plane.utils.host import base_host
+from plane.service_principals.attribution import actor_id_for_request
 
 
 class WorkspaceDraftIssueViewSet(BaseViewSet):
@@ -227,7 +228,7 @@ class WorkspaceDraftIssueViewSet(BaseViewSet):
             issue_activity.delay(
                 type="issue.activity.created",
                 requested_data=json.dumps(self.request.data, cls=DjangoJSONEncoder),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(serializer.data.get("id", None)),
                 project_id=str(draft_issue.project_id),
                 current_instance=None,
@@ -249,7 +250,7 @@ class WorkspaceDraftIssueViewSet(BaseViewSet):
                 issue_activity.delay(
                     type="cycle.activity.created",
                     requested_data=None,
-                    actor_id=str(self.request.user.id),
+                    actor_id=str(actor_id_for_request(self.request)),
                     issue_id=None,
                     project_id=str(self.kwargs.get("project_id", None)),
                     current_instance=json.dumps(
@@ -284,7 +285,7 @@ class WorkspaceDraftIssueViewSet(BaseViewSet):
                     issue_activity.delay(
                         type="module.activity.created",
                         requested_data=json.dumps({"module_id": str(module)}),
-                        actor_id=str(request.user.id),
+                        actor_id=str(actor_id_for_request(request)),
                         issue_id=serializer.data.get("id", None),
                         project_id=draft_issue.project_id,
                         current_instance=None,

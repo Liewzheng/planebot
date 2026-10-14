@@ -66,6 +66,7 @@ from plane.bgtasks.webhook_task import model_activity
 from .. import BaseAPIView, BaseViewSet
 from plane.bgtasks.recent_visited_task import recent_visited_task
 from plane.utils.host import base_host
+from plane.service_principals.attribution import actor_id_for_request
 
 
 class ModuleViewSet(BaseViewSet):
@@ -341,7 +342,7 @@ class ModuleViewSet(BaseViewSet):
                 model_id=str(module["id"]),
                 requested_data=request.data,
                 current_instance=None,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
@@ -710,7 +711,7 @@ class ModuleViewSet(BaseViewSet):
                 model_id=str(module["id"]),
                 requested_data=request.data,
                 current_instance=current_instance,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
@@ -729,7 +730,7 @@ class ModuleViewSet(BaseViewSet):
             issue_activity.delay(
                 type="module.activity.deleted",
                 requested_data=json.dumps({"module_id": str(pk)}),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue),
                 project_id=project_id,
                 current_instance=json.dumps({"module_name": str(module.name)}),

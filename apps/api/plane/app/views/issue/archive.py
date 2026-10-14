@@ -48,6 +48,7 @@ from plane.utils.host import base_host
 from .. import BaseViewSet, BaseAPIView
 from plane.utils.filters import ComplexFilterBackend
 from plane.utils.filters import IssueFilterSet
+from plane.service_principals.attribution import actor_id_for_request
 
 
 class IssueArchiveViewSet(BaseViewSet):
@@ -264,7 +265,7 @@ class IssueArchiveViewSet(BaseViewSet):
         issue_activity.delay(
             type="issue.activity.updated",
             requested_data=json.dumps({"archived_at": str(timezone.now().date()), "automation": False}),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue.id),
             project_id=str(project_id),
             current_instance=json.dumps(IssueSerializer(issue).data, cls=DjangoJSONEncoder),
@@ -288,7 +289,7 @@ class IssueArchiveViewSet(BaseViewSet):
         issue_activity.delay(
             type="issue.activity.updated",
             requested_data=json.dumps({"archived_at": None}),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue.id),
             project_id=str(project_id),
             current_instance=json.dumps(IssueSerializer(issue).data, cls=DjangoJSONEncoder),
@@ -328,7 +329,7 @@ class BulkArchiveIssuesEndpoint(BaseAPIView):
             issue_activity.delay(
                 type="issue.activity.updated",
                 requested_data=json.dumps({"archived_at": str(timezone.now().date()), "automation": False}),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue.id),
                 project_id=str(project_id),
                 current_instance=json.dumps(IssueSerializer(issue).data, cls=DjangoJSONEncoder),

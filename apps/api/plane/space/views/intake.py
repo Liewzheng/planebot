@@ -27,6 +27,7 @@ from plane.utils.content_validator import validate_html_content
 from plane.utils.issue_filters import issue_filters
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.db.models.intake import SourceType
+from plane.service_principals.attribution import actor_id_for_request
 
 
 class IntakeIssuePublicViewSet(BaseViewSet):
@@ -169,7 +170,7 @@ class IntakeIssuePublicViewSet(BaseViewSet):
         issue_activity.delay(
             type="issue.activity.created",
             requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue.id),
             project_id=str(project_deploy_board.project_id),
             current_instance=None,
@@ -237,7 +238,7 @@ class IntakeIssuePublicViewSet(BaseViewSet):
                 issue_activity.delay(
                     type="issue.activity.updated",
                     requested_data=requested_data,
-                    actor_id=str(request.user.id),
+                    actor_id=str(actor_id_for_request(request)),
                     issue_id=str(issue.id),
                     project_id=str(project_deploy_board.project_id),
                     current_instance=json.dumps(IssueSerializer(current_instance).data, cls=DjangoJSONEncoder),

@@ -24,6 +24,7 @@ from plane.app.serializers import (
 )
 from plane.utils.cache import invalidate_cache
 from plane.bgtasks.issue_activities_task import issue_activity
+from plane.service_principals.attribution import actor_id_for_request
 
 
 def generate_random_name(length=10):
@@ -210,7 +211,7 @@ class EstimatePointEndpoint(BaseViewSet):
                 issue_activity.delay(
                     type="issue.activity.updated",
                     requested_data=json.dumps({"estimate_point": (str(new_estimate_id) if new_estimate_id else None)}),
-                    actor_id=str(request.user.id),
+                    actor_id=str(actor_id_for_request(request)),
                     issue_id=issue.id,
                     project_id=str(project_id),
                     current_instance=json.dumps(
@@ -229,7 +230,7 @@ class EstimatePointEndpoint(BaseViewSet):
                 issue_activity.delay(
                     type="issue.activity.updated",
                     requested_data=json.dumps({"estimate_point": None}),
-                    actor_id=str(request.user.id),
+                    actor_id=str(actor_id_for_request(request)),
                     issue_id=issue.id,
                     project_id=str(project_id),
                     current_instance=json.dumps(

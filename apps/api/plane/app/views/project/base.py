@@ -42,6 +42,7 @@ from plane.db.models import (
 from plane.db.models.intake import IntakeIssueStatus
 from plane.utils.host import base_host
 from plane.utils.order_queryset import PROJECT_ORDER_BY_ALLOWLIST, sanitize_order_by
+from plane.service_principals.attribution import actor_id_for_request, actor_for_request
 
 
 class ProjectViewSet(BaseViewSet):
@@ -288,7 +289,7 @@ class ProjectViewSet(BaseViewSet):
                         workspace=serializer.instance.workspace,
                         group=state["group"],
                         default=state.get("default", False),
-                        created_by=request.user,
+                        created_by=actor_for_request(request),
                     )
                     for state in DEFAULT_STATES
                 ]
@@ -302,7 +303,7 @@ class ProjectViewSet(BaseViewSet):
                 model_id=str(project.id),
                 requested_data=request.data,
                 current_instance=None,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
@@ -371,7 +372,7 @@ class ProjectViewSet(BaseViewSet):
                 model_id=str(project.id),
                 requested_data=request.data,
                 current_instance=current_instance,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
@@ -403,7 +404,7 @@ class ProjectViewSet(BaseViewSet):
                 field=None,
                 old_value=None,
                 new_value=None,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 current_site=base_host(request=request, is_app=True),
                 event_id=project.id,

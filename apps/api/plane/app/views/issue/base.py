@@ -74,6 +74,7 @@ from plane.utils.issue_filters import issue_filters
 from plane.utils.order_queryset import order_issue_queryset
 from plane.utils.paginator import GroupedOffsetPaginator, SubGroupedOffsetPaginator
 from plane.utils.timezone_converter import user_timezone_converter
+from plane.service_principals.attribution import actor_id_for_request
 
 from .. import BaseAPIView, BaseViewSet
 
@@ -422,7 +423,7 @@ class IssueViewSet(BaseViewSet):
             issue_activity.delay(
                 type="issue.activity.created",
                 requested_data=json.dumps(self.request.data, cls=DjangoJSONEncoder),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(serializer.data.get("id", None)),
                 project_id=str(project_id),
                 current_instance=None,
@@ -476,15 +477,16 @@ class IssueViewSet(BaseViewSet):
                 model_id=str(serializer.data["id"]),
                 requested_data=request.data,
                 current_instance=None,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
-            # updated issue description version
+            # updated issue description version — ``user_id`` is the version's
+            # ``owned_by``, so the SP's bot (not the owner) owns the version.
             issue_description_version_task.delay(
                 updated_issue=json.dumps(request.data, cls=DjangoJSONEncoder),
                 issue_id=str(serializer.data["id"]),
-                user_id=request.user.id,
+                user_id=actor_id_for_request(request),
                 is_creating=True,
             )
             return Response(issue, status=status.HTTP_201_CREATED)
@@ -688,7 +690,7 @@ class IssueViewSet(BaseViewSet):
                 issue_activity.delay(
                     type="issue.activity.updated",
                     requested_data=requested_data,
-                    actor_id=str(request.user.id),
+                    actor_id=str(actor_id_for_request(request)),
                     issue_id=str(pk),
                     project_id=str(project_id),
                     current_instance=current_instance,
@@ -701,15 +703,16 @@ class IssueViewSet(BaseViewSet):
                     model_id=str(serializer.data.get("id", None)),
                     requested_data=request.data,
                     current_instance=current_instance,
-                    actor_id=request.user.id,
+                    actor_id=actor_id_for_request(request),
                     slug=slug,
                     origin=base_host(request=request, is_app=True),
                 )
-                # updated issue description version
+                # updated issue description version — the version's owner is the
+                # acting principal.
                 issue_description_version_task.delay(
                     updated_issue=current_instance,
                     issue_id=str(serializer.data.get("id", None)),
-                    user_id=request.user.id,
+                    user_id=actor_id_for_request(request),
                 )
             return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -729,7 +732,7 @@ class IssueViewSet(BaseViewSet):
         issue_activity.delay(
             type="issue.activity.deleted",
             requested_data=json.dumps({"issue_id": str(pk)}),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(pk),
             project_id=str(project_id),
             current_instance={},
@@ -797,7 +800,7 @@ class BulkDeleteIssuesEndpoint(BaseAPIView):
             project_id=project_id,
             issue_id=issue_ids[0],
             type="issue.deleted_bulk",
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
         )
 
         return Response(
@@ -1166,7 +1169,7 @@ class IssueBulkUpdateDateEndpoint(BaseAPIView):
                     requested_data=json.dumps({"start_date": update.get("start_date")}),
                     current_instance=json.dumps({"start_date": str(issue.start_date)}),
                     issue_id=str(issue_id),
-                    actor_id=str(request.user.id),
+                    actor_id=str(actor_id_for_request(request)),
                     project_id=str(project_id),
                     epoch=epoch,
                 )
@@ -1179,7 +1182,7 @@ class IssueBulkUpdateDateEndpoint(BaseAPIView):
                     requested_data=json.dumps({"target_date": update.get("target_date")}),
                     current_instance=json.dumps({"target_date": str(issue.target_date)}),
                     issue_id=str(issue_id),
-                    actor_id=str(request.user.id),
+                    actor_id=str(actor_id_for_request(request)),
                     project_id=str(project_id),
                     epoch=epoch,
                 )

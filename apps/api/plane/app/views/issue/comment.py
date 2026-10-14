@@ -23,6 +23,7 @@ from plane.db.models import IssueComment, ProjectMember, CommentReaction, Projec
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.host import base_host
 from plane.bgtasks.webhook_task import model_activity
+from plane.service_principals.attribution import actor_id_for_request
 
 
 class IssueCommentViewSet(BaseViewSet):
@@ -85,7 +86,7 @@ class IssueCommentViewSet(BaseViewSet):
             issue_activity.delay(
                 type="comment.activity.created",
                 requested_data=json.dumps(serializer.data, cls=DjangoJSONEncoder),
-                actor_id=str(self.request.user.id),
+                actor_id=str(actor_id_for_request(self.request)),
                 issue_id=str(self.kwargs.get("issue_id")),
                 project_id=str(self.kwargs.get("project_id")),
                 current_instance=None,
@@ -99,7 +100,7 @@ class IssueCommentViewSet(BaseViewSet):
                 model_id=str(serializer.data["id"]),
                 requested_data=request.data,
                 current_instance=None,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
@@ -120,7 +121,7 @@ class IssueCommentViewSet(BaseViewSet):
             issue_activity.delay(
                 type="comment.activity.updated",
                 requested_data=requested_data,
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue_id),
                 project_id=str(project_id),
                 current_instance=current_instance,
@@ -134,7 +135,7 @@ class IssueCommentViewSet(BaseViewSet):
                 model_id=str(pk),
                 requested_data=request.data,
                 current_instance=current_instance,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
@@ -149,7 +150,7 @@ class IssueCommentViewSet(BaseViewSet):
         issue_activity.delay(
             type="comment.activity.deleted",
             requested_data=json.dumps({"comment_id": str(pk)}),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue_id),
             project_id=str(project_id),
             current_instance=current_instance,
@@ -187,13 +188,13 @@ class CommentReactionViewSet(BaseViewSet):
             if serializer.is_valid():
                 serializer.save(
                     project_id=project_id,
-                    actor_id=request.user.id,
+                    actor_id=actor_id_for_request(request),
                     comment_id=comment_id,
                 )
                 issue_activity.delay(
                     type="comment_reaction.activity.created",
                     requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),
-                    actor_id=str(request.user.id),
+                    actor_id=str(actor_id_for_request(request)),
                     issue_id=None,
                     project_id=str(project_id),
                     current_instance=None,
@@ -221,7 +222,7 @@ class CommentReactionViewSet(BaseViewSet):
         issue_activity.delay(
             type="comment_reaction.activity.deleted",
             requested_data=None,
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=None,
             project_id=str(self.kwargs.get("project_id", None)),
             current_instance=json.dumps(

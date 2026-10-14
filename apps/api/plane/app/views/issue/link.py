@@ -21,6 +21,7 @@ from plane.db.models import IssueLink
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.bgtasks.work_item_link_task import crawl_work_item_link_title
 from plane.utils.host import base_host
+from plane.service_principals.attribution import actor_id_for_request
 
 
 class IssueLinkViewSet(BaseViewSet):
@@ -53,7 +54,7 @@ class IssueLinkViewSet(BaseViewSet):
             issue_activity.delay(
                 type="link.activity.created",
                 requested_data=json.dumps(serializer.data, cls=DjangoJSONEncoder),
-                actor_id=str(self.request.user.id),
+                actor_id=str(actor_id_for_request(self.request)),
                 issue_id=str(self.kwargs.get("issue_id")),
                 project_id=str(self.kwargs.get("project_id")),
                 current_instance=None,
@@ -81,7 +82,7 @@ class IssueLinkViewSet(BaseViewSet):
             issue_activity.delay(
                 type="link.activity.updated",
                 requested_data=requested_data,
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue_id),
                 project_id=str(project_id),
                 current_instance=current_instance,
@@ -101,7 +102,7 @@ class IssueLinkViewSet(BaseViewSet):
         issue_activity.delay(
             type="link.activity.deleted",
             requested_data=json.dumps({"link_id": str(pk)}),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue_id),
             project_id=str(project_id),
             current_instance=current_instance,

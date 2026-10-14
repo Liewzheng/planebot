@@ -20,6 +20,7 @@ from plane.app.permissions import allow_permission, ROLE
 from plane.db.models import IssueReaction
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.host import base_host
+from plane.service_principals.attribution import actor_id_for_request
 
 
 class IssueReactionViewSet(BaseViewSet):
@@ -50,7 +51,7 @@ class IssueReactionViewSet(BaseViewSet):
             issue_activity.delay(
                 type="issue_reaction.activity.created",
                 requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue_id),
                 project_id=str(project_id),
                 current_instance=None,
@@ -73,7 +74,7 @@ class IssueReactionViewSet(BaseViewSet):
         issue_activity.delay(
             type="issue_reaction.activity.deleted",
             requested_data=None,
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=str(self.kwargs.get("issue_id", None)),
             project_id=str(self.kwargs.get("project_id", None)),
             current_instance=json.dumps({"reaction": str(reaction_code), "identifier": str(issue_reaction.id)}),
