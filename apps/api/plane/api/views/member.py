@@ -14,13 +14,14 @@ from drf_spectacular.utils import (
 
 # Module imports
 from .base import BaseAPIView
+from .project import visible_projects
 from plane.api.serializers import (
     UserLiteSerializer,
     ProjectMemberSerializer,
     WorkspaceMemberLiteAPISerializer,
     ProjectMemberLiteAPISerializer,
 )
-from plane.db.models import User, Workspace, WorkspaceMember, Project, ProjectMember
+from plane.db.models import User, Workspace, WorkspaceMember, ProjectMember
 from plane.utils.permissions import ProjectMemberPermission, WorkSpaceAdminPermission, ProjectAdminPermission
 from plane.utils.openapi import (
     WORKSPACE_SLUG_PARAMETER,
@@ -148,6 +149,19 @@ class ProjectMemberListCreateAPIEndpoint(BaseAPIView):
             return Response(
                 {"error": "Provided workspace does not exist"},
                 status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Filter through ``visible_projects`` so a service principal without
+        # a ProjectGrant on this project gets a 404 rather than the project
+        # roster leaking (id / name / email of every ProjectMember). The
+        # engine's grant step is skipped for ``member`` (a workspace-level
+        # resource type, same as ``project``), so a view-level filter is
+        # the only enforcement point (PLANE-111 — companion of the
+        # ``/projects/<id>/summary/`` migration closed in M41 r2).
+        if not visible_projects(request, slug).filter(pk=project_id).exists():
+            return Response(
+                {"error": "Project does not exist"},
+                status=status.HTTP_404_NOT_FOUND,
             )
 
         # Get the workspace members that are present inside the workspace
@@ -329,7 +343,12 @@ class ProjectMemberLiteAPIEndpoint(BaseAPIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if not Project.objects.filter(id=project_id, workspace__slug=slug).exists():
+        # Filter through ``visible_projects`` so a service principal without
+        # a ProjectGrant on this project gets a 404 rather than the
+        # roster leaking. Companion of the full ProjectMemberList endpoint
+        # above and the ``/projects/<id>/summary/`` migration closed in
+        # M41 r2 (PLANE-111).
+        if not visible_projects(request, slug).filter(pk=project_id).exists():
             return Response(
                 {"error": "Provided project does not exist"},
                 status=status.HTTP_404_NOT_FOUND,

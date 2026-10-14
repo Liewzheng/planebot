@@ -229,13 +229,20 @@ def request_can_admin_or_own(request, *, slug, project_id, own_id, actor_id):
     A human: same logic as today — they own the row (the project-typed
     ``own_id`` column equals their id) or hold the project admin role. A
     service principal: ``True`` — the authz chain has already evaluated
-    the action in :class:`AIScopeEnforcementMixin.check_permissions`
-    (``authorize()`` ran the per-resource ownership step at step 3.5 for
-    member-tier deletes, and admin-tier deletes are ownership-exempt).
-    Re-running the owner-keyed membership check on ``request.user`` would
-    consult the SP **owner's** ProjectMember row, the wrong principal for
-    a ``plane_svc_`` token, and would 403 a delete the chain approved.
-    Mirrors :func:`request_has_issue_permission`.
+    the action in :class:`AIScopeEnforcementMixin.check_permissions`.
+    The fact that this is safe for the SP branch depends on the resource
+    type's engine tier and must be read from ``plane.core.authz.actions``
+    rather than assumed — the ``M41 r2`` reviewer verified that
+    ``work_item.delete`` / ``comment.delete`` / ``sticky.delete`` /
+    ``page.delete`` are MEMBER(15) and ownership is already gated at
+    step 3.5 (so an SP reaching the handler can only act on a row it
+    owns); ``cycle.delete`` / ``module.delete`` / ``intake.delete`` are
+    ADMIN(20) and ownership-exempt; ``issue.delete`` row identity is
+    ``Issue.created_by_id`` everywhere. Re-running the owner-keyed
+    membership check on ``request.user`` would consult the SP **owner's**
+    ProjectMember row, the wrong principal for a ``plane_svc_`` token,
+    and would 403 a delete the chain approved. Mirrors
+    :func:`request_has_issue_permission`.
     """
     if sp_from_request(request) is not None:
         return True

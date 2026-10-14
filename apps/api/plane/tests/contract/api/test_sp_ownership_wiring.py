@@ -37,7 +37,6 @@ from rest_framework.test import APIClient
 
 from plane.db.models import (
     Cycle,
-    CycleIssue,
     FileAsset,
     Intake,
     IntakeIssue,
@@ -589,40 +588,242 @@ class TestSPSummaryEndpointHonorsGrants:
 
 @pytest.mark.contract
 @pytest.mark.django_db
-class TestSPCanDeleteOwnIssueThroughChainWhenOwnerIsNotProjectMember:
-    """Regression for the M41 r2 sweep: ``IssueDetail.delete`` used to
-    gate on ``member=request.user`` (the SP's human **owner**); an SP
-    whose owner is not a project member got a 403 even when the chain
-    authorized the write. The M40-correct owner field is
-    ``created_by_id``; that is also what the engine reads.
+class TestSPAdminTierDeletesNotBlockedByOwnerMembershipGuard:
+    """Regression for the M41 r2 sweep — rewritten in r3 to be
+    load-bearing and discriminating.
+
+    The page / cycle / intake DELETE handlers' legacy guard keyed on
+    ``member=request.user`` (the SP's human **owner**) with a role=20
+    ProjectMember admin lookup, and 403'd a delete the authz chain
+    had authorized when the row's ``owned_by`` was not the SP's
+    owner. The r2 review correctly pointed out that the previous
+    tests in this file passed against the un-fixed guard: page /
+    work_item DELETE short-circuited because the fixture row's
+    ``owned_by`` equalled ``request.user`` (= the SP's owner) for an
+    SP that did the v1 create, so the legacy first clause was
+    always ``False``.
+
+    Every test here constructs ``owned_by == other_user`` (NOT
+    ``request.user == create_user``) and keeps the SP's owner out
+    of ``ProjectMember`` (``ownerless_project`` fixture), and runs
+    the SP at admin tier so the engine skips its own ownership step
+    at step 3.5 — i.e. the legacy handler guard is the **only** gate
+    between the SP and the delete. Tier verified from
+    ``plane.core.authz.actions`` (page=page is MEMBER(15), cycle /
+    intake are ADMIN(20)).
+
+    Each scenario fails against the un-fixed handler with
+    ``403 Only admin or owner/creator can delete …`` and passes
+    after.
     """
 
-    def _scenario(self, workspace, create_user, ownerless_project):
-        sp = _make_sp(workspace, create_user, "issue-del-sp", ownerless_project)
-        bot = sp.ensure_bot_user()
-        issue = Issue(
-            name="Ownerless Issue",
-            project=ownerless_project,
-            workspace=workspace,
-            created_by=bot,
-        )
-        # ``disable_auto_set_user`` keeps ``BaseModel.save`` from nulling
-        # ``created_by`` when no thread-local user is set — the bot
-        # author must stick for the engine's ownership step to match.
-        issue.save(disable_auto_set_user=True)
-        return sp, issue
+    def _make_other_owner(self, workspace, suffix):
+        from plane.db.models import User
+        from plane.db.models import WorkspaceMember
 
-    def test_sp_can_delete_own_work_item(
+        other_owner = User.objects.create(
+            email=f"other-owner-{suffix}@plane.so",
+            username=f"other_owner_{suffix}",
+            first_name="Other",
+            last_name="Owner",
+        )
+        # Attach to the workspace so the chain's owner intersection
+        # (step 4) admits the SP's principal — its owner
+        # (``create_user``) is already a workspace member, so this
+        # is just a sibling user, not the SP's principal.
+        WorkspaceMember.objects.create(
+            workspace=workspace, member=other_owner, role=15, is_active=True
+        )
+        return other_owner
+
+    def _admin_tier_sp(
+        self, workspace, create_user, ownerless_project, name, scopes
+    ):
+        sp = _make_sp(workspace, create_user, name, ownerless_project)
+        sp.ensure_bot_user()
+        # Bump to ADMIN(20) so the engine skips step 3.5 ownership
+        # for every DELETE flavor — we want to exercise the legacy
+        # handler guard at its point of maximum divergence from the
+        # chain, not have the chain over-deny first.
+        ProjectGrant.objects.filter(
+            service_principal=sp, project=ownerless_project
+        ).update(role_cap=20)
+        # Provision the scopes the engine's scope step requires for
+        # each resource type under test.
+        for resource_type, action in scopes:
+            ServiceScope.objects.create(
+                service_principal=sp,
+                project=ownerless_project,
+                resource_type=resource_type,
+                action=action,
+            )
+        return sp
+
+    def test_admin_tier_sp_can_delete_a_cycle(
         self, workspace, create_user, ownerless_project
     ):
-        sp, issue = self._scenario(workspace, create_user, ownerless_project)
+        """``CycleDetail.delete`` — the cycle is ADMIN-tier (engine
+        exempts step 3.5), so the chain always admits an
+        admin-tier SP's DELETE; the legacy guard was the only
+        thing that could deny it."""
+        sp = self._admin_tier_sp(
+            workspace,
+            create_user,
+            ownerless_project,
+            "cycle-del-sp",
+            [("cycle", "delete")],
+        )
+        bot = sp.bot_user
+        other_owner = self._make_other_owner(
+            workspace, "cycle"
+        )
+        cycle = Cycle(
+            name="Pre-existing Cycle",
+            project=ownerless_project,
+            owned_by=other_owner,  # NOT request.user (= create_user)
+            created_by=bot,
+        )
+        cycle.save(disable_auto_set_user=True)
 
         response = _client(sp).delete(
             f"/api/v1/workspaces/{workspace.slug}/projects/"
-            f"{ownerless_project.id}/work-items/{issue.id}/"
+            f"{ownerless_project.id}/cycles/{cycle.id}/"
         )
 
-        assert response.status_code == status.HTTP_204_NO_CONTENT, response.data
+        assert response.status_code == status.HTTP_204_NO_CONTENT, (
+            response.status_code, response.data
+        )
+        assert not Cycle.objects.filter(pk=cycle.id).exists()
+
+    def test_admin_tier_sp_can_delete_a_page(
+        self, workspace, create_user, ownerless_project
+    ):
+        """``PageDetail.delete`` — page=page is MEMBER(15), so the
+        chain's ownership step normally restricts an SP to its own
+        rows. At admin tier (role_cap=20) ownership is exempt, so
+        the chain lets any project-bound page through; the legacy
+        guard was the only remaining gate.
+
+        The page is owned by ``other_owner`` (a different user
+        from the SP's owner) — not by ``request.user`` — so the
+        legacy ``page.owned_by_id != request.user.id`` clause is
+        ``True`` and the pre-fix path falls through to the
+        role=20 admin lookup, which returns False, and the
+        handler returns ``403 Only admin or owner``.
+        """
+        from django.utils import timezone as dj_timezone
+
+        from plane.db.models import Page, ProjectPage
+
+        sp = self._admin_tier_sp(
+            workspace,
+            create_user,
+            ownerless_project,
+            "page-del-sp",
+            [("page", "delete")],
+        )
+        bot = sp.bot_user
+        other_owner = self._make_other_owner(
+            workspace, "page"
+        )
+        page = Page(
+            name="Pre-existing Page",
+            workspace=workspace,
+            owned_by=other_owner,  # NOT request.user (= create_user)
+            access=0,
+            archived_at=dj_timezone.now(),
+            # ``created_by`` must be the SP's bot so the chain's
+            # ownership step is satisfied at member tier; the
+            # helper bypass is what we exercise at admin tier.
+            created_by=bot,
+        )
+        page.save(disable_auto_set_user=True)
+        ProjectPage.objects.create(
+            project=ownerless_project, workspace=workspace, page=page
+        )
+
+        response = _client(sp).delete(
+            f"/api/v1/workspaces/{workspace.slug}/projects/"
+            f"{ownerless_project.id}/pages/{page.id}/"
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT, (
+            response.status_code, response.data
+        )
+        assert not Page.objects.filter(pk=page.id).exists()
+
+    def test_admin_tier_sp_can_delete_an_intake_issue(
+        self, workspace, create_user, ownerless_project
+    ):
+        """``IntakeIssue.delete`` with cascade — the intake DELETE
+        is ADMIN(20), and the underlying issue cascade hits the
+        same legacy guard via ``_acting_can_admin_or_own`` in
+        ``api/views/intake.py``. Constructing an issue with
+        ``created_by = other_user`` (NOT the SP's bot) and an
+        intake status that triggers the cascade makes the legacy
+        guard the only gate."""
+        sp = self._admin_tier_sp(
+            workspace,
+            create_user,
+            ownerless_project,
+            "intake-del-sp",
+            # intake:delete for the chain; work_item:delete because
+            # the cascade ultimately issues a write against Issue
+            # under the hood and needs the scope row to even
+            # reach the handler.
+            [
+                ("intake", "delete"),
+                ("work_item", "delete"),
+            ],
+        )
+        bot = sp.bot_user
+        other_owner = self._make_other_owner(
+            workspace, "intake"
+        )
+        _ensure_intake_view(ownerless_project, workspace)
+        triage_state = _ensure_triage_state(
+            ownerless_project, workspace
+        )
+        intake = Intake.objects.get(
+            project=ownerless_project, is_default=True
+        )
+        # An issue whose ``created_by`` is ``other_user``, and an
+        # intake row in a status that triggers the cascade
+        # (REJECTED = -1; the ``status in [-2, -1, 0, 2]`` branch
+        # in the handler).
+        issue = Issue(
+            name="Cascading Issue",
+            project=ownerless_project,
+            workspace=workspace,
+            state=triage_state,
+            created_by=other_owner,  # NOT the SP's bot
+        )
+        issue.save(disable_auto_set_user=True)
+        intake_issue = IntakeIssue(
+            intake=intake,
+            project=ownerless_project,
+            workspace=workspace,
+            issue=issue,
+            source="in_app",
+            status=-1,  # REJECTED — cascade trigger
+            created_by=bot,  # chain ownership step needs bot
+        )
+        intake_issue.save(disable_auto_set_user=True)
+
+        response = _client(sp).delete(
+            f"/api/v1/workspaces/{workspace.slug}/projects/"
+            f"{ownerless_project.id}/intake-issues/{issue.id}/"
+        )
+
+        # With fix: 204 (intake and underlying issue both deleted).
+        # Pre-fix: 403 'Only admin or creator can delete the work
+        # item' from the cascade's legacy guard.
+        assert response.status_code == status.HTTP_204_NO_CONTENT, (
+            response.status_code, response.data
+        )
+        assert not IntakeIssue.objects.filter(
+            pk=intake_issue.id
+        ).exists()
         assert not Issue.objects.filter(pk=issue.id).exists()
 
 
@@ -815,68 +1016,149 @@ class TestSPCycleTransferCreditsTheBotNotTheOwner:
         assert recorded_actor_id != str(create_user.id)
 
 
+def _members_url(workspace_slug, project_id):
+    return (
+        f"/api/v1/workspaces/{workspace_slug}/projects/{project_id}/members/"
+    )
+
+
+def _members_lite_url(workspace_slug, project_id):
+    return (
+        f"/api/v1/workspaces/{workspace_slug}/projects/"
+        f"{project_id}/project-members-lite/"
+    )
+
+
 @pytest.mark.contract
 @pytest.mark.django_db
-class TestSPCanDeleteOwnPageWithoutBeingAProjectMember:
-    """``PageDetail.delete`` used to gate on ``member=request.user``
-    (the SP's human **owner**) with a role=20 admin lookup. An admin-tier
-    SP whose owner was not a project member got a 403 from the body guard
-    even when the engine authorized the write. Mirrors the
-    ``TestSPAttachmentWritesDoNotConsultTheOwnersMembership`` shape.
+class TestSPProjectMembersRosterHonorsGrants:
+    """PLANE-111 follow-through: a service principal must not see the
+    roster of a project it holds no ProjectGrant on.
+
+    Both endpoints (``/projects/<id>/members/`` and the lite variant
+    at ``/projects/<id>/project-members-lite/``) declare
+    ``resource_type="member"`` — a workspace-level resource in the
+    engine, so the grant step is skipped — and the handler body
+    keys off ``project_id`` only. Without a view-level filter the
+    SP got a 200 with the project's full roster (id, name, email)
+    even when its owner is not a project member, exactly the
+    PLANE-111 leak shape on a different surface.
+
+    Companion of ``TestSPSummaryEndpointHonorsGrants``: the same
+    fix pattern (``visible_projects`` at the view boundary, since
+    the engine skips the grant step for workspace-level reads) is
+    applied to ``api/views/member.py``.
+
+    Two-sided: ungranted → 404; granted → 200 with the roster.
+    The reviewer's probe (workspace-wide ``member:read`` scope, no
+    ProjectGrant) showed the un-migrated endpoint returned 200;
+    this test catches it.
     """
 
-    def test_admin_tier_sp_can_delete_a_page(
-        self, workspace, create_user, ownerless_project
-    ):
-        from django.utils import timezone as dj_timezone
-
-        from plane.db.models import Page, ProjectPage
-
-        admin_sp = _make_sp(
-            workspace, create_user, "page-del-admin-sp", ownerless_project
+    def _make_summary_shape_sp(self, workspace, owner, name):
+        """A service principal with only a workspace-wide
+        ``member:read`` scope — the exact pre-migration shape that
+        yielded the leaked roster.
+        """
+        sp = ServicePrincipal.objects.create(
+            workspace=workspace, owner=owner, name=name
         )
-        admin_sp.ensure_bot_user()
-        # ``_make_sp`` only provisions ``work_item`` / ``comment`` scopes;
-        # page DELETE is a ``page:delete`` action in the engine, so the
-        # scope row is needed to even reach ownership.
-        ServiceScope.objects.create(
-            service_principal=admin_sp,
-            project=ownerless_project,
-            resource_type="page",
-            action="delete",
-        )
-        # Admin tier: engine authorizes DELETE on any row whose project
-        # the SP is granted into, regardless of created_by.
-        ProjectGrant.objects.filter(
-            service_principal=admin_sp, project=ownerless_project
-        ).update(role_cap=20)
-
-        # A second SP "owns" the page (its `created_by_id` is the bot;
-        # `owned_by` is whatever the v1 stamp picked — for this test we
-        # set it directly to the *first* SP's owner so the old guard
-        # would have tripped).
-        owner_sp = _make_sp(
-            workspace, create_user, "page-del-owner-sp", ownerless_project
-        )
-        owner_bot = owner_sp.ensure_bot_user()
-        page = Page(
-            name="Archived Page",
+        APIToken.objects.create(
+            label=f"svc:{name}",
+            token=f"plane_svc_token_{name}",
+            user=owner,
+            principal_type=PrincipalType.SERVICE,
+            service_principal=sp,
             workspace=workspace,
-            owned_by=create_user,
-            access=0,
-            archived_at=dj_timezone.now(),
-            created_by=owner_bot,
         )
-        page.save(disable_auto_set_user=True)
-        ProjectPage.objects.create(
-            project=ownerless_project, workspace=workspace, page=page
+        ServiceScope.objects.create(
+            service_principal=sp,
+            project=None,
+            resource_type="member",
+            action="read",
+        )
+        return sp
+
+    def test_ungranted_project_members_404(
+        self, workspace, create_user
+    ):
+        # Set up a project the SP has *no* ProjectGrant on. The
+        # roster needs at least one member to make the leak shape
+        # observable — give the project a real human member so the
+        # response is non-empty if the guard ever lapses.
+        secret = Project.objects.create(
+            name="Secret MacDock",
+            identifier="MD",
+            workspace=workspace,
+            created_by=create_user,
+            network=2,
+        )
+        ProjectMember.objects.create(
+            project=secret, member=create_user, role=20, is_active=True
         )
 
-        response = _client(admin_sp).delete(
-            f"/api/v1/workspaces/{workspace.slug}/projects/"
-            f"{ownerless_project.id}/pages/{page.id}/"
+        sp = self._make_summary_shape_sp(
+            workspace, create_user, "members-sp"
         )
 
-        assert response.status_code == status.HTTP_204_NO_CONTENT, (
+        response = _client(sp).get(_members_url(workspace.slug, secret.id))
+        assert response.status_code == status.HTTP_404_NOT_FOUND, (
             response.status_code, response.data
+        )
+
+    def test_ungranted_project_members_lite_404(
+        self, workspace, create_user
+    ):
+        secret = Project.objects.create(
+            name="Secret MacDock",
+            identifier="MD",
+            workspace=workspace,
+            created_by=create_user,
+            network=2,
+        )
+        ProjectMember.objects.create(
+            project=secret, member=create_user, role=20, is_active=True
+        )
+
+        sp = self._make_summary_shape_sp(
+            workspace, create_user, "members-lite-sp"
+        )
+
+        response = _client(sp).get(
+            _members_lite_url(workspace.slug, secret.id)
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND, (
+            response.status_code, response.data
+        )
+
+    def test_granted_project_members_still_200(
+        self, workspace, create_user
+    ):
+        # The migration is grant-scoped, not a blanket denial:
+        # granted projects keep returning the roster.
+        granted = Project.objects.create(
+            name="Granted Project",
+            identifier="GP",
+            workspace=workspace,
+            created_by=create_user,
+            network=2,
+        )
+        ProjectMember.objects.create(
+            project=granted, member=create_user, role=20, is_active=True
+        )
+        sp = self._make_summary_shape_sp(
+            workspace, create_user, "members-granted-sp"
+        )
+        ProjectGrant.objects.create(
+            service_principal=sp, project=granted, role_cap=15
+        )
+
+        response = _client(sp).get(_members_url(workspace.slug, granted.id))
+        assert response.status_code == status.HTTP_200_OK, response.data
+        body = response.json()
+        # At least one of the rows must be the create_user member;
+        # the filter must not over-narrow.
+        assert any(
+            member["email"] == create_user.email
+            for member in body
         )
