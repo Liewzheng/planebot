@@ -187,11 +187,29 @@ def _project_detail_url(slug: str, project_id) -> str:
 
 
 def _app_issue_list_url(slug: str, project_id) -> str:
-    """``IssueDetailEndpoint.get`` (line 987 of ``app/views/issue/base.py``)
-    — the class name is historical; the URL serves the issue LIST. Uses
-    ``permission_subquery`` and ``@allow_permission`` (the two filters
-    M51 widens in this round)."""
+    """``IssueViewSet.list`` (line 87 of ``app/views/issue/base.py``) at
+    ``/api/workspaces/<slug>/projects/<project_id>/issues/`` — the
+    project-scoped create / list endpoint. Uses
+    ``@allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])``
+    (project-scoped); r2 widened the decorator so an admin caller
+    reads this even without a ``ProjectMember`` row."""
     return f"/api/workspaces/{slug}/projects/{project_id}/issues/"
+
+
+def _app_issue_detail_url(slug: str, project_id) -> str:
+    """``IssueDetailEndpoint.get`` at
+    ``app/views/issue/base.py:987-1116`` — the project-issue DETAIL /
+    paginated LIST endpoint (class name is historical). Uses
+    ``permission_subquery`` and ``@allow_permission`` (the two filters
+    M51 widens in this round). The URL is
+    ``/api/workspaces/<slug>/projects/<project_id>/issues-detail/``
+    per ``app/urls/issue.py:48`` — the ``/issues/`` URL routes to
+    ``IssueViewSet.list`` instead, see the r2 review note. This is a
+    real frontend path: ``issue.service.ts:47`` selects the
+    ``*-detail/`` variant when ``expand`` contains ``issue_relation``,
+    and ``issue-filter-helper.store.ts:123`` sets that expand for the
+    GANTT layout."""
+    return f"/api/workspaces/{slug}/projects/{project_id}/issues-detail/"
 
 
 def _app_issue_activity_url(slug: str, project_id, issue_id) -> str:
@@ -519,18 +537,27 @@ class TestV1IssueActivityEndpoint:
 
 @pytest.mark.contract
 @pytest.mark.django_db
-class TestAppSideIssueListEndpoint:
+class TestAppSideIssueDetailEndpoint:
     """``IssueDetailEndpoint.get`` at
-    ``app/views/issue/base.py:987-1116`` — the class name is historical,
-    the URL serves the issue list. The endpoint has BOTH a
-    ``permission_subquery`` (which filters by ProjectMember) AND a
-    ``@allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])`` (project-
-    scoped). M51 widens both: the r1 round widened the permission
-    class only; this round also widens ``permission_subquery`` and the
+    ``app/views/issue/base.py:987-1116`` — the project-issue DETAIL /
+    paginated LIST endpoint. URL is
+    ``/api/workspaces/<slug>/projects/<project_id>/issues-detail/``
+    per ``app/urls/issue.py:48``; the class name is historical, but
+    the endpoint has BOTH a ``permission_subquery`` (which filters by
+    ProjectMember) AND a ``@allow_permission([ROLE.ADMIN, ROLE.MEMBER,
+    ROLE.GUEST])`` (project-scoped). M51 widens both: r1 widened the
+    permission class only; r2 widened ``permission_subquery`` and the
     ``@allow_permission`` decorator's project-scoped role check, so an
     admin who is not a ProjectMember of the project can list every
     issue — including in a SECRET project — exactly the symptom the
-    user filed.
+    user filed. The r2 review confirmed this is a real frontend path:
+    ``apps/web/core/services/issue/issue.service.ts:47`` selects the
+    ``*-detail/`` variant when ``expand`` contains ``issue_relation``
+    (the GANTT layout), and
+    ``apps/web/core/store/issue/helpers/issue-filter-helper.store.ts:123``
+    sets that expand. **Reverting only the r2 change to
+    ``app/views/issue/base.py`` (i.e. dropping the ``WorkspaceMember``
+    branch in ``permission_subquery``) flips both tests below to red.**
     """
 
     def test_admin_lists_issues_in_a_secret_project_they_are_not_a_member_of(
@@ -544,29 +571,31 @@ class TestAppSideIssueListEndpoint:
 
         client = APIClient()
         client.force_authenticate(user=ws_admin)
-        response = client.get(_app_issue_list_url(workspace.slug, project.id))
+        response = client.get(_app_issue_detail_url(workspace.slug, project.id))
 
         assert response.status_code == status.HTTP_200_OK, (
             f"workspace admin must list issues in a SECRET project they "
-            f"do not belong to (the '看得到但看不见里面' symptom); got "
-            f"{response.status_code}: {response.data!r}"
+            f"do not belong to via the /issues-detail/ route "
+            f"(the '看得到但看不见里面' symptom); got {response.status_code}: "
+            f"{response.data!r}"
         )
 
         results = response.data.get("results", response.data) or []
         ids = {str(row["id"]) for row in results if "id" in row}
         # Both seeded issues must surface.
         assert len(ids) >= 2, (
-            "app-side issue list returned fewer rows than seeded — the "
-            "permission_subquery widening did not land (the admin is "
-            "ProjectMember-less on this project)."
+            "app-side issue list (issues-detail/) returned fewer rows "
+            "than seeded — the permission_subquery widening did not land "
+            "(the admin is ProjectMember-less on this project)."
         )
 
-    def test_non_admin_member_gets_empty_list_for_non_member_project(
+    def test_non_admin_member_gets_empty_for_views_detail_route(
         self, workspace, create_user, ws_member
     ):
         """Contrast: a workspace MEMBER who is not a ProjectMember must
-        still get an empty list (the existing ProjectMember predicate
-        holds). This pins the "不得过度放宽" half on the issue LIST."""
+        still see zero rows on the /issues-detail/ route (the existing
+        ProjectMember predicate holds). This pins the "不得过度放宽"
+        half on the ``IssueDetailEndpoint``."""
         project = _make_project(
             workspace, create_user, name="Quiet", identifier="QZT", network=0
         )
@@ -575,7 +604,7 @@ class TestAppSideIssueListEndpoint:
 
         client = APIClient()
         client.force_authenticate(user=ws_member)
-        response = client.get(_app_issue_list_url(workspace.slug, project.id))
+        response = client.get(_app_issue_detail_url(workspace.slug, project.id))
 
         # The MEMBER is a workspace member so passes the workspace
         # scope; the project-scoped ``@allow_permission`` (with the
@@ -587,14 +616,14 @@ class TestAppSideIssueListEndpoint:
             status.HTTP_200_OK,
         ), (
             f"workspace MEMBER (role=15) must NOT be admitted on the "
-            f"app-side issue list for a project they do not belong to; "
+            f"/issues-detail/ route for a project they do not belong to; "
             f"got {response.status_code}: {response.data!r}"
         )
         if response.status_code == status.HTTP_200_OK:
             results = response.data.get("results", response.data) or []
             assert len(results) == 0, (
-                f"workspace MEMBER must see zero issues in a project they "
-                f"do not belong to; got {len(results)}"
+                f"workspace MEMBER must see zero issues via /issues-detail/ "
+                f"in a project they do not belong to; got {len(results)}"
             )
 
 
@@ -739,4 +768,99 @@ class TestAppSideWriteSideStaysDenied:
             f"be able to CREATE an issue in a SECRET project (writes "
             f"are not part of the bypass); got {response.status_code}: "
             f"{response.data!r}"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# P1 probe: ``/issues-detail/`` returns 200 for every caller, not 500          #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestIssuesDetailEndpointSmoke:
+    """P1 pin added in r3 — the r2 round shipped a ``NameError`` on
+    ``/issues-detail/`` because ``WorkspaceMember`` was referenced
+    without being imported. The reviewer captured a live traceback
+    confirming the endpoint 500'd for every caller (admin, member,
+    SP, with/without ``?expand=issue_relation``). The fix is a one-
+    line import; these tests prove the endpoint now answers on every
+    caller / project-shape combination the r2 review enumerated.
+
+    The four ``probe_*`` cases are deliberately minimal — they assert
+    ``status_code == 200`` only, no row-count, no permission-class
+    semantics. The goal is to catch a missing import (or any other
+    NameError / ImportError) regression, not to pin visibility.
+    """
+
+    @pytest.mark.parametrize("network", [0, 2], ids=["SECRET", "PUBLIC"])
+    def test_probe_admin_gets_200_on_issues_detail(self, workspace, ws_admin, network):
+        from plane.db.models import ProjectMember
+
+        project = _make_project(
+            workspace, ws_admin, name=f"Admin {network}", identifier=f"A{network}", network=network
+        )
+        ProjectMember.objects.filter(project=project, member=ws_admin).delete()
+
+        client = APIClient()
+        client.force_authenticate(user=ws_admin)
+        response = client.get(_app_issue_detail_url(workspace.slug, project.id))
+        assert response.status_code == status.HTTP_200_OK, (
+            f"admin /issues-detail/ on network={network} returned "
+            f"{response.status_code} (likely NameError on WorkspaceMember): "
+            f"{response.data!r}"
+        )
+
+    @pytest.mark.parametrize("network", [0, 2], ids=["SECRET", "PUBLIC"])
+    def test_probe_plain_member_gets_200_on_issues_detail(
+        self, workspace, create_user, ws_member, network
+    ):
+        from plane.db.models import ProjectMember
+
+        # The MEMBER has workspace role=15 but no ProjectMember row;
+        # for this probe we want them to be a ProjectMember (any role)
+        # so they reach the endpoint body — the goal is to verify
+        # /issues-detail/ answers for a *ProjectMember* caller, not
+        # the visibility semantics (those are pinned elsewhere).
+        project = _make_project(
+            workspace, create_user,
+            name=f"Member {network}", identifier=f"M{network}", network=network,
+            members=[ws_member],
+        )
+        # ``_make_project`` adds the member as ``role=20``; drop the
+        # row to ``role=15`` so we mirror a typical workspace MEMBER
+        # who has been added to the project at member tier.
+        ProjectMember.objects.filter(
+            project=project, member=ws_member
+        ).update(role=15)
+
+        client = APIClient()
+        client.force_authenticate(user=ws_member)
+        response = client.get(_app_issue_detail_url(workspace.slug, project.id))
+        assert response.status_code == status.HTTP_200_OK, (
+            f"project-member /issues-detail/ on network={network} "
+            f"returned {response.status_code} (likely NameError on "
+            f"WorkspaceMember): {response.data!r}"
+        )
+
+    @pytest.mark.parametrize("network", [0, 2], ids=["SECRET", "PUBLIC"])
+    def test_probe_expand_issue_relation_does_not_500(self, workspace, ws_admin, network):
+        """Real frontend path (``issue.service.ts:47`` selects the
+        ``*-detail/`` variant when ``expand`` contains ``issue_relation``
+        — the GANTT layout)."""
+        project = _make_project(
+            workspace, ws_admin,
+            name=f"Expand {network}", identifier=f"E{network}", network=network,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=ws_admin)
+        response = client.get(
+            _app_issue_detail_url(workspace.slug, project.id)
+            + "?expand=issue_relation"
+        )
+        assert response.status_code == status.HTTP_200_OK, (
+            f"admin /issues-detail/?expand=issue_relation on network="
+            f"{network} returned {response.status_code} (likely "
+            f"NameError on WorkspaceMember): {response.data!r}"
         )

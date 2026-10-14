@@ -60,6 +60,7 @@ from plane.db.models import (
     Project,
     ProjectMember,
     UserRecentVisit,
+    WorkspaceMember,
 )
 from plane.utils.filters import ComplexFilterBackend, IssueFilterSet
 from plane.utils.global_paginator import paginate
