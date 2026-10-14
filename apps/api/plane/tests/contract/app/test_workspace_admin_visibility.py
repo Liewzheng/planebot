@@ -122,16 +122,23 @@ def _make_project(
     return project
 
 
-def _make_issue(project, workspace, created_by) -> Issue:
-    state = State.objects.create(
+def _make_issue(project, workspace, created_by, *, name: str = "Visibility issue") -> Issue:
+    """Create an issue with a default state. The state lookup is
+    idempotent so multiple issues can share a single Backlog state
+    (the ``State`` model has a unique constraint on (name, project_id)
+    when deleted_at is NULL)."""
+    state, _ = State.objects.get_or_create(
         name="Backlog",
         project=project,
-        workspace=workspace,
-        group="backlog",
-        default=True,
+        deleted_at__isnull=True,
+        defaults={
+            "workspace": workspace,
+            "group": "backlog",
+            "default": True,
+        },
     )
     return Issue.objects.create(
-        name="Visibility issue",
+        name=name,
         project=project,
         workspace=workspace,
         state=state,
@@ -177,6 +184,25 @@ def ws_guest(db, workspace):
 
 def _project_detail_url(slug: str, project_id) -> str:
     return f"/api/workspaces/{slug}/projects/{project_id}/"
+
+
+def _app_issue_list_url(slug: str, project_id) -> str:
+    """``IssueDetailEndpoint.get`` (line 987 of ``app/views/issue/base.py``)
+    — the class name is historical; the URL serves the issue LIST. Uses
+    ``permission_subquery`` and ``@allow_permission`` (the two filters
+    M51 widens in this round)."""
+    return f"/api/workspaces/{slug}/projects/{project_id}/issues/"
+
+
+def _app_issue_activity_url(slug: str, project_id, issue_id) -> str:
+    """``IssueActivityEndpoint.get`` (app/views/issue/activity.py) — the
+    app-side issue-activity endpoint. Drives both the
+    ``ProjectEntityPermission`` gate and the ``@allow_permission``
+    decorator on the same handler."""
+    return (
+        f"/api/workspaces/{slug}/projects/{project_id}"
+        f"/issues/{issue_id}/history/"
+    )
 
 
 def _v1_projects_url(slug: str) -> str:
@@ -483,4 +509,234 @@ class TestV1IssueActivityEndpoint:
         assert response.status_code == status.HTTP_403_FORBIDDEN, (
             f"workspace MEMBER (role=15) without ProjectMember must be "
             f"denied by ProjectEntityPermission; got {response.status_code}"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# App-side issue LIST endpoint (the user's "列/读" half)                        #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestAppSideIssueListEndpoint:
+    """``IssueDetailEndpoint.get`` at
+    ``app/views/issue/base.py:987-1116`` — the class name is historical,
+    the URL serves the issue list. The endpoint has BOTH a
+    ``permission_subquery`` (which filters by ProjectMember) AND a
+    ``@allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])`` (project-
+    scoped). M51 widens both: the r1 round widened the permission
+    class only; this round also widens ``permission_subquery`` and the
+    ``@allow_permission`` decorator's project-scoped role check, so an
+    admin who is not a ProjectMember of the project can list every
+    issue — including in a SECRET project — exactly the symptom the
+    user filed.
+    """
+
+    def test_admin_lists_issues_in_a_secret_project_they_are_not_a_member_of(
+        self, workspace, create_user, ws_admin
+    ):
+        project = _make_project(
+            workspace, create_user, name="Vault", identifier="VLT", network=0
+        )
+        _make_issue(project, workspace, create_user)
+        _make_issue(project, workspace, create_user)  # a second row
+
+        client = APIClient()
+        client.force_authenticate(user=ws_admin)
+        response = client.get(_app_issue_list_url(workspace.slug, project.id))
+
+        assert response.status_code == status.HTTP_200_OK, (
+            f"workspace admin must list issues in a SECRET project they "
+            f"do not belong to (the '看得到但看不见里面' symptom); got "
+            f"{response.status_code}: {response.data!r}"
+        )
+
+        results = response.data.get("results", response.data) or []
+        ids = {str(row["id"]) for row in results if "id" in row}
+        # Both seeded issues must surface.
+        assert len(ids) >= 2, (
+            "app-side issue list returned fewer rows than seeded — the "
+            "permission_subquery widening did not land (the admin is "
+            "ProjectMember-less on this project)."
+        )
+
+    def test_non_admin_member_gets_empty_list_for_non_member_project(
+        self, workspace, create_user, ws_member
+    ):
+        """Contrast: a workspace MEMBER who is not a ProjectMember must
+        still get an empty list (the existing ProjectMember predicate
+        holds). This pins the "不得过度放宽" half on the issue LIST."""
+        project = _make_project(
+            workspace, create_user, name="Quiet", identifier="QZT", network=0
+        )
+        _make_issue(project, workspace, create_user)
+        _make_issue(project, workspace, create_user)
+
+        client = APIClient()
+        client.force_authenticate(user=ws_member)
+        response = client.get(_app_issue_list_url(workspace.slug, project.id))
+
+        # The MEMBER is a workspace member so passes the workspace
+        # scope; the project-scoped ``@allow_permission`` (with the
+        # new admin bypass restricted to role=20) still denies; the
+        # permission_subquery (non-admin branch) returns zero rows.
+        # Whichever layer fires first — both are correct.
+        assert response.status_code in (
+            status.HTTP_403_FORBIDDEN,
+            status.HTTP_200_OK,
+        ), (
+            f"workspace MEMBER (role=15) must NOT be admitted on the "
+            f"app-side issue list for a project they do not belong to; "
+            f"got {response.status_code}: {response.data!r}"
+        )
+        if response.status_code == status.HTTP_200_OK:
+            results = response.data.get("results", response.data) or []
+            assert len(results) == 0, (
+                f"workspace MEMBER must see zero issues in a project they "
+                f"do not belong to; got {len(results)}"
+            )
+
+
+# --------------------------------------------------------------------------- #
+# App-side issue ACTIVITY endpoint — the second half of the user's complaint   #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestAppSideIssueActivityEndpoint:
+    """``IssueActivityEndpoint`` at
+    ``app/views/issue/activity.py:24-86`` is the app-side activity
+    feed. The handler has BOTH ``permission_classes = [ProjectEntityPermission]``
+    AND ``@allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])`` —
+    both must widen or the decorator (the r1 gap) blocks the admin
+    before the inline ``project_reader_q`` is even reached.
+    """
+
+    def test_admin_reads_app_side_issue_activity_for_a_non_member_project(
+        self, workspace, create_user, ws_admin
+    ):
+        project = _make_project(
+            workspace, create_user, name="Ledger", identifier="LDG", network=0
+        )
+        issue = _make_issue(project, workspace, create_user)
+        IssueActivity.objects.create(
+            issue=issue,
+            project=project,
+            workspace=workspace,
+            actor=create_user,
+            verb="created",
+            field="issue",
+            comment="created the issue",
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=ws_admin)
+        # ``?activity_type=issue-property`` selects the serialized
+        # branch; the combined branch (no query param) has a pre-
+        # existing ``instance["created_at"]`` access that predates
+        # M51 and is unrelated to this mission's bypass.
+        response = client.get(
+            _app_issue_activity_url(workspace.slug, project.id, issue.id)
+            + "?activity_type=issue-property"
+        )
+
+        assert response.status_code == status.HTTP_200_OK, (
+            f"workspace admin must read the app-side activity feed for a "
+            f"SECRET project they are not a member of (the user's "
+            f"'看得到但看不见里面' second half); got {response.status_code}: "
+            f"{response.data!r}"
+        )
+
+        assert isinstance(response.data, list) and len(response.data) >= 1, (
+            "app-side activity returned no rows — either the "
+            "@allow_permission widening did not fire or the inline "
+            "project_reader_q widening did not land."
+        )
+
+    def test_non_admin_member_is_denied_at_the_app_side_activity_endpoint(
+        self, workspace, create_user, ws_member
+    ):
+        """Contrast: a workspace MEMBER who is not a ProjectMember must
+        still be denied at ``@allow_permission``. The widening is
+        restricted to ``WorkspaceMember.role=20`` AND ``SAFE_METHODS``
+        so the role=15 path is unchanged."""
+        project = _make_project(
+            workspace, create_user, name="Ledger Private", identifier="LDP", network=0
+        )
+        issue = _make_issue(project, workspace, create_user)
+
+        client = APIClient()
+        client.force_authenticate(user=ws_member)
+        # Same query param as the admin branch so both branches run
+        # the same code path.
+        response = client.get(
+            _app_issue_activity_url(workspace.slug, project.id, issue.id)
+            + "?activity_type=issue-property"
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN, (
+            f"workspace MEMBER (role=15) without ProjectMember must be "
+            f"denied at @allow_permission; got {response.status_code}: "
+            f"{response.data!r}"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Write-side guarantee: a non-member admin can read but NOT write              #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestAppSideWriteSideStaysDenied:
+    """M51 widens the SAFE reads. The write path through
+    ``@allow_permission`` must remain at the original ProjectMember /
+    workspace-admin-and-ProjectMember semantics — the admin bypass is
+    SAFE_METHODS-only by construction. This class exercises a write
+    endpoint (``POST`` to create a new issue in a SECRET project the
+    admin is not a member of) and asserts the admin gets 403 even
+    though they are a workspace ADMIN. If this test ever flips green,
+    the SAFE_METHODS gating on ``allow_permission`` has been removed
+    and a workspace admin can mutate any project under their
+    workspace — that is the regression to catch.
+
+    The endpoint picked is the project-scoped ``IssueViewSet.create`` at
+    ``app/views/issue/base.py`` (the project-scoped create that uses
+    ``@allow_permission([ROLE.ADMIN, ROLE.MEMBER])``).
+    """
+
+    def test_admin_cannot_create_issue_in_a_project_they_are_not_a_member_of(
+        self, workspace, create_user, ws_admin
+    ):
+        from plane.db.models import State
+
+        project = _make_project(
+            workspace, create_user, name="Off-limits", identifier="OFF", network=0
+        )
+        state = State.objects.create(
+            name="Backlog",
+            project=project,
+            workspace=workspace,
+            group="backlog",
+            default=True,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=ws_admin)
+        # ``IssueViewSet.create`` — POST is not SAFE_METHODS, so the
+        # M51 admin bypass MUST NOT fire; the original ProjectMember
+        # predicate denies.
+        response = client.post(
+            _app_issue_list_url(workspace.slug, project.id),
+            {"name": "Admin issue", "state_id": str(state.id)},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN, (
+            f"workspace admin (role=20) without ProjectMember must NOT "
+            f"be able to CREATE an issue in a SECRET project (writes "
+            f"are not part of the bypass); got {response.status_code}: "
+            f"{response.data!r}"
         )

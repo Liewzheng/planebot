@@ -24,7 +24,7 @@ The two paths share the same 403 error body and a ``crew``-friendly
 
 from plane.db.models import WorkspaceMember, ProjectMember
 from functools import wraps
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import BasePermission, SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework import status
 
@@ -237,6 +237,24 @@ def allow_permission(
                 ).exists():
                     return view_func(instance, request, *args, **kwargs)
             else:
+                # M51: workspace admins own the workspace and must be able
+                # to read every project under it — including
+                # ``ProjectNetwork.SECRET`` ones they hold no
+                # ``ProjectMember`` row for. The bypass is restricted to
+                # ``SAFE_METHODS`` so writes are untouched: an admin who
+                # is NOT a ProjectMember can list / read but cannot
+                # create / update / delete project entities through
+                # any ``@allow_permission``-decorated endpoint. The
+                # SP path above is unaffected — service principals go
+                # through ``authorize()`` and never reach this branch.
+                if request.method in SAFE_METHODS and WorkspaceMember.objects.filter(
+                    member=user,
+                    workspace__slug=kwargs["slug"],
+                    role=ROLE.ADMIN.value,
+                    is_active=True,
+                ).exists():
+                    return view_func(instance, request, *args, **kwargs)
+
                 is_user_has_allowed_role = ProjectMember.objects.filter(
                     member=user,
                     workspace__slug=kwargs["slug"],
