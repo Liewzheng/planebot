@@ -29,8 +29,9 @@ from plane.db.models import (
     DeployBoard,
     ProjectMember,
     State,
-    DEFAULT_STATES,
     Workspace,
+    WorkspaceMember,
+    DEFAULT_STATES,
     UserFavorite,
     Label,
     Issue,
@@ -83,13 +84,21 @@ def visible_projects(request, slug):
     """The projects ``request`` may see in workspace ``slug``.
 
     For a human: the projects they are an active member of plus public
-    (``network=2``) ones. For a service principal: exactly the projects it
-    holds an active :class:`ProjectGrant` for. The SP branch is load-bearing —
-    ``request.user`` stays the SP's human **owner** (see
-    ``APIKeyAuthentication._authenticate_service_token``), so keying the
-    filter off the owner's ``ProjectMember`` rows would surface the owner's
-    projects, a set strictly wider than the SP's grants. A grant-enumerating
-    client then 403s on the first ungranted project it touches (PLANE-111).
+    (``network=2``) ones, **or any project in the workspace when the
+    caller is a workspace admin** (M51). For a service principal:
+    exactly the projects it holds an active :class:`ProjectGrant` for.
+    The SP branch is load-bearing — ``request.user`` stays the SP's
+    human **owner** (see ``APIKeyAuthentication._authenticate_service_token``),
+    so keying the filter off the owner's ``ProjectMember`` rows would
+    surface the owner's projects, a set strictly wider than the SP's
+    grants. A grant-enumerating client then 403s on the first ungranted
+    project it touches (PLANE-111).
+
+    The human admin branch is also load-bearing for a different reason:
+    the user owns the workspace and explicitly asked to see everything
+    under it, including ``ProjectNetwork.SECRET`` projects (the
+    "能打开，包括 SECRET" ruling). The widening is restricted to the
+    human path; the SP path is byte-for-byte unchanged.
     """
     projects = Project.objects.filter(workspace__slug=slug)
     sp = sp_from_request(request)
@@ -98,6 +107,17 @@ def visible_projects(request, slug):
             sp_grants__service_principal=sp,
             sp_grants__is_active=True,
         )
+    is_workspace_admin = WorkspaceMember.objects.filter(
+        member=request.user,
+        workspace__slug=slug,
+        role=20,
+        is_active=True,
+    ).exists()
+    if is_workspace_admin:
+        # Workspace admin — every project in the workspace, including
+        # SECRET (``network=0``). This widens list / lite / detail /
+        # summary for admin callers in one stroke.
+        return projects
     return projects.filter(
         Q(
             project_projectmember__member=request.user,

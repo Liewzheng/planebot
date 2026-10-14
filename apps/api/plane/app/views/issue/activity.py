@@ -18,7 +18,7 @@ from rest_framework import status
 from .. import BaseAPIView
 from plane.app.serializers import IssueActivitySerializer, IssueCommentSerializer
 from plane.app.permissions import ProjectEntityPermission, allow_permission, ROLE
-from plane.db.models import IssueActivity, IssueComment, CommentReaction, IntakeIssue
+from plane.db.models import IssueActivity, IssueComment, CommentReaction, IntakeIssue, WorkspaceMember
 
 
 class IssueActivityEndpoint(BaseAPIView):
@@ -32,12 +32,32 @@ class IssueActivityEndpoint(BaseAPIView):
         if request.GET.get("created_at__gt", None) is not None:
             filters = {"created_at__gt": request.GET.get("created_at__gt")}
 
-        issue_activities = (
-            IssueActivity.objects.filter(issue_id=issue_id)
-            .filter(
-                ~Q(field__in=["comment", "vote", "reaction", "draft"]),
+        # M51: workspace admins own the workspace and must read the
+        # activity log in any project, including ``ProjectNetwork.SECRET``
+        # ones where they hold no ``ProjectMember`` row. The widening is
+        # intentional and load-bearing — the inline ``project_member_q``
+        # alone would zero the result set for an admin caller. Non-admin
+        # callers go through the original ProjectMember-only predicate
+        # unchanged.
+        is_workspace_admin = WorkspaceMember.objects.filter(
+            member=self.request.user,
+            workspace__slug=slug,
+            role=ROLE.ADMIN.value,
+            is_active=True,
+        ).exists()
+        if is_workspace_admin:
+            project_reader_q = Q()  # admin sees all in-project activities
+        else:
+            project_reader_q = Q(
                 project__project_projectmember__member=self.request.user,
                 project__project_projectmember__is_active=True,
+            )
+
+        issue_activities = (
+            IssueActivity.objects.filter(issue_id=issue_id, project_id=project_id)
+            .filter(
+                ~Q(field__in=["comment", "vote", "reaction", "draft"]),
+                project_reader_q,
                 project__archived_at__isnull=True,
                 workspace__slug=slug,
             )
@@ -45,10 +65,9 @@ class IssueActivityEndpoint(BaseAPIView):
             .select_related("actor", "workspace", "issue", "project")
         ).order_by("created_at")
         issue_comments = (
-            IssueComment.objects.filter(issue_id=issue_id)
+            IssueComment.objects.filter(issue_id=issue_id, project_id=project_id)
             .filter(
-                project__project_projectmember__member=self.request.user,
-                project__project_projectmember__is_active=True,
+                project_reader_q,
                 project__archived_at__isnull=True,
                 workspace__slug=slug,
             )

@@ -39,6 +39,15 @@ the engine. The SP tests below drive the helper **directly** — pure
 unit-level coverage, no HTTP layer, no authentication, no engine path.
 The human control test goes through the real HTTP path so we know the
 unguarded branch still behaves byte-for-byte for humans.
+
+Companion test. M51 r1 folds in the missing attribution pin: an
+SP-driven ``Project.objects.create`` must stamp ``created_by_id`` with
+the SP's bot user, never the owner. That test
+(``TestSPProjectAttribution`` below) drives the ORM directly with the
+SP proxy bound to ``crum`` — same pattern ``test_sp_app_surface_attribution.py``
+uses — and asserts the bot is credited. Together with the helper pin
+above, the two tests form the *attribution* (created_by_id) and
+*authorization* (role=20 row) halves of an SP-driven project-create.
 """
 
 from __future__ import annotations
@@ -251,9 +260,17 @@ class TestCreatorAsAdminHelper:
 class TestQ4GateStillDeniesSPProjectWrite:
     """Sanity: the Q4 gate still denies SP project writes today, so the
     helper the unit test above exercises is unreachable end-to-end.
-    Without this safety net, a future refactor that quietly dropped the
-    engine's workspace-level guard would not surface in the test suite
-    on its own.
+
+    Coverage note: this test only asserts the status code and the
+    absence of side effects. Removing the engine's workspace-level
+    ``DENY_WORKSPACE_LEVEL_WRITE`` guard (the actual Q4 pin) would
+    flip this test from ``403`` to a different ``403`` reason
+    (``DENY_SCOPE_MISS``) — the status code alone does not catch
+    that drift. The real Q4 classifier lives in
+    ``tests/contract/test_authz_core.py::TestWorkspaceLevelResources``
+    (the ``DENY_WORKSPACE_LEVEL_WRITE`` assertions on a workspace-wide
+    ``project:create`` scope). Treat the test below as a smoke check,
+    not as the Q4 guarantee.
     """
 
     def test_sp_create_project_denied_by_q4_gate(
@@ -273,3 +290,72 @@ class TestQ4GateStillDeniesSPProjectWrite:
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert Project.objects.count() == 0
         assert ProjectMember.objects.count() == 0
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestSPProjectAttribution:
+    """An SP-driven ``Project.objects.create`` must stamp
+    ``created_by_id`` with the SP's shadow bot user — never the human
+    owner the service token is filed under.
+
+    ``BaseModel.save`` reaches ``current_sp_actor()`` via the
+    ``crum`` thread-local current request, so the assertion must run
+    with the SP-shaped request bound to ``crum``. M49's guard (the
+    helper test above) prevents a v1 SP-driven create from leaking an
+    unwanted ``ProjectMember`` row, but nothing currently pins the
+    *attribution* side: a regression that swapped the auto-set user
+    to ``request.user`` (the owner) on a v1 SP-driven project-create
+    would surface as a misattributed bot row in ``Project.created_by``
+    and break every activity-feed / "what the SP did" surface that
+    filters on the bot id — without any test failing. This class
+    closes that hole at the layer the production code actually stamps.
+
+    Q4 still denies an end-to-end v1 SP POST today, so the test drives
+    the ORM write directly with the SP proxy on the request, the
+    same pattern ``test_sp_app_surface_attribution.py`` uses.
+    """
+
+    def test_sp_driven_project_create_attributes_to_bot(
+        self, workspace, create_user
+    ):
+        import crum
+        from plane.app.middleware.api_authentication import _ServicePrincipalProxy
+
+        sp = _make_sp(workspace, create_user, name="attrib-bot")
+        bot_user = sp.ensure_bot_user()
+        owner = sp.owner
+
+        sp_principal = SimpleNamespace(service_principal=sp)
+        sp_request = SimpleNamespace(
+            _sp_principal=sp_principal,
+            user=_ServicePrincipalProxy(sp=sp),
+            auth=f"plane_svc_token_{SP_NAME}",
+        )
+
+        previous_request = crum.get_current_request()
+        crum.set_current_request(sp_request)
+        try:
+            project = Project.objects.create(
+                name="SP Attribution Project",
+                identifier="SAP",
+                workspace=workspace,
+                # ``created_by`` intentionally omitted — ``BaseModel.save``
+                # must read the SP proxy via ``current_sp_actor()`` and
+                # stamp the bot. Hand-passing ``created_by=owner`` here
+                # would defeat the test.
+            )
+        finally:
+            crum.set_current_request(previous_request)
+
+        # The attribution pin: bot, not owner.
+        assert project.created_by_id == bot_user.id, (
+            f"SP-driven Project.objects.create must set created_by_id to the "
+            f"bot user; got {project.created_by_id} (owner id "
+            f"{owner.pk}, bot id {bot_user.id})."
+        )
+        # Defensive: the owner is NOT credited.
+        assert project.created_by_id != owner.pk, (
+            "SP-driven project-create credited the SP's owner — the "
+            "attribution path is broken (PLANE-90 / M47)."
+        )
