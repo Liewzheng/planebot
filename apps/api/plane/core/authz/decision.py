@@ -28,6 +28,13 @@ DENY_WORKSPACE_LEVEL_WRITE = "deny_workspace_level_write"
 DENY_ROLE_CAP = "deny_role_cap"
 DENY_OWNER_ROLE = "deny_owner_role"
 DENY_OWNER_NOT_WORKSPACE_MEMBER = "deny_owner_not_workspace_member"
+# Per-resource ownership (M40). Raised when a member-tier (role_cap < ADMIN)
+# write on ``update``/``delete`` cannot be attributed to the requesting SP's
+# bot user — the row was created by someone else, carries no recorded creator
+# (historical data), the SP has no bot user yet, or the caller did not supply
+# the resource row at all. ``None`` never matches ``None``: an unknown owner
+# is a deny, not an allow (fail-closed).
+DENY_OWNER_MISMATCH = "deny_owner_mismatch"
 
 
 @dataclass(frozen=True)
