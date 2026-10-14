@@ -70,6 +70,7 @@ from plane.bgtasks.page_version_task import track_page_version
 from plane.bgtasks.recent_visited_task import recent_visited_task
 from plane.bgtasks.copy_s3_object import copy_s3_objects_of_description_and_assets
 from plane.app.permissions import ProjectPagePermission
+from plane.service_principals.attribution import actor_for_request
 
 
 logger = logging.getLogger(__name__)
@@ -818,9 +819,14 @@ class PageDuplicateEndpoint(BaseAPIView):
         page.pk = None
         page.name = f"{page.name} (Copy)"
         page.description_binary = None
+        # ``page.owned_by`` stays as the human owner (M46 carve-out,
+        # bot never owns pages). ``page.created_by`` and
+        # ``page.updated_by`` are attribution columns; the SP proxy's
+        # FK descriptor rejects them. Resolve to the bot so the copy
+        # endpoint works for an SP (defensive — unreachable today).
         page.owned_by = request.user
-        page.created_by = request.user
-        page.updated_by = request.user
+        page.created_by = actor_for_request(request)
+        page.updated_by = actor_for_request(request)
         page.save()
 
         for project_id in project_ids:

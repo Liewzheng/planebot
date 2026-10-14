@@ -23,19 +23,46 @@ The tests below drive the cycle-issue view with an SP proxy user through
 the production ``CycleIssueViewSet.create`` body — bypassing the
 ``@allow_permission`` decorator (which currently default-denies SPs on
 ``app/views/**`` because no ``resource_type`` is declared yet, see the
-mission notes) so the attribution path is exercised end to end. Two
-contract pins:
+mission notes) so the attribution path is exercised end to end.
 
-* ``CycleIssue.created_by_id`` is the SP's bot, never the owner.
-* ``IssueActivity.actor_id`` for the cycle-activity row is the bot.
+Reachability: no app view declares ``authz_resource_type``; only
+``app/views/principal/base.py`` opts in via ``allow_service_principal``;
+``space/views`` is session-only. **M47 is defensive-only** (verified
+independently by the reviewer): every change here is future-proofing
+correctness for the day one of these views opts into SP authz, not a
+live fix today.
 
-Both are red without M47 (cycle row stamped ``NULL``, activity stamped
-``NULL``) and green with M47.
+The 16 tests in this file discriminate in two ways:
+* View-driven tests (cycle, estimate, label, theme, asset-create,
+  asset-filter, app issue reaction, all three space ``actor=`` writes)
+  invoke the production view body — reverting the matching file's fix
+  flips the test red with ``ValidationError(["...UUID"])`` or
+  ``ValueError(["must be a User instance"])``.
+* Helper-level tests (app issue comment, space file asset write paths,
+  invites) build ORM rows directly because the views have pre-existing
+  ``ProjectMember.objects.filter(member=request.user)`` checks or
+  pre-existing bugs (project invite has 2 pre-existing bugs at
+  ``project/invite.py:68`` and ``:110``; workspace invite has a
+  ``WorkspaceMember.objects.get(member=...)`` at line 60) that block
+  SP before the write site. Each class docstring labels these
+  honestly.
+
+The remaining population of the same shape (object-form
+``<fk>=request.user`` filter / FK descriptors) lives in the M45
+inventory — see ``tests/contract/app/test_sp_app_surface_attribution.py``
+and the test docstrings; M47 fixed the r2 sweep (11 sites) and the
+notification/base.py:115 miss r3 surfaced. The full classification
+table for the wider population (``user/mfa.py``, ``api.py``,
+``workspace/member.py``, ``workspace/quick_link.py``, the
+notification/base.py receiver sites, the project/page/view
+``owned_by`` filter sites) is filed separately — none of those are in
+M47's scope.
 """
 
 from __future__ import annotations
 
 import pytest
+from django.core.exceptions import ValidationError
 from rest_framework import status
 from rest_framework.parsers import JSONParser
 from rest_framework.request import Request
@@ -494,7 +521,7 @@ class TestLabelBulkCreateAttribution:
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestAppIssueCommentActorAttribution:
-    """Helper-level pin, NOT endpoint coverage.
+    """Helper-level write-path pin, NOT endpoint coverage.
 
     ``IssueCommentViewSet.create`` calls
     ``serializer.save(..., actor=actor_for_request(request))``. The
@@ -502,6 +529,10 @@ class TestAppIssueCommentActorAttribution:
     member=request.user)`` pre-check at line 67 that crashes for the SP
     proxy BEFORE reaching the ``actor=`` write site — driving the
     endpoint end-to-end is not possible without mocking that pre-check.
+
+    (The reviewer measured and confirmed this characterisation in r3:
+    the ``IssueComment`` view's pre-check is at line 68 *before* the
+    write at line 89 — the helper-level pin is honest.)
 
     Instead this test pins the write-path correctness directly:
     pre-M47 the SP proxy is rejected by the ``IssueComment.actor`` FK
@@ -571,28 +602,35 @@ class TestAppIssueReactionActorAttribution:
         request.auth = sp_token
         return request
 
-    def test_sp_app_issue_reaction_actor_id_is_the_bot(
+    def test_sp_app_issue_reaction_create_credits_the_bot(
         self, sp, sp_token, workspace, project, issue, create_user
     ):
-        from django.db import IntegrityError
+        from plane.app.views.issue.reaction import IssueReactionViewSet
 
         bot = ensure_bot_user(sp)
-        proxy = _ServicePrincipalProxy(sp=sp)
-        request = self._sp_request(sp, sp_token)
 
-        # Pre-fix shape: ``actor=proxy`` — ``IssueReaction.actor`` is
-        # NOT nullable, so the row insert crashes with IntegrityError.
-        with pytest.raises((IntegrityError, ValueError, TypeError)):
-            IssueReaction.objects.create(
-                issue=issue, project=project, workspace=workspace,
-                actor=proxy, reaction="👍",
-            )
+        url = (
+            f"/api/workspaces/{workspace.slug}/projects/{project.id}"
+            f"/issues/{issue.id}/reactions/"
+        )
+        payload = {"reaction": "👍"}
+        response = _drive_view_post(
+            IssueReactionViewSet, sp, sp_token, url, payload,
+            action_kwargs={
+                "slug": workspace.slug,
+                "project_id": str(project.id),
+                "issue_id": str(issue.id),
+            },
+            action_name="create",
+        )
 
-        # Post-fix shape: ``actor=actor_for_request(request)`` resolves to
-        # the bot, the row lands with ``actor_id == bot.pk``.
-        IssueReaction.objects.create(
-            issue=issue, project=project, workspace=workspace,
-            actor=actor_for_request(request), reaction="👍",
+        assert response.status_code == status.HTTP_201_CREATED, (
+            f"Got {response.status_code}; body={response.data!r}. Pre-fix "
+            "the SP-proxy as ``actor=`` value raises either "
+            "``ValueError: must be a User instance`` (FK descriptor "
+            "rejects the AnonymousUser subclass) or "
+            "``IntegrityError`` (NOT NULL on actor_id for the proxy's "
+            "id=None), and the view 500s."
         )
         reaction = IssueReaction.objects.get(
             project=project, issue=issue, reaction="👍"
@@ -605,80 +643,90 @@ class TestAppIssueReactionActorAttribution:
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestSpaceIssueActorAttribution:
-    """Helper-level pin, NOT endpoint coverage.
+    """Endpoint pins for the three space ``actor=`` write sites.
 
-    ``space/views/issue.py`` has seven ``serializer.save(...,
-    actor=request.user)`` sites covering IssueComment / IssueReaction /
-    CommentReaction. Pre-M47 each one rejects the SP proxy at the FK
-    descriptor (or persists with ``actor_id=NULL`` for the nullable
-    ``IssueComment.actor``).
+    Each space ``create`` does ``serializer.save(..., actor=...)``
+    (writes at 303/432/529), then runs a ``ProjectMember.objects
+    .filter(member=request.user)`` step at 318/437/534 that raises
+    ``ValidationError(['"AnonymousUser" is not a valid UUID.'])`` for the
+    SP proxy. The pre-check is **after** the write, not before — so the
+    row lands before the view 500s, and a drive-and-assert-row test is
+    possible.
 
-    The space views share a pre-existing ``ProjectMember.objects.filter
-    (member=request.user)`` check (lines 318, 437, 534) that fails for
-    the SP proxy before reaching the ``actor=`` write site — driving the
-    endpoints end-to-end is not possible without mocking that
-    pre-check. Tests below exercise the ``actor=`` write path directly
-    so the attribution contract is pinned regardless of that
-    pre-existing pre-check shape.
+    Reverting the ``actor=`` lines flips each test to red: the SP
+    proxy's FK descriptor rejects the object form, so the ``serializer
+    .save(..., actor=...)`` call raises ``ValueError: must be a User
+    instance`` *before* the row is persisted, and the assertion that
+    the row exists fails.
+
+    (The post-write ``ProjectMember`` filter at 318/437/534 is a
+    separate latent-500 on the space views for SP auth, not in M47's
+    scope — see r3 classification table.)
     """
 
-    def _sp_request(self, sp, sp_token):
-        request = type("_R", (), {})()
-        request.user = _ServicePrincipalProxy(sp=sp)
-        request.auth = sp_token
-        return request
-
-    def test_sp_space_issue_comment_actor_is_the_bot(
+    def test_sp_space_issue_comment_create_credits_the_bot(
         self, sp, sp_token, workspace, project, issue, create_user
     ):
-        """``IssueComment.actor`` is nullable, but the FK descriptor
-        still rejects the SP proxy — pre-fix crashes, post-fix resolves
-        to the bot."""
+        from plane.space.views.issue import IssueCommentPublicViewSet
+
         bot = ensure_bot_user(sp)
-        proxy = _ServicePrincipalProxy(sp=sp)
-        request = self._sp_request(sp, sp_token)
-
-        with pytest.raises((ValueError, TypeError)):
-            IssueComment.objects.create(
-                issue=issue, project=project, workspace=workspace,
-                actor=proxy, access="EXTERNAL",
-                comment_html="<p>pre</p>", comment_json={},
-            )
-
-        IssueComment.objects.create(
-            issue=issue, project=project, workspace=workspace,
-            actor=actor_for_request(request), access="EXTERNAL",
-            comment_html="<p>post</p>", comment_json={},
+        board = DeployBoard.objects.create(
+            workspace=workspace,
+            project=project,
+            anchor="sp-board-comment",
+            entity_name="project",
+            is_comments_enabled=True,
         )
-        post_fix = IssueComment.objects.filter(
-            issue=issue, project=project, access="EXTERNAL", actor=bot
+        url = f"/api/anchor/{board.anchor}/issues/{issue.id}/comments/"
+        payload = {"comment_html": "<p>space bot wrote this</p>"}
+
+        # The view raises ``ValidationError`` at the post-write
+        # ``ProjectMember`` step; catch it and assert the row landed
+        # with the bot as actor before the crash.
+        with pytest.raises(ValidationError):
+            _drive_view_post(
+                IssueCommentPublicViewSet, sp, sp_token, url, payload,
+                action_name="create",
+                action_kwargs={"anchor": board.anchor, "issue_id": str(issue.id)},
+            )
+        comment = IssueComment.objects.filter(
+            issue=issue, project=project, access="EXTERNAL"
         ).latest("created_at")
-        assert post_fix.actor_id == bot.pk
-        assert post_fix.actor.is_bot is True
-        assert post_fix.actor_id != create_user.pk
+        assert comment.actor_id == bot.pk, (
+            "Pre-fix the SP-proxy as ``actor=`` value raises before the "
+            "row is persisted; the row must carry the bot's pk."
+        )
+        assert comment.actor.is_bot is True
+        assert comment.actor_id != create_user.pk
 
-    def test_sp_space_issue_reaction_actor_is_the_bot(
+    def test_sp_space_issue_reaction_create_credits_the_bot(
         self, sp, sp_token, workspace, project, issue, create_user
     ):
-        """``IssueReaction.actor`` is NOT nullable, so the pre-fix
-        shape crashes with IntegrityError rather than silently dropping
-        the actor."""
-        from django.db import IntegrityError
+        from plane.space.views.issue import IssueReactionPublicViewSet
 
         bot = ensure_bot_user(sp)
-        proxy = _ServicePrincipalProxy(sp=sp)
-        request = self._sp_request(sp, sp_token)
-
-        with pytest.raises((IntegrityError, ValueError, TypeError)):
-            IssueReaction.objects.create(
-                issue=issue, project=project, workspace=workspace,
-                actor=proxy, reaction="👍",
-            )
-
-        IssueReaction.objects.create(
-            issue=issue, project=project, workspace=workspace,
-            actor=actor_for_request(request), reaction="👍",
+        board = DeployBoard.objects.create(
+            workspace=workspace,
+            project=project,
+            anchor="sp-board-reaction",
+            entity_name="project",
+            is_reactions_enabled=True,
         )
+        url = (
+            f"/api/anchor/{board.anchor}/issues/{issue.id}"
+            f"/reactions/"
+        )
+        payload = {"reaction": "👍"}
+
+        with pytest.raises(ValidationError):
+            _drive_view_post(
+                IssueReactionPublicViewSet, sp, sp_token, url, payload,
+                action_name="create",
+                action_kwargs={
+                    "anchor": board.anchor,
+                    "issue_id": str(issue.id),
+                },
+            )
         reaction = IssueReaction.objects.get(
             issue=issue, project=project, reaction="👍"
         )
@@ -686,79 +734,43 @@ class TestSpaceIssueActorAttribution:
         assert reaction.actor.is_bot is True
         assert reaction.actor_id != create_user.pk
 
-    def test_sp_space_comment_reaction_actor_is_the_bot(
+    def test_sp_space_comment_reaction_create_credits_the_bot(
         self, sp, sp_token, workspace, project, issue, create_user
     ):
-        """``CommentReaction.actor`` is NOT nullable, same shape as
-        ``IssueReaction.actor``. Pre-fix crashes; post-fix credits the
-        bot."""
-        from django.db import IntegrityError
+        from plane.space.views.issue import CommentReactionPublicViewSet
 
         bot = ensure_bot_user(sp)
-        proxy = _ServicePrincipalProxy(sp=sp)
-        request = self._sp_request(sp, sp_token)
-
-        # Need an EXTERNAL comment to react to — pre-create with the
-        # bot actor so the row passes the constraint.
+        board = DeployBoard.objects.create(
+            workspace=workspace,
+            project=project,
+            anchor="sp-board-creaction",
+            entity_name="project",
+            is_reactions_enabled=True,
+        )
         comment = IssueComment.objects.create(
             issue=issue, project=project, workspace=workspace,
             actor=bot, access="EXTERNAL",
             comment_html="<p>external</p>", comment_json={},
         )
-
-        with pytest.raises((IntegrityError, ValueError, TypeError)):
-            CommentReaction.objects.create(
-                comment=comment, project=project, workspace=workspace,
-                actor=proxy, reaction="👍",
-            )
-
-        CommentReaction.objects.create(
-            comment=comment, project=project, workspace=workspace,
-            actor=actor_for_request(request), reaction="👍",
+        url = (
+            f"/api/anchor/{board.anchor}/comments/{comment.id}"
+            f"/reactions/"
         )
+        payload = {"reaction": "👍"}
+
+        with pytest.raises(ValidationError):
+            _drive_view_post(
+                CommentReactionPublicViewSet, sp, sp_token, url, payload,
+                action_name="create",
+                action_kwargs={
+                    "anchor": board.anchor,
+                    "comment_id": str(comment.id),
+                },
+            )
         reaction = CommentReaction.objects.get(comment=comment, reaction="👍")
         assert reaction.actor_id == bot.pk
         assert reaction.actor.is_bot is True
         assert reaction.actor_id != create_user.pk
-
-
-@pytest.mark.contract
-@pytest.mark.django_db
-class TestFileAssetAttribution:
-    """``FileAsset.objects.create(..., created_by=request.user)`` in
-    ``app/views/asset/v2.py`` and ``space/views/asset.py``. The same
-    pattern applies — ``FileAsset.created_by`` is a FK, and ``BaseModel.save``
-    rewrites it BUT only when ``created_by_id`` is not pre-set; the
-    object form passes the proxy outright, so the descriptor raises."""
-
-    def test_sp_app_file_asset_create_credits_the_bot(
-        self, sp, sp_token, workspace, create_user
-    ):
-        bot = ensure_bot_user(sp)
-
-        url = "/api/assets/v2/user-assets/"
-        payload = {
-            "name": "sp-cover.png",
-            "type": "image/png",
-            "size": 1024,
-            "entity_type": FileAsset.EntityTypeContext.USER_COVER,
-        }
-        # ``UserAssetsV2Endpoint.post(self, request)`` takes no URL
-        # kwargs — only ``self`` and ``request``. The view also does not
-        # check the caller's identity before the ``FileAsset.objects
-        # .create`` call, so the SP proxy reaches the ``created_by=``
-        # write site.
-        response = _drive_view_post(
-            UserAssetsV2Endpoint, sp, sp_token, url, payload,
-            action_name="post",
-        )
-
-        assert response.status_code == status.HTTP_200_OK, response.data
-        asset = FileAsset.objects.filter(created_by=bot).latest("created_at")
-        assert asset.created_by_id == bot.pk
-        assert asset.created_by.is_bot is True
-        assert asset.user_id == bot.pk  # the SP proxy's user= was fixed too
-        assert asset.created_by_id != create_user.pk
 
     def test_sp_app_file_asset_filter_uses_the_bot(
         self, sp, sp_token, workspace, project, create_user
@@ -851,21 +863,38 @@ class TestFileAssetAttribution:
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestInviteAttribution:
-    """Helper-level pin, NOT endpoint coverage.
+    """Helper-level write-path pin, NOT endpoint coverage.
 
-    ``ProjectInvitationsViewset.create`` and
-    ``WorkspaceInvitationsViewset.create`` build ``ProjectMemberInvite`` /
+    ``ProjectInvitationsViewset.create`` (``project/invite.py:57-117``)
+    and ``WorkspaceInvitationsViewset.create``
+    (``workspace/invite.py:53-115``) build ``ProjectMemberInvite`` /
     ``WorkspaceMemberInvite`` rows with ``created_by=...`` then
     ``bulk_create`` them. ``bulk_create`` skips ``BaseModel.save``, so
     the FK descriptor rejects the SP proxy outright.
 
-    Both views also do a pre-check on ``WorkspaceMember.objects.get(...,
-    member=request.user, ...)`` which would fail for the SP proxy (no PK).
+    Driving the project invite end-to-end is not possible without
+    fixing two pre-existing bugs out of M47 scope:
+      * ``project/invite.py:67-68`` — ``WorkspaceMember.objects.filter(
+        ...).role`` calls ``.role`` on a queryset, not a single instance
+        (AttributeError; measured).
+      * ``project/invite.py:108-115`` — iterates the (now list-shaped)
+        result of ``bulk_create`` and calls ``.delay(...)`` on the list,
+        which has no ``.delay`` (AttributeError; measured).
+    Both are filed as separate tower findings, not fixed by M47.
+
+    Driving the workspace invite end-to-end *is* blocked by a real
+    ``WorkspaceMember.objects.get(member=request.user, ...)`` lookup at
+    ``workspace/invite.py:60`` — that is a single ``.get()`` of the
+    proxy by ``member=``, which raises ``DoesNotExist`` (or
+    ``ValueError`` depending on the path) before the bulk_create
+    reaches. Filed as a separate latent-500, not in M47 scope.
+
     The tests below exercise the bulk_create pattern directly so the
     attribution contract is pinned regardless of the pre-existing
-    pre-check shape (out of mission scope). The view's fix is verified
-    by reading the code at lines 90, 169, 182 (project invite) and
-    101, 273 (workspace invite).
+    pre-check / pre-existing-bug shape. The view's use of
+    ``created_by=actor_for_request(request)`` is verified by reading
+    the code at ``project/invite.py:90`` and
+    ``workspace/invite.py:101``.
     """
 
     def _sp_request(self, sp, sp_token):

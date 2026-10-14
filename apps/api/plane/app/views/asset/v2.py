@@ -747,10 +747,14 @@ class ProjectBulkAssetEndpoint(BaseAPIView):
         # only touch their own uploads, cannot move an asset in from another project, and
         # @allow_permission already scopes them to this project).
         # ``created_by=request.user`` here is a *filter* (not a row
-        # creation). For an SP the proxy's ``.id`` is ``None`` so the
-        # filter would otherwise match assets where ``created_by_id IS
-        # NULL`` — wrong rows. Resolve to the bot so the filter matches
-        # the assets the SP's bot uploaded.
+        # creation). For an SP, ``FileAsset.objects.filter(created_by=
+        # <SP proxy>)`` raises ``ValidationError(['"AnonymousUser" is
+        # not a valid UUID.'])`` at queryset construction — the FK
+        # descriptor refuses the ``AnonymousUser`` subclass for a UUID
+        # column. (Only the attname path ``=request.user.id``, which
+        # is ``None``, would yield ``created_by_id IS NULL``; the object
+        # form does not match unowned rows, it raises.) Resolve to
+        # the bot so the SP request does not 500 here.
         assets = FileAsset.objects.filter(
             id__in=asset_ids,
             workspace__slug=slug,

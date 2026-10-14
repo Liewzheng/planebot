@@ -112,7 +112,10 @@ class NotificationViewSet(BaseViewSet, BasePaginator):
                 .annotate(created=Exists(Issue.objects.filter(
                     created_by=actor_for_request(request), pk=OuterRef("issue_id")
                 )))
-                .annotate(assigned=Exists(IssueAssignee.objects.filter(pk=OuterRef("issue_id"), assignee=request.user)))
+                # ``assignee=request.user`` is the identical same-shape
+                # site as ``created_by`` above (object form raises
+                # ValidationError for the SP proxy). Resolve to the bot.
+                .annotate(assigned=Exists(IssueAssignee.objects.filter(pk=OuterRef("issue_id"), assignee=actor_for_request(request))))
                 .filter(created=False, assigned=False)
                 .values_list("issue_id", flat=True)
             )
