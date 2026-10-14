@@ -653,14 +653,28 @@ def _sp_with_work_item_scope(workspace, owner, project, name):
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestClientSuppliedCreatedByIgnored:
-    """A client cannot move a freshly-created v1 row under another actor by
-    sending ``created_by`` in the request body — the view stamps the row
-    with ``actor_id_for_request(request)`` and never the spoofed value.
+    """A client cannot move a v1 row's ``created_by`` to a foreign actor.
 
-    Pre-fix (the override was active), every assertion below read the
-    spoofed uuid the client sent. The tests are designed to flip
-    individually, not all at once, so a future regression at any one site
-    shows up as a localized failure.
+    Two distinct guards close the gap:
+
+    * **Create path** — ``api/views/issue.py`` overwrites ``created_by``
+      with ``actor_id_for_request(request)`` after ``serializer.save()``
+      at five sites. ``BaseModel.save`` only re-stamps on insert, so the
+      view's overwrite is what closes create. Tests 1–5 are POST-only and
+      discriminate by reverting the view fix.
+    * **Update path** — ``IssueSerializer.Meta.read_only_fields`` also
+      lists ``created_by``. ``IssueDetailAPIEndpoint.patch`` does not
+      overwrite after ``serializer.save()``; on update
+      ``BaseModel.save`` does nothing to ``created_by``. The serializer
+      entry is the only gate. Tests 6 and 7 are PATCH-only and
+      discriminate by reverting the serializer entry (view fix kept).
+
+    Pre-fix (the create override was active), every POST assertion below
+    read the spoofed uuid the client sent. Pre-r1 (no serializer entry
+    yet), every PATCH assertion read the spoofed uuid too — see the
+    reviewer's probe in ``.tower/comms/reviews/``. The two paired tests
+    are designed to flip independently, so a regression at either guard
+    shows up as a localised failure.
     """
 
     def test_human_work_item_post_ignores_client_supplied_created_by(
@@ -717,9 +731,17 @@ class TestClientSuppliedCreatedByIgnored:
     def test_sp_a_work_item_post_with_created_by_pointing_to_sp_b_stamps_sp_a(
         self, workspace, project, create_user
     ):
-        """SP ↔ SP: the row is owned by whichever SP actually wrote it, not by
-        whoever the payload named — and the authz step on the subsequent
-        PATCH matches the writer, not the spoofed name."""
+        """SP ↔ SP create: the row is owned by whichever SP actually wrote
+        it, not by whoever the payload named — and the authz step on the
+        subsequent PATCH matches the writer, not the spoofed name.
+
+        Differential note: in a reverted run (view fix rolled back) this
+        test stops at the first ``created_by`` assertion above; the PATCH
+        pair below is not reached. The PATCH pair is kept because it
+        holds at tip and proves the attribution→authz wiring (an SP-A 200
+        alongside an SP-B 403 with the ``may only update`` reason), but
+        it is an *intent* assertion, not a discriminator.
+        """
         sp_a = _sp_with_work_item_scope(
             workspace, create_user, project, name="forge-a"
         )
@@ -850,10 +872,112 @@ class TestClientSuppliedCreatedByIgnored:
             "requesting human — the request.data.get('created_by') override "
             "is back at the comment-create site."
         )
-        assert comment.actor_id == create_user.pk, (
-            "v1 stamped the spoof target on the comment's actor_id — the "
-            "second attribution column read from request.data.get('created_by') "
-            "is back."
-        )
+        # The ``actor_id`` assertion is kept as an intent check: the comment
+        # view's second overwrite site (``issue_comment.actor_id = ...`` at
+        # ``api/views/issue.py:1671``) used to read the same override. Note
+        # that ``save(update_fields=["created_at", "created_by"])`` at
+        # ``api/views/issue.py:1672`` never persists ``actor``, so this
+        # assertion does **not** flip on a reverted run — the serializer
+        # has already set ``actor`` to the real actor via
+        # ``serializer.save(..., actor=actor_for_request(request))``. It is
+        # an invariant the next reader can rely on, not a discriminator.
+        assert comment.actor_id == create_user.pk
         assert comment.created_by_id != other_human.pk
         assert comment.actor_id != other_human.pk
+
+    def test_human_work_item_patch_keeps_owner_with_client_supplied_created_by(
+        self, workspace, project, create_user, other_human, session_client
+    ):
+        """Update path: the serializer is the only guard on ``PATCH`` —
+        the view does not re-stamp ``created_by`` after ``serializer.save()``
+        there, and ``BaseModel.save`` only re-stamps on insert
+        (``self._state.adding``).
+
+        With the read-only entry removed (the brief's "defence-in-depth"
+        framing), a human PATCH with a foreign ``created_by`` reassigns
+        the existing row's owner; verified independently by the r1
+        reviewer. This test discriminates that exact shape.
+        """
+        # Seed with ``disable_auto_set_user=True`` — outside a request,
+        # ``BaseModel.save`` would otherwise null ``created_by``.
+        issue = Issue(
+            name="human-original",
+            project_id=project.id,
+            workspace_id=project.workspace_id,
+            created_by_id=create_user.pk,
+        )
+        issue.save(disable_auto_set_user=True)
+        issue.refresh_from_db()
+        assert issue.created_by_id == create_user.pk
+
+        response = session_client.patch(
+            work_item_detail_url(workspace.slug, project.id, issue.id),
+            {
+                "name": "human-renamed",
+                "created_by": str(other_human.pk),
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK, response.data
+
+        issue.refresh_from_db()
+        assert issue.created_by_id == create_user.pk, (
+            "PATCH reassigned the owner to the spoof uuid. The serializer's "
+            "read_only_fields entry is the only thing stopping this on the "
+            "update path — the view's overwrite is create-only."
+        )
+        assert issue.created_by_id != other_human.pk
+        # Sanity: the other (legitimate) field still updates.
+        assert issue.name == "human-renamed"
+
+    def test_sp_work_item_patch_keeps_owner_with_client_supplied_created_by(
+        self, workspace, project, create_user
+    ):
+        """SP update path: SP-A PATCHing its own bot's row with a foreign
+        ``created_by`` (SP-B's bot) must not hand ownership to SP-B — the
+        authz step on every subsequent write would then match SP-B, not
+        the actual owner.
+
+        Same shape as the human PATCH test: the serializer is the only
+        gate on the update path. SP-A's POST goes through the view fix
+        (which stamps the bot), so the seed row starts correctly owned
+        by sp_a's bot; the PATCH is then the discriminator.
+        """
+        sp_a = _sp_with_work_item_scope(
+            workspace, create_user, project, name="patch-a"
+        )
+        sp_b = _sp_with_work_item_scope(
+            workspace, create_user, project, name="patch-b"
+        )
+
+        created = client_for(sp_a).post(
+            work_item_url(workspace.slug, project.id),
+            {"name": "sp-a-original"},
+            format="json",
+        )
+        assert created.status_code == status.HTTP_201_CREATED, created.data
+        issue = Issue.objects.get(project=project, name="sp-a-original")
+        sp_a_bot = sp_a.ensure_bot_user()
+        assert issue.created_by_id == sp_a_bot.pk
+
+        sp_b_bot = sp_b.ensure_bot_user()
+
+        response = client_for(sp_a).patch(
+            work_item_detail_url(workspace.slug, project.id, issue.id),
+            {
+                "name": "sp-a-renamed",
+                "created_by": str(sp_b_bot.pk),
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK, response.data
+
+        issue.refresh_from_db()
+        assert issue.created_by_id == sp_a_bot.pk, (
+            "PATCH reassigned the row to sp_b's bot. With ownership now "
+            "under sp_b_bot, member-tier SP would have been granted write "
+            "access to a row sp_b never created — that is the exact gap "
+            "the read_only_fields entry closes."
+        )
+        assert issue.created_by_id != sp_b_bot.pk
+        assert issue.name == "sp-a-renamed"

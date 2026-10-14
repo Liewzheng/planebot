@@ -70,13 +70,28 @@ class IssueSerializer(BaseSerializer):
 
     class Meta:
         model = Issue
-        # Defence-in-depth: ``created_by`` is also pinned server-side in the
-        # view (M48); the v1 write path overwrites ``created_by`` *after*
-        # ``serializer.save()`` from ``request.data``, so a ``read_only``
-        # declaration here does not, by itself, close the gap. The serializer
-        # write would still be the row's initial value before the view's
-        # overwrite, which is why the view's site is the fix and this entry
-        # only narrows what the serializer hands back on ``save()``.
+        # Load-bearing on the v1 *update* path. ``created_by`` is an
+        # authorization input (member-tier SPs may only mutate rows whose
+        # ``created_by`` is their own bot — see M40), so a client that can
+        # put a foreign uuid into this column on an existing row can hand
+        # ownership to anyone:
+        #
+        # * ``IssueDetailAPIEndpoint.patch`` runs ``IssueSerializer(issue,
+        #   data=request.data, partial=True)`` then ``serializer.save()`` and
+        #   there is no later ``created_by`` overwrite — none of the five v1
+        #   write sites the M48 view fix touches is on this path.
+        # * ``IssueDetailAPIEndpoint.put`` is the upsert shape (currently
+        #   unrouted, but the view's PUT handler still binds to it when an
+        #   external id/source pair matches an existing row).
+        # * ``api/views/intake.py`` reuses this serializer in the intake
+        #   accept/update flow at the same ``IssueSerializer(issue, ...,
+        #   partial=True)`` shape.
+        #
+        # ``BaseModel.save`` (``db/models/base.py``) re-stamps ``created_by``
+        # only when ``self._state.adding``, so the view's overwrite is what
+        # closes the create path; on update, the serializer is the only
+        # guard. Removing this entry would let ``PATCH``/``PUT`` reassign
+        # the owner of an existing row.
         read_only_fields = [
             "id",
             "workspace",
