@@ -31,6 +31,10 @@ from plane.db.models import Intake, IntakeIssue, Issue, Project, ProjectMember, 
 from plane.utils.host import base_host
 from plane.utils.content_validator import validate_html_content
 from .base import BaseAPIView
+from plane.service_principals.attribution import (
+    actor_id_for_request,
+    sp_from_request,
+)
 from plane.db.models.intake import SourceType
 from plane.utils.openapi import (
     intake_docs,
@@ -50,6 +54,47 @@ from plane.utils.openapi import (
     INVALID_REQUEST_RESPONSE,
     DELETED_RESPONSE,
 )
+
+
+def _acting_intake_project_member(request, slug, project_id):
+    """Project membership for the *acting* principal of ``request``.
+
+    A human caller: the legacy ``ProjectMember.objects.get(member=...)``
+    row, byte-for-byte. A service-principal caller: ``None`` — the authz
+    chain has already authorized (or denied) the request in
+    ``check_permissions``, so the handler must not re-key off
+    ``request.user`` (the SP's human owner) or it would 404 a write the
+    chain approved. Mirrors the rationale behind
+    :func:`issue.request_has_issue_permission`.
+    """
+    if sp_from_request(request) is not None:
+        return None
+    return ProjectMember.objects.get(
+        workspace__slug=slug,
+        project_id=project_id,
+        member=request.user,
+        is_active=True,
+    )
+
+
+def _acting_can_admin_or_own(request, *, slug, project_id, own_id, actor_id):
+    """The intake DELETE's legacy "only admin or creator can delete" check,
+    keyed on the acting principal rather than ``request.user``.
+
+    A human: same logic as today (project admin role OR they own the row
+    via ``own_id``). A service principal: ``True`` — the chain has
+    authorized ``intake:delete`` (ADMIN-tier) on the row, so the legacy
+    owner-keyed gate must not become a second, principal-wrong deny.
+    """
+    if sp_from_request(request) is not None:
+        return True
+    return own_id == actor_id or ProjectMember.objects.filter(
+        workspace__slug=slug,
+        project_id=project_id,
+        member=request.user,
+        role=20,
+        is_active=True,
+    ).exists()
 
 
 class IntakeIssueListCreateAPIEndpoint(BaseAPIView):
@@ -214,7 +259,7 @@ class IntakeIssueListCreateAPIEndpoint(BaseAPIView):
         issue_activity.delay(
             type="issue.activity.created",
             requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue.id),
             project_id=str(project_id),
             current_instance=None,
@@ -238,6 +283,19 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
     use_read_replica = True
 
     filterset_fields = ["status"]
+
+    def get_authz_resource(self, request, action):
+        # The URL carries the *issue* id; the row a PATCH owns is the intake
+        # issue linked to it (intake DELETE needs ADMIN, which the engine
+        # exempts from the ownership step).
+        issue_id = self.kwargs.get("issue_id")
+        if not issue_id:
+            return None
+        return IntakeIssue.objects.filter(
+            issue_id=issue_id,
+            project_id=self.kwargs.get("project_id"),
+            workspace__slug=self.kwargs.get("slug"),
+        ).first()
 
     def get_queryset(self):
         intake = Intake.objects.filter(
@@ -334,16 +392,16 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
             intake_id=intake.id,
         )
 
-        # Get the project member
-        project_member = ProjectMember.objects.get(
-            workspace__slug=slug,
-            project_id=project_id,
-            member=request.user,
-            is_active=True,
-        )
+        # Get the project member for the *acting* principal — the authz chain
+        # already authorized or denied the request, so for a service
+        # principal we skip the legacy "is the caller a project member?"
+        # check, which would key off ``request.user`` (the SP's human owner)
+        # and 404 a write the chain approved. (PLANE-111 class for
+        # intake; mirrors :func:`issue.request_has_issue_permission`.)
+        project_member = _acting_intake_project_member(request, slug, project_id)
 
         # Only project members admins and created_by users can access this endpoint
-        if project_member.role <= 5 and str(intake_issue.created_by_id) != str(request.user.id):
+        if project_member is not None and project_member.role <= 5 and str(intake_issue.created_by_id) != str(actor_id_for_request(request)):
             return Response(
                 {"error": "You cannot edit intake work items"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -380,7 +438,7 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
             ).get(pk=issue_id, workspace__slug=slug, project_id=project_id)
 
             # Only allow guests to edit name and description
-            if project_member.role <= 5:
+            if project_member is not None and project_member.role <= 5:
                 description_json = issue_data.get("description") or issue_data.get("description_json") or {}
                 issue_data = {
                     "name": issue_data.get("name", issue.name),
@@ -393,8 +451,12 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
             if not issue_serializer.is_valid():
                 return Response(issue_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # Only project admins and members can edit intake issue attributes
-        if project_member.role > 15:
+        # Only project admins and members can edit intake issue attributes. A
+        # service principal reaches here because the chain has authorized
+        # it (``role_cap >= MEMBER`` for the UPDATE grant, plus the
+        # ownership step in step 3.5), so ``project_member is None`` (the
+        # SP branch) is treated as equivalent to ``role > 15``.
+        if project_member is None or project_member.role > 15:
             intake_serializer = IntakeIssueUpdateSerializer(intake_issue, data=request.data, partial=True)
 
             if not intake_serializer.is_valid():
@@ -408,7 +470,7 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
             issue_activity.delay(
                 type="issue.activity.updated",
                 requested_data=requested_data,
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue_id),
                 project_id=str(project_id),
                 current_instance=json.dumps(
@@ -429,7 +491,7 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
             issue_activity.delay(
                 type="intake.activity.created",
                 requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue_id),
                 project_id=str(project_id),
                 current_instance=current_instance,
@@ -484,14 +546,12 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
         if intake_issue.status in [-2, -1, 0, 2]:
             # Delete the issue also
             issue = Issue.objects.filter(workspace__slug=slug, project_id=project_id, pk=issue_id).first()
-            if issue.created_by_id != request.user.id and (
-                not ProjectMember.objects.filter(
-                    workspace__slug=slug,
-                    member=request.user,
-                    role=20,
-                    project_id=project_id,
-                    is_active=True,
-                ).exists()
+            if not _acting_can_admin_or_own(
+                request,
+                slug=slug,
+                project_id=project_id,
+                own_id=issue.created_by_id,
+                actor_id=actor_id_for_request(request),
             ):
                 return Response(
                     {"error": "Only admin or creator can delete the work item"},

@@ -36,11 +36,15 @@ from plane.db.models import (
     ModuleIssue,
     ModuleLink,
     Project,
-    ProjectMember,
     UserFavorite,
 )
 
 from .base import BaseAPIView
+from .issue import request_can_admin_or_own
+from plane.service_principals.attribution import (
+    actor_for_request,
+    actor_id_for_request,
+)
 from plane.bgtasks.webhook_task import model_activity
 from plane.utils.host import base_host
 from plane.utils.order_queryset import ISSUE_ORDER_BY_ALLOWLIST, MODULE_ORDER_BY_ALLOWLIST, sanitize_order_by
@@ -235,7 +239,7 @@ class ModuleListCreateAPIEndpoint(BaseAPIView):
                 model_id=str(serializer.instance.id),
                 requested_data=request.data,
                 current_instance=None,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
@@ -340,6 +344,10 @@ class ModuleDetailAPIEndpoint(BaseAPIView):
     serializer_class = ModuleSerializer
     webhook_event = "module"
     use_read_replica = True
+
+    # The row a PATCH owns (module DELETE needs ADMIN, which the engine
+    # exempts from the ownership step).
+    authz_resource_model = Module
 
     def get_queryset(self):
         return (
@@ -497,7 +505,7 @@ class ModuleDetailAPIEndpoint(BaseAPIView):
                 model_id=str(serializer.instance.id),
                 requested_data=request.data,
                 current_instance=current_instance,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
@@ -550,14 +558,12 @@ class ModuleDetailAPIEndpoint(BaseAPIView):
         Only admins or the module creator can perform this action.
         """
         module = Module.objects.get(workspace__slug=slug, project_id=project_id, pk=pk)
-        if module.created_by_id != request.user.id and (
-            not ProjectMember.objects.filter(
-                workspace__slug=slug,
-                member=request.user,
-                role=20,
-                project_id=project_id,
-                is_active=True,
-            ).exists()
+        if not request_can_admin_or_own(
+            request,
+            slug=slug,
+            project_id=project_id,
+            own_id=module.created_by_id,
+            actor_id=actor_id_for_request(request),
         ):
             return Response(
                 {"error": "Only admin or creator can delete the module"},
@@ -574,7 +580,7 @@ class ModuleDetailAPIEndpoint(BaseAPIView):
                     "issues": [str(issue_id) for issue_id in module_issues],
                 }
             ),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=None,
             project_id=str(project_id),
             current_instance=json.dumps({"module_name": str(module.name)}),
@@ -759,8 +765,8 @@ class ModuleIssueListCreateAPIEndpoint(BaseAPIView):
                         issue_id=issue,
                         project_id=project_id,
                         workspace=module.workspace,
-                        created_by=request.user,
-                        updated_by=request.user,
+                        created_by=actor_for_request(request),
+                        updated_by=actor_for_request(request),
                     )
                 )
 
@@ -772,7 +778,7 @@ class ModuleIssueListCreateAPIEndpoint(BaseAPIView):
         issue_activity.delay(
             type="module.activity.created",
             requested_data=json.dumps({"modules_list": str(issues)}),
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=None,
             project_id=str(self.kwargs.get("project_id", None)),
             current_instance=json.dumps(
@@ -939,7 +945,7 @@ class ModuleIssueDetailAPIEndpoint(BaseAPIView):
         issue_activity.delay(
             type="module.activity.deleted",
             requested_data=json.dumps({"module_id": str(module_id), "issues": [str(module_issue.issue_id)]}),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue_id),
             project_id=str(project_id),
             current_instance=json.dumps({"module_name": module_name}),

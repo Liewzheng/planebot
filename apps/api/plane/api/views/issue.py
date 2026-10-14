@@ -102,6 +102,12 @@ from plane.utils.host import base_host
 from plane.utils.issue_relation_mapper import get_actual_relation
 from plane.bgtasks.webhook_task import model_activity
 from plane.app.permissions import ROLE
+from plane.core.authz import Action
+from plane.service_principals.attribution import (
+    actor_for_request,
+    actor_id_for_request,
+    sp_from_request,
+)
 from plane.utils.openapi import (
     work_item_docs,
     work_item_relation_docs,
@@ -185,6 +191,68 @@ def user_has_issue_permission(user_id, project_id, issue=None, allowed_roles=Non
         qs = qs.filter(role__in=allowed_roles)
 
     return qs.exists()
+
+
+def request_has_issue_permission(request, project_id, issue=None, allowed_roles=None, allow_creator=True):
+    """:func:`user_has_issue_permission` for the acting principal of ``request``.
+
+    A human resolves to ``request.user`` and keeps the membership model
+    byte-for-byte. A service principal does **not** consult the owner's
+    membership: the authz chain already ran in ``check_permissions``, and for
+    these endpoints it evaluates ``authorize()`` against the concrete row — at
+    member tier it requires the SP's own bot user to have created the row, and
+    for a ``create`` it requires the project grant. Re-applying the membership
+    model here would gate the request on the SP **owner's** project
+    membership, the wrong principal for a ``plane_svc_`` token, and would deny
+    an SP its own attachment whenever the owner is not a project member.
+
+    The chain is the stricter gate for an SP, and it has already run (and
+    denied, if it denied) before any handler reaches this helper, so the SP
+    branch is a pass-through and never a widening.
+    """
+    if sp_from_request(request) is not None:
+        return True
+    return user_has_issue_permission(
+        request.user.id,
+        project_id=project_id,
+        issue=issue,
+        allowed_roles=allowed_roles,
+        allow_creator=allow_creator,
+    )
+
+
+def request_can_admin_or_own(request, *, slug, project_id, own_id, actor_id):
+    """The legacy "only admin or creator can delete" check, keyed on the
+    *acting* principal rather than ``request.user`` (M41 r2 sweep — review
+    finding P2-2).
+
+    A human: same logic as today — they own the row (the project-typed
+    ``own_id`` column equals their id) or hold the project admin role. A
+    service principal: ``True`` — the authz chain has already evaluated
+    the action in :class:`AIScopeEnforcementMixin.check_permissions`.
+    The fact that this is safe for the SP branch depends on the resource
+    type's engine tier and must be read from ``plane.core.authz.actions``
+    rather than assumed — the ``M41 r2`` reviewer verified that
+    ``work_item.delete`` / ``comment.delete`` / ``sticky.delete`` /
+    ``page.delete`` are MEMBER(15) and ownership is already gated at
+    step 3.5 (so an SP reaching the handler can only act on a row it
+    owns); ``cycle.delete`` / ``module.delete`` / ``intake.delete`` are
+    ADMIN(20) and ownership-exempt; ``issue.delete`` row identity is
+    ``Issue.created_by_id`` everywhere. Re-running the owner-keyed
+    membership check on ``request.user`` would consult the SP **owner's**
+    ProjectMember row, the wrong principal for a ``plane_svc_`` token,
+    and would 403 a delete the chain approved. Mirrors
+    :func:`request_has_issue_permission`.
+    """
+    if sp_from_request(request) is not None:
+        return True
+    return own_id == actor_id or ProjectMember.objects.filter(
+        workspace__slug=slug,
+        project_id=project_id,
+        member=request.user,
+        role=20,
+        is_active=True,
+    ).exists()
 
 
 class WorkspaceIssueAPIEndpoint(BaseAPIView):
@@ -548,14 +616,14 @@ class IssueListCreateAPIEndpoint(BaseAPIView):
             # Refetch the issue
             issue = Issue.objects.filter(workspace__slug=slug, project_id=project_id, pk=serializer.data["id"]).first()
             issue.created_at = request.data.get("created_at", timezone.now())
-            issue.created_by_id = request.data.get("created_by", request.user.id)
+            issue.created_by_id = request.data.get("created_by", actor_id_for_request(request))
             issue.save(update_fields=["created_at", "created_by"])
 
             # Track the issue
             issue_activity.delay(
                 type="issue.activity.created",
                 requested_data=json.dumps(self.request.data, cls=DjangoJSONEncoder),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(serializer.data.get("id", None)),
                 project_id=str(project_id),
                 current_instance=None,
@@ -570,7 +638,7 @@ class IssueListCreateAPIEndpoint(BaseAPIView):
                 model_id=str(serializer.data["id"]),
                 requested_data=request.data,
                 current_instance=None,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
@@ -583,11 +651,47 @@ class IssueDetailAPIEndpoint(BaseAPIView):
 
     resource_type = "work_item"
 
+    # The row a PATCH/DELETE owns. ``PUT`` is an upsert keyed off the body's
+    # external id/source rather than the URL, so both hooks below are
+    # overridden for it.
+    authz_resource_model = Issue
+
     model = Issue
     webhook_event = "issue"
     permission_classes = [ProjectEntityPermission]
     serializer_class = IssueSerializer
     use_read_replica = True
+
+    def _upsert_target(self, request):
+        """The issue a ``PUT`` would update, or ``None`` when it creates one."""
+        cached = getattr(self, "_authz_upsert_target", _UNSET_SENTINEL)
+        if cached is not _UNSET_SENTINEL:
+            return cached
+        target = None
+        external_id = request.data.get("external_id")
+        external_source = request.data.get("external_source")
+        if external_id and external_source:
+            target = Issue.objects.filter(
+                project_id=self.kwargs.get("project_id"),
+                workspace__slug=self.kwargs.get("slug"),
+                external_id=external_id,
+                external_source=external_source,
+            ).first()
+        self._authz_upsert_target = target
+        return target
+
+    def get_authz_action(self, request, action):
+        # A ``PUT`` that matches no existing issue is a create, not an update:
+        # there is no row to own and the create tier applies.
+        if request.method == "PUT" and self._upsert_target(request) is None:
+            return Action.CREATE
+        return action
+
+    def get_authz_resource(self, request, action):
+        pk = self.kwargs.get("pk")
+        if pk:
+            return Issue.objects.filter(pk=pk).first()
+        return self._upsert_target(request)
 
     def get_queryset(self):
         return (
@@ -718,7 +822,7 @@ class IssueDetailAPIEndpoint(BaseAPIView):
                     issue_activity.delay(
                         type="issue.activity.updated",
                         requested_data=requested_data,
-                        actor_id=str(request.user.id),
+                        actor_id=str(actor_id_for_request(request)),
                         issue_id=str(issue.id),
                         project_id=str(project_id),
                         current_instance=current_instance,
@@ -732,7 +836,7 @@ class IssueDetailAPIEndpoint(BaseAPIView):
                         model_id=str(issue.id),
                         requested_data=request.data,
                         current_instance=current_instance,
-                        actor_id=request.user.id,
+                        actor_id=actor_id_for_request(request),
                         slug=slug,
                         origin=base_host(request=request, is_app=True),
                     )
@@ -772,13 +876,13 @@ class IssueDetailAPIEndpoint(BaseAPIView):
                     # the issue with the provided data, else return with the
                     # default states given.
                     issue.created_at = request.data.get("created_at", timezone.now())
-                    issue.created_by_id = request.data.get("created_by", request.user.id)
+                    issue.created_by_id = request.data.get("created_by", actor_id_for_request(request))
                     issue.save(update_fields=["created_at", "created_by"])
 
                     issue_activity.delay(
                         type="issue.activity.created",
                         requested_data=json.dumps(self.request.data, cls=DjangoJSONEncoder),
-                        actor_id=str(request.user.id),
+                        actor_id=str(actor_id_for_request(request)),
                         issue_id=str(serializer.data.get("id", None)),
                         project_id=str(project_id),
                         current_instance=None,
@@ -792,7 +896,7 @@ class IssueDetailAPIEndpoint(BaseAPIView):
                         model_id=str(serializer.data["id"]),
                         requested_data=request.data,
                         current_instance=None,
-                        actor_id=request.user.id,
+                        actor_id=actor_id_for_request(request),
                         slug=slug,
                         origin=base_host(request=request, is_app=True),
                     )
@@ -865,7 +969,7 @@ class IssueDetailAPIEndpoint(BaseAPIView):
             issue_activity.delay(
                 type="issue.activity.updated",
                 requested_data=requested_data,
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(pk),
                 project_id=str(project_id),
                 current_instance=current_instance,
@@ -879,7 +983,7 @@ class IssueDetailAPIEndpoint(BaseAPIView):
                 model_id=str(pk),
                 requested_data=request.data,
                 current_instance=current_instance,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
@@ -906,14 +1010,12 @@ class IssueDetailAPIEndpoint(BaseAPIView):
         Only admins or the item creator can perform this action.
         """
         issue = Issue.objects.get(workspace__slug=slug, project_id=project_id, pk=pk)
-        if issue.created_by_id != request.user.id and (
-            not ProjectMember.objects.filter(
-                workspace__slug=slug,
-                member=request.user,
-                role=20,
-                project_id=project_id,
-                is_active=True,
-            ).exists()
+        if not request_can_admin_or_own(
+            request,
+            slug=slug,
+            project_id=project_id,
+            own_id=issue.created_by_id,
+            actor_id=actor_id_for_request(request),
         ):
             return Response(
                 {"error": "Only admin or creator can delete the work item"},
@@ -924,7 +1026,7 @@ class IssueDetailAPIEndpoint(BaseAPIView):
         issue_activity.delay(
             type="issue.activity.deleted",
             requested_data=json.dumps({"issue_id": str(pk)}),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(pk),
             project_id=str(project_id),
             current_instance=current_instance,
@@ -1063,6 +1165,8 @@ class LabelListCreateAPIEndpoint(BaseAPIView):
 
 class LabelDetailAPIEndpoint(LabelListCreateAPIEndpoint):
     """Label Detail Endpoint"""
+
+    authz_resource_model = Label
 
     serializer_class = LabelSerializer
     model = Label
@@ -1260,7 +1364,7 @@ class IssueLinkListCreateAPIEndpoint(BaseAPIView):
             serializer.save(project_id=project_id, issue_id=issue_id)
             crawl_work_item_link_title.delay(serializer.instance.id, serializer.instance.url)
             link = IssueLink.objects.get(pk=serializer.instance.id)
-            link.created_by_id = request.data.get("created_by", request.user.id)
+            link.created_by_id = request.data.get("created_by", actor_id_for_request(request))
             link.save(update_fields=["created_by"])
             issue_activity.delay(
                 type="link.activity.created",
@@ -1280,6 +1384,10 @@ class IssueLinkDetailAPIEndpoint(BaseAPIView):
     """Issue Link Detail Endpoint"""
 
     resource_type = "work_item"
+
+    # The link row is the write target; ownership reads its creator (the
+    # bot for an SP write).
+    authz_resource_model = IssueLink
 
     permission_classes = [ProjectEntityPermission]
 
@@ -1378,7 +1486,7 @@ class IssueLinkDetailAPIEndpoint(BaseAPIView):
             issue_activity.delay(
                 type="link.activity.updated",
                 requested_data=requested_data,
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue_id),
                 project_id=str(project_id),
                 current_instance=current_instance,
@@ -1411,7 +1519,7 @@ class IssueLinkDetailAPIEndpoint(BaseAPIView):
         issue_activity.delay(
             type="link.activity.deleted",
             requested_data=json.dumps({"link_id": str(pk)}),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue_id),
             project_id=str(project_id),
             current_instance=current_instance,
@@ -1545,12 +1653,12 @@ class IssueCommentListCreateAPIEndpoint(BaseAPIView):
 
         serializer = IssueCommentCreateSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(project_id=project_id, issue_id=issue_id, actor=request.user)
+            serializer.save(project_id=project_id, issue_id=issue_id, actor=actor_for_request(request))
             issue_comment = IssueComment.objects.get(pk=serializer.instance.id)
             # Update the created_at and the created_by and save the comment
             issue_comment.created_at = request.data.get("created_at", timezone.now())
-            issue_comment.created_by_id = request.data.get("created_by", request.user.id)
-            issue_comment.actor_id = request.data.get("created_by", request.user.id)
+            issue_comment.created_by_id = request.data.get("created_by", actor_id_for_request(request))
+            issue_comment.actor_id = request.data.get("created_by", actor_id_for_request(request))
             issue_comment.save(update_fields=["created_at", "created_by"])
 
             issue_activity.delay(
@@ -1569,7 +1677,7 @@ class IssueCommentListCreateAPIEndpoint(BaseAPIView):
                 model_id=str(serializer.instance.id),
                 requested_data=request.data,
                 current_instance=None,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
@@ -1583,6 +1691,11 @@ class IssueCommentDetailAPIEndpoint(BaseAPIView):
     """Work Item Comment Detail Endpoint"""
 
     resource_type = "comment"
+
+    # Ownership is read from the comment row's ``created_by``. The row is
+    # re-fetched from the DB by the mixin, never reused from the in-memory
+    # instance ``IssueComment.save()`` scrubs.
+    authz_resource_model = IssueComment
 
     serializer_class = IssueCommentSerializer
     model = IssueComment
@@ -1698,7 +1811,7 @@ class IssueCommentDetailAPIEndpoint(BaseAPIView):
             issue_activity.delay(
                 type="comment.activity.updated",
                 requested_data=requested_data,
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue_id),
                 project_id=str(project_id),
                 current_instance=current_instance,
@@ -1710,7 +1823,7 @@ class IssueCommentDetailAPIEndpoint(BaseAPIView):
                 model_id=str(pk),
                 requested_data=request.data,
                 current_instance=current_instance,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
@@ -1746,7 +1859,7 @@ class IssueCommentDetailAPIEndpoint(BaseAPIView):
         """
         issue_comment = IssueComment.objects.get(workspace__slug=slug, project_id=project_id, issue_id=issue_id, pk=pk)
 
-        is_creator = issue_comment.actor_id == request.user.id
+        is_creator = issue_comment.actor_id == actor_id_for_request(request)
         is_project_member = ProjectMember.objects.filter(
             member=request.user,
             workspace__slug=slug,
@@ -1778,7 +1891,7 @@ class IssueCommentDetailAPIEndpoint(BaseAPIView):
         issue_activity.delay(
             type="comment.activity.deleted",
             requested_data=json.dumps({"comment_id": str(pk)}),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue_id),
             project_id=str(project_id),
             current_instance=current_instance,
@@ -2000,8 +2113,8 @@ class IssueAttachmentListCreateAPIEndpoint(BaseAPIView):
         """
         issue = Issue.objects.get(pk=issue_id, workspace__slug=slug, project_id=project_id)
         # if the user is creator or admin,member then allow the upload
-        if not user_has_issue_permission(
-            request.user.id,
+        if not request_has_issue_permission(
+            request,
             project_id=project_id,
             issue=issue,
             allowed_roles=[ROLE.ADMIN.value, ROLE.MEMBER.value, ROLE.GUEST.value],
@@ -2073,7 +2186,7 @@ class IssueAttachmentListCreateAPIEndpoint(BaseAPIView):
             asset=asset_key,
             size=size_limit,
             workspace_id=workspace.id,
-            created_by=request.user,
+            created_by=actor_for_request(request),
             issue_id=issue_id,
             project_id=project_id,
             entity_type=FileAsset.EntityTypeContext.ISSUE_ATTACHMENT,
@@ -2135,6 +2248,8 @@ class IssueAttachmentDetailAPIEndpoint(BaseAPIView):
 
     resource_type = "work_item"
 
+    authz_resource_model = FileAsset
+
     serializer_class = IssueAttachmentSerializer
     model = FileAsset
     use_read_replica = True
@@ -2163,8 +2278,8 @@ class IssueAttachmentDetailAPIEndpoint(BaseAPIView):
         """
         issue = Issue.objects.get(pk=issue_id, workspace__slug=slug, project_id=project_id)
         # if the request user is creator or admin then delete the attachment
-        if not user_has_issue_permission(
-            request.user.id,
+        if not request_has_issue_permission(
+            request,
             project_id=project_id,
             issue=issue,
             allowed_roles=[ROLE.ADMIN.value, ROLE.MEMBER.value, ROLE.GUEST.value],
@@ -2183,7 +2298,7 @@ class IssueAttachmentDetailAPIEndpoint(BaseAPIView):
         issue_activity.delay(
             type="attachment.activity.deleted",
             requested_data=None,
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=str(issue_id),
             project_id=str(project_id),
             current_instance=None,
@@ -2236,8 +2351,8 @@ class IssueAttachmentDetailAPIEndpoint(BaseAPIView):
         Retrieve details of a specific attachment.
         """
         # if the user is part of the project then allow the download
-        if not user_has_issue_permission(
-            request.user.id,
+        if not request_has_issue_permission(
+            request,
             project_id=project_id,
             issue=None,
             allowed_roles=None,
@@ -2301,8 +2416,8 @@ class IssueAttachmentDetailAPIEndpoint(BaseAPIView):
 
         issue = Issue.objects.get(pk=issue_id, workspace__slug=slug, project_id=project_id)
         # if the user is creator or admin then allow the upload
-        if not user_has_issue_permission(
-            request.user.id,
+        if not request_has_issue_permission(
+            request,
             project_id=project_id,
             issue=issue,
             allowed_roles=[ROLE.ADMIN.value, ROLE.MEMBER.value, ROLE.GUEST.value],
@@ -2321,7 +2436,7 @@ class IssueAttachmentDetailAPIEndpoint(BaseAPIView):
             issue_activity.delay(
                 type="attachment.activity.created",
                 requested_data=None,
-                actor_id=str(self.request.user.id),
+                actor_id=str(actor_id_for_request(self.request)),
                 issue_id=str(self.kwargs.get("issue_id", None)),
                 project_id=str(self.kwargs.get("project_id", None)),
                 current_instance=json.dumps(serializer.data, cls=DjangoJSONEncoder),
@@ -2332,7 +2447,7 @@ class IssueAttachmentDetailAPIEndpoint(BaseAPIView):
 
             # Update the attachment
             issue_attachment.is_uploaded = True
-            issue_attachment.created_by = request.user
+            issue_attachment.created_by = actor_for_request(request)
 
         # Get the storage metadata
         if not issue_attachment.storage_metadata:
@@ -2673,8 +2788,8 @@ class IssueRelationListCreateAPIEndpoint(BaseAPIView):
                     relation_type=actual_relation,
                     project_id=project_id,
                     workspace_id=project.workspace_id,
-                    created_by=request.user,
-                    updated_by=request.user,
+                    created_by=actor_for_request(request),
+                    updated_by=actor_for_request(request),
                 )
                 for issue in issues
             ],
@@ -2685,7 +2800,7 @@ class IssueRelationListCreateAPIEndpoint(BaseAPIView):
         issue_activity.delay(
             type="issue_relation.activity.created",
             requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue_id),
             project_id=str(project_id),
             current_instance=None,

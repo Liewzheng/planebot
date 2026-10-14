@@ -45,12 +45,19 @@ from plane.utils.openapi import (
     asset_docs,
 )
 from plane.utils.exception_logger import log_exception
+from plane.service_principals.attribution import actor_for_request
 
 
 class UserAssetEndpoint(BaseAPIView):
     """This endpoint is used to upload user profile images."""
 
     resource_type = "asset"
+
+    # The row a PATCH owns: a member-tier asset UPDATE is ownership-scoped
+    # (asset DELETE needs ADMIN and is exempt), so the FileAsset row must be
+    # supplied rather than left fail-closed.
+    authz_resource_model = FileAsset
+    authz_resource_lookup = "asset_id"
 
     def asset_delete(self, asset_id):
         asset = FileAsset.objects.filter(id=asset_id).first()
@@ -159,7 +166,7 @@ class UserAssetEndpoint(BaseAPIView):
             asset=asset_key,
             size=size_limit,
             user=request.user,
-            created_by=request.user,
+            created_by=actor_for_request(request),
             entity_type=entity_type,
         )
 
@@ -252,6 +259,9 @@ class UserServerAssetEndpoint(BaseAPIView):
 
     resource_type = "asset"
 
+    authz_resource_model = FileAsset
+    authz_resource_lookup = "asset_id"
+
     def asset_delete(self, asset_id):
         asset = FileAsset.objects.filter(id=asset_id).first()
         if asset is None:
@@ -334,7 +344,7 @@ class UserServerAssetEndpoint(BaseAPIView):
             asset=asset_key,
             size=size_limit,
             user=request.user,
-            created_by=request.user,
+            created_by=actor_for_request(request),
             entity_type=entity_type,
         )
 
@@ -410,6 +420,10 @@ class GenericAssetEndpoint(BaseAPIView):
     """This endpoint is used to upload generic assets that can be later bound to entities."""
 
     resource_type = "asset"
+
+    # A member-tier asset PATCH is ownership-scoped, so the row is needed.
+    authz_resource_model = FileAsset
+    authz_resource_lookup = "asset_id"
 
     # The workspace is taken straight from the URL slug, so every method must
     # verify the caller is an active member of that workspace. Without this the
@@ -635,7 +649,7 @@ class GenericAssetEndpoint(BaseAPIView):
             size=size_limit,
             workspace_id=workspace.id,
             project_id=project_id,
-            created_by=request.user,
+            created_by=actor_for_request(request),
             external_id=external_id,
             external_source=external_source,
             entity_type=entity_type or FileAsset.EntityTypeContext.ISSUE_ATTACHMENT,

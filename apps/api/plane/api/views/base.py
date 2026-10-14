@@ -104,6 +104,45 @@ class AIScopeEnforcementMixin:
     #: reviewer-m8 P2-4 surface — see ``apps/api/plane/api/views/user.py``).
     resource_type: str | None = None
 
+    #: Model of the row an ``update``/``delete`` acts on, and the key in
+    #: ``self.kwargs`` that carries that row's id. The mixin loads the row and
+    #: hands it to ``authorize()`` so the engine's per-resource ownership step
+    #: (M40) can compare the row's creator with the SP's bot user. Left
+    #: ``None`` on collection endpoints and on resources the chain cannot
+    #: evaluate ownership for; the row is then ``None`` and a member-tier
+    #: update/delete is fail-closed (never a silent skip).
+    authz_resource_model = None
+    authz_resource_lookup = "pk"
+
+    def get_authz_resource(self, request, action):
+        """The row ``authorize()`` judges ``action`` against, or ``None``.
+
+        Only called for ``update``/``delete``. The default resolves the row
+        from ``authz_resource_model`` + the URL kwarg named by
+        ``authz_resource_lookup``. Subclasses whose target row is not
+        addressable by a single URL kwarg (e.g. the work-item upsert) override
+        this. A missing row resolves to ``None``, which the engine treats as
+        fail-closed for a member-tier write.
+        """
+        model = getattr(self, "authz_resource_model", None)
+        if model is None:
+            return None
+        pk = self.kwargs.get(getattr(self, "authz_resource_lookup", "pk"))
+        if not pk:
+            return None
+        return model.objects.filter(pk=pk).first()
+
+    def get_authz_action(self, request, action):
+        """The action ``authorize()`` should evaluate for this request.
+
+        The mixin derives the action from the HTTP method, which is a sound
+        default but not always the whole truth: ``PUT`` on the work-item
+        upsert is an update when it matches an existing row and a create when
+        it does not. Views whose method does not pin the action override this;
+        the default returns ``action`` unchanged.
+        """
+        return action
+
     def get_permissions(self):
         # SP requests bypass the view's membership-based permission classes
         # (ProjectMemberPermission, WorkspaceUserPermission, …) — those
@@ -141,18 +180,28 @@ class AIScopeEnforcementMixin:
             raise PermissionDenied(
                 f"Method {request.method} is not allowed for service principals."
             )
+        action = self.get_authz_action(request, action)
 
         ctx = AuthzContext(
             workspace_slug=getattr(self, "workspace_slug", None),
             project_id=getattr(self, "project_id", None),
         )
+        # Only an update/delete has an existing row to own; read/list/create
+        # pass ``None`` (a create produces a row the creator owns by
+        # construction). The row drives both the project resolution and the
+        # engine's ownership step.
+        resource = (
+            self.get_authz_resource(request, action)
+            if action in (Action.UPDATE, Action.DELETE)
+            else None
+        )
         decision = authorize_for_view(
-            sp_principal, action, resource_type, ctx
+            sp_principal, action, resource_type, ctx, resource
         )
         enforce(decision)
 
 
-def authorize_for_view(sp_principal, action, resource_type, ctx):
+def authorize_for_view(sp_principal, action, resource_type, ctx, resource=None):
     """Thin wrapper so M8/M9 can share the authorize() invocation shape.
 
     Local imports keep the base view circular-free (engine.py imports
@@ -164,6 +213,7 @@ def authorize_for_view(sp_principal, action, resource_type, ctx):
         sp_principal,
         action,
         resource_type,
+        resource=resource,
         ctx=ctx,
     )
 

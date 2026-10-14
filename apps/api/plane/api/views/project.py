@@ -41,6 +41,11 @@ from plane.db.models import (
 from plane.bgtasks.webhook_task import model_activity, webhook_activity
 from plane.utils.exception_logger import log_exception
 from .base import BaseAPIView
+from plane.service_principals.attribution import (
+    actor_for_request,
+    actor_id_for_request,
+    sp_from_request,
+)
 from plane.utils.host import base_host
 from plane.utils.order_queryset import PROJECT_ORDER_BY_ALLOWLIST, sanitize_order_by
 from plane.api.serializers import (
@@ -74,6 +79,34 @@ from plane.utils.openapi import (
 )
 
 
+def visible_projects(request, slug):
+    """The projects ``request`` may see in workspace ``slug``.
+
+    For a human: the projects they are an active member of plus public
+    (``network=2``) ones. For a service principal: exactly the projects it
+    holds an active :class:`ProjectGrant` for. The SP branch is load-bearing —
+    ``request.user`` stays the SP's human **owner** (see
+    ``APIKeyAuthentication._authenticate_service_token``), so keying the
+    filter off the owner's ``ProjectMember`` rows would surface the owner's
+    projects, a set strictly wider than the SP's grants. A grant-enumerating
+    client then 403s on the first ungranted project it touches (PLANE-111).
+    """
+    projects = Project.objects.filter(workspace__slug=slug)
+    sp = sp_from_request(request)
+    if sp is not None:
+        return projects.filter(
+            sp_grants__service_principal=sp,
+            sp_grants__is_active=True,
+        )
+    return projects.filter(
+        Q(
+            project_projectmember__member=request.user,
+            project_projectmember__is_active=True,
+        )
+        | Q(network=2)
+    )
+
+
 class ProjectListCreateAPIEndpoint(BaseAPIView):
     """Project List and Create Endpoint"""
 
@@ -86,26 +119,8 @@ class ProjectListCreateAPIEndpoint(BaseAPIView):
     use_read_replica = True
 
     def get_queryset(self):
-        # NOTE: owner-bounded row visibility — ``self.request.user`` is
-        # the human owner for SP requests (see
-        # ``APIKeyAuthentication._authenticate_service_token``). The
-        # queryset surfaces projects the owner is a member of plus public
-        # (network=2) ones; the SP's ProjectGrant set is NOT consulted
-        # here. ``resource_type="project"`` gates the request through
-        # authorize() before the queryset runs (workspace-wide writes
-        # fail the Q4 guard on POST/PUT/PATCH/DELETE anyway), but the
-        # read scope "projects the owner can see" is wider than "projects
-        # the SP is granted into" when the two diverge — review m8 P2-1.
         return (
-            Project.objects.filter(workspace__slug=self.kwargs.get("slug"))
-            .filter(
-                Q(
-                    project_projectmember__member=self.request.user,
-                    project_projectmember__is_active=True,
-                )
-                | Q(network=2)
-            )
-            .select_related("project_lead")
+            visible_projects(self.request, self.kwargs.get("slug")).select_related("project_lead")
             .annotate(
                 is_member=Exists(
                     ProjectMember.objects.filter(
@@ -276,7 +291,7 @@ class ProjectListCreateAPIEndpoint(BaseAPIView):
                                 workspace=serializer.instance.workspace,
                                 group=state["group"],
                                 default=state.get("default", False),
-                                created_by=request.user,
+                                created_by=actor_for_request(request),
                             )
                             for state in DEFAULT_STATES
                         ]
@@ -305,7 +320,7 @@ class ProjectListCreateAPIEndpoint(BaseAPIView):
                             model_id=str(project.id),
                             requested_data=request.data,
                             current_instance=None,
-                            actor_id=request.user.id,
+                            actor_id=actor_id_for_request(request),
                             slug=slug,
                             origin=base_host(request=request, is_app=True),
                         )
@@ -362,19 +377,10 @@ class ProjectListLiteAPIEndpoint(BaseAPIView):
     use_read_replica = True
 
     def get_queryset(self):
-        # Projects the user can access: those they are an active member of, plus
-        # public (network=2) ones.
-        return (
-            Project.objects.filter(workspace__slug=self.kwargs.get("slug"))
-            .filter(
-                Q(
-                    project_projectmember__member=self.request.user,
-                    project_projectmember__is_active=True,
-                )
-                | Q(network=2)
-            )
-            .distinct()
-        )
+        # Humans see the projects they are an active member of plus public
+        # (network=2) ones; a service principal sees exactly its granted
+        # projects (see ``visible_projects``, PLANE-111).
+        return visible_projects(self.request, self.kwargs.get("slug")).distinct()
 
     @project_docs(
         operation_id="list_projects_lite",
@@ -455,14 +461,7 @@ class ProjectDetailAPIEndpoint(BaseAPIView):
 
     def get_queryset(self):
         return (
-            Project.objects.filter(workspace__slug=self.kwargs.get("slug"))
-            .filter(
-                Q(
-                    project_projectmember__member=self.request.user,
-                    project_projectmember__is_active=True,
-                )
-                | Q(network=2)
-            )
+            visible_projects(self.request, self.kwargs.get("slug"))
             .select_related("workspace", "workspace__owner", "default_assignee", "project_lead")
             .annotate(
                 is_member=Exists(
@@ -603,7 +602,7 @@ class ProjectDetailAPIEndpoint(BaseAPIView):
                     model_id=str(project.id),
                     requested_data=request.data,
                     current_instance=current_instance,
-                    actor_id=request.user.id,
+                    actor_id=actor_id_for_request(request),
                     slug=slug,
                     origin=base_host(request=request, is_app=True),
                 )
@@ -652,7 +651,7 @@ class ProjectDetailAPIEndpoint(BaseAPIView):
             field=None,
             old_value=None,
             new_value=None,
-            actor_id=request.user.id,
+            actor_id=actor_id_for_request(request),
             slug=slug,
             current_site=base_host(request=request, is_app=True),
             event_id=project.id,
@@ -739,7 +738,13 @@ class ProjectSummaryAPIEndpoint(BaseAPIView):
 
         Get the summary of a project
         """
-        project = Project.objects.filter(pk=project_id, workspace__slug=slug).first()
+        # Filter through ``visible_projects`` so a service principal without a
+        # ProjectGrant on this project gets a 404 rather than its name/
+        # identifier/counts leaking. The engine skips the ProjectGrant step for
+        # ``project`` (a workspace-level resource type), so a view-level filter
+        # is the only enforcement point here (PLANE-111 — companion of the
+        # list/lite/detail migration in this file).
+        project = visible_projects(request, slug).filter(pk=project_id).first()
         if not project:
             return Response({"error": "Project not found"}, status=status.HTTP_404_NOT_FOUND)
         fields = request.GET.get("fields", "").split(",")

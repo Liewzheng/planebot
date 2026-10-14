@@ -28,6 +28,11 @@ class StickyViewSet(BaseViewSet):
     permission_classes = [WorkspaceUserPermission]
     resource_type = "sticky"
 
+    # The row a PATCH/DELETE owns. The queryset below still scopes reads to
+    # the owner's personal stickies; ownership itself reads ``created_by``
+    # (the bot for an SP write), not ``owner``.
+    authz_resource_model = Sticky
+
     def get_queryset(self):
         # NOTE: owner-bounded row visibility — ``self.request.user`` is
         # the human owner for SP requests (see

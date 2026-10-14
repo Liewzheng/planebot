@@ -24,12 +24,12 @@ What this file pins:
 * the ORM choke point: a write performed while an SP request is in flight is
   credited to the bot user, never to the owner.
 
-Scope note (tower ruling B). The v1 **write views** still stamp the owner for
-work items — ``api/views/issue.py`` overwrites ``created_by`` *after* the
-serializer saved — and those actor sites belong to M41. That gap is measured
-here by a single ``xfail`` (``test_work_item_created_by_is_the_bot``): drop the
-marker when M41 wires the actor sites. Everything asserted green in this file
-is the attribution *layer*, which is what M40's ownership engine keys on.
+Scope note. The v1 **write views** used to stamp the owner for work items —
+``api/views/issue.py`` overwrote ``created_by`` *after* the serializer saved.
+M41 wired those actor sites to the SP's bot user, so the gap is closed and
+``test_work_item_created_by_is_the_bot`` asserts the real view path. Everything
+else asserted in this file is the attribution *layer*, which is what M40's
+ownership engine keys on.
 """
 
 from __future__ import annotations
@@ -557,15 +557,16 @@ class TestOrmAttribution:
         assert label.created_by_id == create_user.pk
         assert label.created_by.is_bot is False
 
-    @pytest.mark.xfail(
-        reason="M41 wires the v1 view actor sites: api/views/issue.py:551 sets "
-        "created_by to request.user.id after the serializer saved. Drop this "
-        "marker when that lands.",
-        strict=False,
-    )
     def test_work_item_created_by_is_the_bot(self, workspace, project, create_user):
         """The user-visible case (PLANE-90): a work item the SP created must be
-        signed by the SP's bot user, not by its owner."""
+        signed by the SP's bot user, not by its owner.
+
+        The v1 create view overwrites ``created_by`` *after* the serializer
+        saved (``api/views/issue.py``), so this pins the view's actor site and
+        not just the ORM choke point. It is also what the ownership step keys
+        on: a row credited to the owner would be unwritable by the SP that
+        created it.
+        """
         sp = make_sp(workspace, create_user, name="work-item-bot")
         add_scope(sp, "work_item", "create", project=project)
         add_grant(sp, project)
