@@ -143,6 +143,18 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
       if (nextIsGranted) mutate(SERVICE_PRINCIPAL_SCOPES(workspaceSlug, principal.id));
       mutate(SERVICE_PRINCIPALS_LIST(workspaceSlug));
     } catch (err) {
+      // Mirror the modal's failure contract: a scope-half failure means the
+      // grant half *did* land, so the caches that carry grants — the principal
+      // list embeds them, and this section derives every row from that list —
+      // still hold the pre-toggle set and must be revalidated. Without it the
+      // switch keeps showing "Not granted" for a grant the server already
+      // stores, and the coverage panel keeps counting the project as missing.
+      // A grants-half failure changes nothing server-side (the PUT replaces the
+      // set inside `transaction.atomic()`), so there is nothing to revalidate.
+      if (step === "scopes") {
+        mutate(SERVICE_PRINCIPAL_GRANTS(workspaceSlug, principal.id));
+        mutate(SERVICE_PRINCIPALS_LIST(workspaceSlug));
+      }
       setToast({
         type: TOAST_TYPE.ERROR,
         title: t("error"),

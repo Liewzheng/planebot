@@ -20,9 +20,18 @@ const KEY_PREFIX = "workspace_settings.settings.service_principals";
 type Props = {
   projects: { id: string; name: string }[];
   grantByProject: Map<string, TProjectGrantInput>;
+  /**
+   * Projects with an active grant but no scope row covering them (see
+   * `findScopeUncoveredProjectIds`). Flagged in the row with the engine's deny
+   * reason and a one-click repair, because the switch alone cannot express
+   * "granted, but the scope half is missing".
+   */
+  scopeUncoveredProjectIds: Set<string>;
   disabled?: boolean;
   onRoleChange: (projectId: string, role: TServicePrincipalRoleCap | null) => void;
   onApplyToAll: (role: TServicePrincipalRoleCap | null) => void;
+  onFillScopes: (projectId: string) => void;
+  onFillAllScopes: () => void;
 };
 
 /**
@@ -35,7 +44,16 @@ type Props = {
  * silently discards a grant the operator parked in the advanced editor.
  */
 export function ProjectRoleTable(props: Props) {
-  const { projects, grantByProject, disabled, onRoleChange, onApplyToAll } = props;
+  const {
+    projects,
+    grantByProject,
+    scopeUncoveredProjectIds,
+    disabled,
+    onRoleChange,
+    onApplyToAll,
+    onFillScopes,
+    onFillAllScopes,
+  } = props;
   const { t } = useTranslation();
   // Member is the default bulk role: it is the useful everyday role and never
   // escalates to Admin implicitly.
@@ -65,17 +83,33 @@ export function ProjectRoleTable(props: Props) {
         ) : (
           projects.map((project) => {
             const grant = grantByProject.get(project.id);
+            const scopeUncovered = scopeUncoveredProjectIds.has(project.id);
             return (
               <div
                 key={project.id}
                 className="grid grid-cols-[minmax(0,1fr)_10rem] items-center gap-2 border-b-[0.5px] border-subtle px-3 py-2 last:border-b-0"
               >
-                <div className="flex min-w-0 items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <span className="truncate text-13 text-secondary">{project.name}</span>
                   {grant && !grant.is_active && (
                     <span className="text-warning flex-shrink-0 rounded bg-layer-2 px-1.5 py-0.5 text-11">
                       {t(`${KEY_PREFIX}.access.role_disabled`)}
                     </span>
+                  )}
+                  {scopeUncovered && (
+                    <>
+                      <span className="text-warning flex-shrink-0 rounded bg-layer-2 px-1.5 py-0.5 text-11">
+                        {t(`${KEY_PREFIX}.access.scope_gap_badge`)}
+                      </span>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={disabled}
+                        onClick={() => onFillScopes(project.id)}
+                      >
+                        {t(`${KEY_PREFIX}.access.fill_scopes_button`)}
+                      </Button>
+                    </>
                   )}
                 </div>
                 <RoleSelect
@@ -88,6 +122,16 @@ export function ProjectRoleTable(props: Props) {
           })
         )}
       </div>
+      {scopeUncoveredProjectIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border-[0.5px] border-subtle bg-layer-2 px-3 py-2">
+          <span className="text-warning text-11">
+            {t(`${KEY_PREFIX}.access.scope_gap_summary`, { count: scopeUncoveredProjectIds.size })}
+          </span>
+          <Button variant="secondary" size="sm" disabled={disabled} onClick={onFillAllScopes}>
+            {t(`${KEY_PREFIX}.access.fill_all_scopes_button`)}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -322,7 +322,11 @@
           "apply_all_label": "Apply to all projects:",
           "apply_all_button": "Apply",
           "apply_all_hint": "Applies the role to all {count} projects in this workspace.",
-          "table_hint": "Rebuilding a project's scopes replaces any per-cell rows you edited for it in the advanced section below.",
+          "table_hint": "Picking a role rewrites that project's scope rows as one project / all / all row — per-cell rows you tuned under Advanced are replaced, and the grant's role cap is what narrows the row to the role's real capabilities. Choosing “No access” removes only the project's grant and keeps its scope rows, so the backend reports a missing grant rather than a missing scope.",
+          "scope_gap_badge": "Scopes missing",
+          "scope_gap_summary": "Projects with a grant but no scope rows ({count}) — calls to them are denied with a missing-scope error. Filling in writes the same project / all / all row a new grant gets.",
+          "fill_scopes_button": "Fill in scopes",
+          "fill_all_scopes_button": "Fill in all",
           "advanced_title": "Advanced: per-cell tuning",
           "expand_cells_button": "Expand roles into per-cell scopes",
           "expand_cells_hint": "Replaces every project's scope rows with one row per capability the assigned role can perform ({count} rows).",
@@ -391,7 +395,7 @@
         "project_access": {
           "section": {
             "title": "Service principal access",
-            "description": "Service principals (machine accounts for integrations and automation) are intentionally NOT members of this project. A workspace admin can grant any principal access to this project below — toggling on writes both the grant and the scope rows the engine requires, and toggling off removes the grant. Only workspace admins can perform this action."
+            "description": "Service principals (machine accounts for integrations and automation) are intentionally NOT members of this project. A workspace admin can grant any principal access to this project below — toggling on writes both the grant and the scope rows the engine requires. The scope rows are written as a single project / all / all row, since the grant's role cap is what narrows them, so per-cell rows you tuned for this project are folded into that one row. Toggling off removes the grant only and leaves the rows, so the deny names the missing grant. Only workspace admins can perform this action."
           },
           "list": {
             "granted": "Granted",

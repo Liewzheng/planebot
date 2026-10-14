@@ -26,8 +26,11 @@ import {
   SERVICE_PRINCIPAL_SCOPES,
 } from "./constants";
 import type { TGrantRow, TScopeRow } from "./constants";
+import { applyRoleToProject, applyRoleToProjects, fillScopesForProjects } from "./access-row-transitions";
+import type { TAccessRows } from "./access-row-transitions";
 import { GrantRowsEditor } from "./grant-rows-editor";
-import { buildScopeRowsForRole, expandRoleToCellScopes, ROLE_MEMBER } from "./role-capabilities";
+import { findScopeUncoveredProjectIds } from "./project-access-payloads";
+import { expandRoleToCellScopes, ROLE_MEMBER } from "./role-capabilities";
 import { ProjectRoleTable } from "./project-role-table";
 import { RoleCapabilityTable } from "./role-capability-table";
 import { ScopeRowsEditor } from "./scope-rows-editor";
@@ -48,15 +51,22 @@ type Props = {
  *
  * Picking a role for a project writes both halves of what the engine needs — a
  * grant with that role cap and the scope rows for the role (see
- * `buildScopeRowsForRole`) — because a scope without a grant, or a grant without
- * a scope, still denies everything. The advanced editors exist so nothing the
+ * `access-row-transitions.ts`, which owns the row transitions and the exact
+ * payloads they produce) — because a scope without a grant, or a grant without a
+ * scope, still denies everything. The advanced editors exist so nothing the
  * previous grants-only / scopes-only modals could express became unreachable.
+ * A grant whose scope half is missing (grants created by the pre-M43 switch) is
+ * flagged in the grid with a one-click repair.
  */
 export const ServicePrincipalAccessModal = observer(function ServicePrincipalAccessModal(props: Props) {
   const { principal, isOpen, onClose, workspaceSlug } = props;
   // states
-  const [grantRows, setGrantRows] = useState<TGrantRow[]>([]);
-  const [scopeRows, setScopeRows] = useState<TScopeRow[]>([]);
+  // The two halves move together on every transition (a role rebuilds both;
+  // "fill in scopes" touches one but is defined over the pair), so they are one
+  // piece of state: a single update cannot leave the editor showing a grant and
+  // a scope set from different renders.
+  const [rows, setRows] = useState<TAccessRows>({ grantRows: [], scopeRows: [] });
+  const { grantRows, scopeRows } = rows;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isReplaceConfirmOpen, setIsReplaceConfirmOpen] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -90,28 +100,30 @@ export const ServicePrincipalAccessModal = observer(function ServicePrincipalAcc
 
   useEffect(() => {
     if (!scopes) return;
-    setScopeRows(
-      scopes.map((scope) =>
+    setRows((prevRows) => ({
+      ...prevRows,
+      scopeRows: scopes.map((scope) =>
         createScopeRow({
           project: scope.project,
           resource_type: scope.resource_type,
           action: scope.action,
         })
-      )
-    );
+      ),
+    }));
   }, [scopes]);
 
   useEffect(() => {
     if (!grants) return;
-    setGrantRows(
-      grants.map((grant: TProjectGrant) =>
+    setRows((prevRows) => ({
+      ...prevRows,
+      grantRows: grants.map((grant: TProjectGrant) =>
         createGrantRow({
           project: grant.project,
           role_cap: grant.role_cap,
           is_active: grant.is_active,
         })
-      )
-    );
+      ),
+    }));
   }, [grants]);
 
   const workspaceProjects = useMemo(
@@ -149,6 +161,14 @@ export const ServicePrincipalAccessModal = observer(function ServicePrincipalAcc
     return count;
   }, [grantRows]);
 
+  // Granted projects with nothing covering them scope-wise: the grid flags each
+  // one and offers the repair, because the switch cannot show that half of the
+  // pair is missing while the engine denies every call with DENY_SCOPE_MISS.
+  const scopeUncoveredProjectIds = useMemo(
+    () => new Set(findScopeUncoveredProjectIds(grantRows, scopeRows)),
+    [grantRows, scopeRows]
+  );
+
   // Reopening before the delayed reset fires must cancel the timer and clear the
   // submitting lock — but NOT the rows: closing nulls the SWR keys, so the
   // hydration effects above always repopulate them on reopen.
@@ -171,8 +191,7 @@ export const ServicePrincipalAccessModal = observer(function ServicePrincipalAcc
     onClose();
     requestGenerationRef.current += 1;
     resetTimerRef.current = setTimeout(() => {
-      setGrantRows([]);
-      setScopeRows([]);
+      setRows({ grantRows: [], scopeRows: [] });
       setIsSubmitting(false);
       setIsReplaceConfirmOpen(false);
       setShowAdvanced(false);
@@ -182,71 +201,57 @@ export const ServicePrincipalAccessModal = observer(function ServicePrincipalAcc
   };
 
   const updateGrantRow = (rowKey: string, data: Partial<TGrantRow>) =>
-    setGrantRows((prevRows) => prevRows.map((row) => (row.key === rowKey ? { ...row, ...data } : row)));
+    setRows((prevRows) => ({
+      ...prevRows,
+      grantRows: prevRows.grantRows.map((row) => (row.key === rowKey ? { ...row, ...data } : row)),
+    }));
 
   const updateScopeRow = (rowKey: string, data: Partial<TScopeRow>) =>
-    setScopeRows((prevRows) => prevRows.map((row) => (row.key === rowKey ? { ...row, ...data } : row)));
+    setRows((prevRows) => ({
+      ...prevRows,
+      scopeRows: prevRows.scopeRows.map((row) => (row.key === rowKey ? { ...row, ...data } : row)),
+    }));
 
   /**
-   * Role picked in the grid: rewrite that project's grant, then rebuild its
-   * scope rows from the role so the two halves can never disagree. Scope rows
-   * for the project that the operator hand-tuned in the advanced editor are
-   * replaced — the hint above the grid says so.
+   * Role picked in the grid. The transition itself lives in
+   * `access-row-transitions.ts` so the exact request bodies it produces are
+   * exercisable without a test runner; its docstring carries the semantics
+   * (role rebuilds both halves, "no access" drops the grant only).
    */
-  const handleRoleChange = (projectId: string, role: TServicePrincipalRoleCap | null) => {
-    const nextRole = role;
-    setGrantRows((prevRows) => {
-      if (nextRole === null) return prevRows.filter((row) => row.project !== projectId);
-      const index = prevRows.findIndex((row) => row.project === projectId);
-      if (index === -1)
-        return [...prevRows, createGrantRow({ project: projectId, role_cap: nextRole, is_active: true })];
-      return prevRows.map((row, rowIndex) =>
-        rowIndex === index ? { ...row, role_cap: nextRole, is_active: true } : row
-      );
-    });
-    setScopeRows((prevRows) => {
-      const withoutProject = prevRows.filter((row) => row.project !== projectId);
-      if (nextRole === null) return withoutProject;
-      return [...withoutProject, ...buildScopeRowsForRole(nextRole, projectId).map(createScopeRow)];
-    });
-  };
+  const handleRoleChange = (projectId: string, role: TServicePrincipalRoleCap | null) =>
+    setRows((prevRows) => applyRoleToProject(prevRows, projectId, role));
 
-  const handleApplyToAll = (role: TServicePrincipalRoleCap | null) => {
-    const workspaceProjectIdsSet = new Set(workspaceProjects.map((project) => project.id));
-    setGrantRows((prevRows) => {
-      const untouched = prevRows.filter((row) => !workspaceProjectIdsSet.has(row.project));
-      if (role === null) return untouched;
-      return [
-        ...untouched,
-        ...workspaceProjects.map((project) => createGrantRow({ project: project.id, role_cap: role, is_active: true })),
-      ];
-    });
-    setScopeRows((prevRows) => {
-      // Workspace-wide rows (`project === null`) are left alone: this control
-      // only speaks about the projects listed in the grid.
-      const untouched = prevRows.filter((row) => row.project === null || !workspaceProjectIdsSet.has(row.project));
-      if (role === null) return untouched;
-      return [
-        ...untouched,
-        ...workspaceProjects.flatMap((project) =>
-          buildScopeRowsForRole(role, project.id).map((scopeRow) => createScopeRow(scopeRow))
-        ),
-      ];
-    });
-  };
+  // Same rule as the per-project control (see `access-row-transitions.ts`):
+  // "no access" drops the grants and leaves every scope row alone, so the deny
+  // stays `DENY_GRANT_MISS`.
+  const handleApplyToAll = (role: TServicePrincipalRoleCap | null) =>
+    setRows((prevRows) =>
+      applyRoleToProjects(
+        prevRows,
+        workspaceProjects.map((project) => project.id),
+        role
+      )
+    );
+
+  /**
+   * Heal projects whose active grant has no scope row covering it. The repair is
+   * the project-settings switch's own payload builder (see
+   * `access-row-transitions.ts::fillScopesForProjects`), so both surfaces write
+   * the same rows.
+   */
+  const handleFillScopes = (projectIds: string[]) => setRows((prevRows) => fillScopesForProjects(prevRows, projectIds));
 
   /** Swap every granted project's wildcard scope row for its explicit cells. */
-  const handleExpandToCells = () => {
-    setScopeRows((prevRows) => {
-      const workspaceWide = prevRows.filter((row) => row.project === null);
-      const expanded = grantRows
+  const handleExpandToCells = () =>
+    setRows((prevRows) => {
+      const workspaceWide = prevRows.scopeRows.filter((row) => row.project === null);
+      const expanded = prevRows.grantRows
         .filter((row) => row.project && row.is_active)
         .flatMap((row) =>
           expandRoleToCellScopes(row.role_cap, row.project).map((scopeRow) => createScopeRow(scopeRow))
         );
-      return [...workspaceWide, ...expanded];
+      return { ...prevRows, scopeRows: [...workspaceWide, ...expanded] };
     });
-  };
 
   const handleSave = async () => {
     // The backend requires a project on every grant row; refuse incomplete rows
@@ -286,6 +291,19 @@ export const ServicePrincipalAccessModal = observer(function ServicePrincipalAcc
       handleClose();
     } catch (err) {
       if (generation !== requestGenerationRef.current) return;
+      // A failed grants PUT leaves the server untouched — the endpoint replaces
+      // the set inside `transaction.atomic()` — so nothing cached is stale on
+      // that step. A failed scopes PUT *did* land the grant half, and both the
+      // principal list (which embeds each principal's grants) and the grants
+      // cache still hold the pre-save set: revalidate them, or the coverage
+      // panel and the project-settings switch keep rendering "not granted" for
+      // a grant the server already stores. The scopes cache is deliberately not
+      // revalidated — that PUT changed nothing server-side, and refetching it
+      // would overwrite the editor with the old rows and throw away the retry.
+      if (step === "scopes") {
+        mutate(SERVICE_PRINCIPALS_LIST(workspaceSlug));
+        mutate(SERVICE_PRINCIPAL_GRANTS(workspaceSlug, principal.id));
+      }
       setToast({
         type: TOAST_TYPE.ERROR,
         title: t(`${KEY_PREFIX}.access.error.title`),
@@ -319,9 +337,12 @@ export const ServicePrincipalAccessModal = observer(function ServicePrincipalAcc
               <ProjectRoleTable
                 projects={workspaceProjects}
                 grantByProject={grantByProject}
+                scopeUncoveredProjectIds={scopeUncoveredProjectIds}
                 disabled={isSubmitting}
                 onRoleChange={handleRoleChange}
                 onApplyToAll={handleApplyToAll}
+                onFillScopes={(projectId) => handleFillScopes([projectId])}
+                onFillAllScopes={() => handleFillScopes([...scopeUncoveredProjectIds])}
               />
               <p className="rounded-md border-[0.5px] border-subtle bg-layer-2 px-3 py-2 text-11 text-placeholder">
                 {t(`${KEY_PREFIX}.access.table_hint`)}
@@ -341,12 +362,20 @@ export const ServicePrincipalAccessModal = observer(function ServicePrincipalAcc
                         projectNameById={projectNameById}
                         disabled={isSubmitting}
                         onUpdate={updateGrantRow}
-                        onRemove={(rowKey) => setGrantRows((prevRows) => prevRows.filter((row) => row.key !== rowKey))}
-                        onAdd={() =>
-                          setGrantRows((prevRows) => [
+                        onRemove={(rowKey) =>
+                          setRows((prevRows) => ({
                             ...prevRows,
-                            createGrantRow({ project: "", role_cap: ROLE_MEMBER, is_active: true }),
-                          ])
+                            grantRows: prevRows.grantRows.filter((row) => row.key !== rowKey),
+                          }))
+                        }
+                        onAdd={() =>
+                          setRows((prevRows) => ({
+                            ...prevRows,
+                            grantRows: [
+                              ...prevRows.grantRows,
+                              createGrantRow({ project: "", role_cap: ROLE_MEMBER, is_active: true }),
+                            ],
+                          }))
                         }
                       />
                     </div>
@@ -357,12 +386,20 @@ export const ServicePrincipalAccessModal = observer(function ServicePrincipalAcc
                         workspaceProjects={workspaceProjects}
                         disabled={isSubmitting}
                         onUpdate={updateScopeRow}
-                        onRemove={(rowKey) => setScopeRows((prevRows) => prevRows.filter((row) => row.key !== rowKey))}
-                        onAdd={() =>
-                          setScopeRows((prevRows) => [
+                        onRemove={(rowKey) =>
+                          setRows((prevRows) => ({
                             ...prevRows,
-                            createScopeRow({ project: null, resource_type: "all", action: "all" }),
-                          ])
+                            scopeRows: prevRows.scopeRows.filter((row) => row.key !== rowKey),
+                          }))
+                        }
+                        onAdd={() =>
+                          setRows((prevRows) => ({
+                            ...prevRows,
+                            scopeRows: [
+                              ...prevRows.scopeRows,
+                              createScopeRow({ project: null, resource_type: "all", action: "all" }),
+                            ],
+                          }))
                         }
                       />
                       <div className="flex flex-wrap items-center gap-2">

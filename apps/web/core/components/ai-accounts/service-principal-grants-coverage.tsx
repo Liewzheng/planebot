@@ -17,7 +17,7 @@ type Props = {
   principal: TServicePrincipal;
   workspaceSlug: string;
   /**
-   * Optional callback to open the principal's grants modal (where an
+   * Optional callback to open the principal's access modal (where an
    * admin sees the full missing-project list and can grant them in bulk).
    * When provided and the principal is missing more than a handful of
    * projects, the panel renders a "Manage grants →" CTA so the gap is
@@ -32,8 +32,9 @@ type Props = {
  * between the workspace project list and the principal's grant set
  * entirely client-side — both already come back from
  * `GET /api/workspaces/<slug>/service-principals/`. The principal list
- * itself is invalidated by `grants-modal` after every save, so this
- * panel stays in sync without an extra fetch.
+ * itself is invalidated by `service-principal-access-modal` after every
+ * save (including a save whose scope half failed, which still lands the
+ * grant), so this panel stays in sync without an extra fetch.
  *
  * Renders four distinct states (so a failed fetch cannot masquerade as
  * an empty workspace):
@@ -41,7 +42,7 @@ type Props = {
  *   - error   : fetch rejected, with a retry button
  *   - empty   : workspace has zero projects (rare — Plane always seeds one)
  *   - ready   : the normal "Granted to N of M" summary, plus a CTA into
- *               the grants modal when there is a meaningful gap to fix
+ *               the access modal when there is a meaningful gap to fix
  */
 export const ServicePrincipalGrantsCoverage = observer(function ServicePrincipalGrantsCoverage(props: Props) {
   const { principal, workspaceSlug, onManageGrants } = props;
@@ -49,7 +50,8 @@ export const ServicePrincipalGrantsCoverage = observer(function ServicePrincipal
   const { projectMap, workspaceProjectIds, fetchProjects } = useProject();
 
   // Triggers the workspace project fetch and shares its SWR cache with
-  // grants-modal / scopes-modal so every surface sees the same data.
+  // the access modal (and the project-settings section) so every surface
+  // sees the same data.
   const swrKey = workspaceSlug ? `WORKSPACE_PROJECTS_${workspaceSlug}` : null;
   const {
     isLoading,
