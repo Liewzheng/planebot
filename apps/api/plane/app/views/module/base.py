@@ -808,7 +808,7 @@ class ModuleFavoriteViewSet(BaseViewSet):
     def create(self, request, slug, project_id):
         _ = UserFavorite.objects.create(
             project_id=project_id,
-            user=request.user,
+            user=actor_for_request(request),
             entity_type="module",
             entity_identifier=request.data.get("module"),
         )

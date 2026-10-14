@@ -79,11 +79,13 @@ from plane.app.views.asset.v2 import (
     ProjectAssetEndpoint,
     ProjectBulkAssetEndpoint,
 )
+from plane.app.views.cycle.base import CycleFavoriteViewSet
 from plane.app.views.cycle.issue import CycleIssueViewSet
 from plane.app.views.estimate.base import BulkEstimatePointEndpoint
 from plane.app.views.issue.comment import IssueCommentViewSet
 from plane.app.views.issue.label import BulkCreateIssueLabelsEndpoint
 from plane.app.views.issue.reaction import IssueReactionViewSet
+from plane.app.views.module.base import ModuleFavoriteViewSet
 from plane.app.views.workspace.base import WorkspaceThemeViewSet
 from plane.service_principals.attribution import actor_for_request, ensure_bot_user
 from plane.celery import app as celery_app
@@ -101,6 +103,7 @@ from plane.db.models import (
     IssueComment,
     IssueReaction,
     Label,
+    Module,
     Project,
     ProjectMember,
     ProjectMemberInvite,
@@ -1081,3 +1084,102 @@ class TestWorkspaceThemeActorAttribution:
         assert theme.actor_id == bot.pk
         assert theme.actor.is_bot is True
         assert theme.actor_id != create_user.pk
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestUserFavoriteAttribution:
+    """Endpoint pins for the ``UserFavorite.objects.create(user=...)``
+    writes on the live lines of the cycle and module favorite views.
+
+    These two views are the leftover of the r3 ``UserFavorite`` write
+    family: r3 fixed ``project/base.py:518``, ``page/base.py:553``,
+    ``view/base.py:422/415`` and ``workspace/favorite.py:60``, but the
+    *create* bodies of the cycle and module favorites — one method
+    below the already-hardened sibling *read* at ``cycle/base.py:571``
+    and ``module/base.py:804`` — were left on raw ``request.user``.
+
+    ``CycleFavoriteViewSet.create`` and ``ModuleFavoriteViewSet.create``
+    have **no** ``ProjectMember`` pre-check (their only
+    ``member=request.user`` filter is in ``get_queryset``, which
+    ``create`` never calls — same shape as the r3-confirmed
+    ``IssueReactionViewSet.create``). Reverting the ``user=`` line in
+    either flips the matching test red with ``ValueError: Cannot assign
+    "_ServicePrincipalProxy(sp_id=...)": "UserFavorite.user" must be a
+    "User" instance.``
+
+    Two tests because the views' create paths are independent (cycle
+    vs module entity type, separate URL routes). One combined test
+    would split coverage across unrelated write sites.
+    """
+
+    def test_sp_cycle_favorite_create_credits_the_bot(
+        self, sp, sp_token, workspace, project, create_user
+    ):
+        from plane.db.models import Cycle, UserFavorite
+
+        bot = ensure_bot_user(sp)
+        cycle = Cycle.objects.create(
+            name="SP cycle favorite",
+            project=project,
+            workspace=workspace,
+            owned_by=create_user,
+        )
+
+        url = (
+            f"/api/workspaces/{workspace.slug}/projects/{project.id}"
+            f"/user-favorite-cycles/"
+        )
+        payload = {"cycle": str(cycle.id)}
+        response = _drive_view_post(
+            CycleFavoriteViewSet, sp, sp_token, url, payload,
+            action_name="create",
+            action_kwargs={"slug": workspace.slug, "project_id": str(project.id)},
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT, (
+            f"Got {response.status_code}; body={response.data!r}. Pre-fix "
+            "the SP-proxy as ``user=`` value raises "
+            "``ValueError: must be a User instance`` and the view 500s."
+        )
+        fav = UserFavorite.objects.filter(
+            entity_type="cycle", entity_identifier=str(cycle.id)
+        ).latest("created_at")
+        assert fav.user_id == bot.pk
+        assert fav.user.is_bot is True
+        assert fav.user_id != create_user.pk
+
+    def test_sp_module_favorite_create_credits_the_bot(
+        self, sp, sp_token, workspace, project, create_user
+    ):
+        from plane.db.models import UserFavorite
+
+        bot = ensure_bot_user(sp)
+        module = Module.objects.create(
+            name="SP module favorite",
+            project=project,
+            workspace=workspace,
+        )
+
+        url = (
+            f"/api/workspaces/{workspace.slug}/projects/{project.id}"
+            f"/user-favorite-modules/"
+        )
+        payload = {"module": str(module.id)}
+        response = _drive_view_post(
+            ModuleFavoriteViewSet, sp, sp_token, url, payload,
+            action_name="create",
+            action_kwargs={"slug": workspace.slug, "project_id": str(project.id)},
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT, (
+            f"Got {response.status_code}; body={response.data!r}. Pre-fix "
+            "the SP-proxy as ``user=`` value raises "
+            "``ValueError: must be a User instance`` and the view 500s."
+        )
+        fav = UserFavorite.objects.filter(
+            entity_type="module", entity_identifier=str(module.id)
+        ).latest("created_at")
+        assert fav.user_id == bot.pk
+        assert fav.user.is_bot is True
+        assert fav.user_id != create_user.pk
