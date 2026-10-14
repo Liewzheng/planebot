@@ -67,12 +67,15 @@ class IssueReactionViewSet(BaseViewSet):
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
     def destroy(self, request, slug, project_id, issue_id, reaction_code):
+        # ``actor=request.user`` would raise ``ValidationError`` on an SP
+        # proxy. Resolve to the bot so an SP request finds the
+        # bot's own reactions.
         issue_reaction = IssueReaction.objects.get(
             workspace__slug=slug,
             project_id=project_id,
             issue_id=issue_id,
             reaction=reaction_code,
-            actor=request.user,
+            actor=actor_for_request(request),
         )
         issue_activity.delay(
             type="issue_reaction.activity.deleted",

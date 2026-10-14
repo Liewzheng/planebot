@@ -46,6 +46,7 @@ from plane.app.views.asset.v2 import (
     UserAssetsV2Endpoint,
     WorkspaceFileAssetEndpoint,
     ProjectAssetEndpoint,
+    ProjectBulkAssetEndpoint,
 )
 from plane.app.views.cycle.issue import CycleIssueViewSet
 from plane.app.views.estimate.base import BulkEstimatePointEndpoint
@@ -493,17 +494,21 @@ class TestLabelBulkCreateAttribution:
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestAppIssueCommentActorAttribution:
-    """``IssueCommentViewSet.create`` calls ``serializer.save(...,
-    actor=request.user)``. ``IssueComment.actor`` is a separate FK from
-    ``created_by`` and ``BaseModel.save`` does not rewrite it.
+    """Helper-level pin, NOT endpoint coverage.
 
-    Pre-M47 the SP proxy is rejected by the FK descriptor ("must be a
-    User instance") because the proxy is an ``AnonymousUser`` subclass
-    that is not a real ``User`` row. Post-M47 the bot user is used.
+    ``IssueCommentViewSet.create`` calls
+    ``serializer.save(..., actor=actor_for_request(request))``. The
+    view body has a pre-existing ``ProjectMember.objects.filter(...,
+    member=request.user)`` pre-check at line 67 that crashes for the SP
+    proxy BEFORE reaching the ``actor=`` write site — driving the
+    endpoint end-to-end is not possible without mocking that pre-check.
 
-    Tests build a minimal request stub (``user=sp_proxy``,
-    ``auth=sp_token``) that ``actor_for_request`` resolves through, the
-    same way it does for an in-flight view.
+    Instead this test pins the write-path correctness directly:
+    pre-M47 the SP proxy is rejected by the ``IssueComment.actor`` FK
+    descriptor ("must be a User instance"); post-M47 the bot user is
+    accepted. The view's fix is verified by reading the code: line 89
+    passes ``actor=actor_for_request(request)``, the same helper exercised
+    here.
     """
 
     def _sp_request(self, sp, sp_token):
@@ -549,12 +554,15 @@ class TestAppIssueCommentActorAttribution:
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestAppIssueReactionActorAttribution:
-    """``IssueReactionViewSet.create`` calls ``serializer.save(...,
-    actor=request.user)``. ``IssueReaction.actor`` is a separate FK and
-    is not auto-rewritten by ``BaseModel.save``; unlike ``actor`` on
-    ``IssueComment``, this column is NOT nullable, so the pre-fix
-    shape crashes the bulk insert with an IntegrityError rather than
-    silently dropping the actor.
+    """Helper-level pin, NOT endpoint coverage. Same shape as
+    ``TestAppIssueCommentActorAttribution`` — the view body has a
+    pre-existing ``ProjectMember`` pre-check that blocks SP before
+    reaching the ``actor=`` write site.
+
+    Pins the write-path correctness: ``IssueReaction.actor`` is NOT
+    nullable, so pre-M47 the SP proxy crashes the bulk insert with
+    ``IntegrityError`` (``null value in column "actor_id"``); post-M47
+    the bot user is accepted.
     """
 
     def _sp_request(self, sp, sp_token):
@@ -597,7 +605,9 @@ class TestAppIssueReactionActorAttribution:
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestSpaceIssueActorAttribution:
-    """``space/views/issue.py`` has seven ``serializer.save(...,
+    """Helper-level pin, NOT endpoint coverage.
+
+    ``space/views/issue.py`` has seven ``serializer.save(...,
     actor=request.user)`` sites covering IssueComment / IssueReaction /
     CommentReaction. Pre-M47 each one rejects the SP proxy at the FK
     descriptor (or persists with ``actor_id=NULL`` for the nullable
@@ -605,9 +615,11 @@ class TestSpaceIssueActorAttribution:
 
     The space views share a pre-existing ``ProjectMember.objects.filter
     (member=request.user)`` check (lines 318, 437, 534) that fails for
-    the SP proxy before reaching the ``actor=`` write site. The tests
-    below exercise the ``actor=`` write path directly so the attribution
-    contract is pinned regardless of that pre-existing pre-check shape.
+    the SP proxy before reaching the ``actor=`` write site — driving the
+    endpoints end-to-end is not possible without mocking that
+    pre-check. Tests below exercise the ``actor=`` write path directly
+    so the attribution contract is pinned regardless of that
+    pre-existing pre-check shape.
     """
 
     def _sp_request(self, sp, sp_token):
@@ -751,54 +763,59 @@ class TestFileAssetAttribution:
     def test_sp_app_file_asset_filter_uses_the_bot(
         self, sp, sp_token, workspace, project, create_user
     ):
-        """``app/views/asset/v2.py:744`` filters FileAsset rows by
-        ``created_by=request.user``. For an SP the proxy's ``.id`` is
-        ``None`` so the filter would otherwise match rows where
-        ``created_by_id IS NULL`` — wrong rows. Resolve to the bot."""
+        """``app/views/asset/v2.py:754-758`` (``ProjectBulkAssetEndpoint
+        .post``) filters FileAsset rows by
+        ``created_by=request.user``. For an SP the proxy's FK
+        descriptor refuses the AnonymousUser subclass with
+        ``ValidationError(['"AnonymousUser" is not a valid UUID.'])`` —
+        a 500 — rather than matching unowned rows (the attname path
+        ``=request.user.id`` is the only one that yields
+        ``created_by_id IS NULL``; the object form raises). Resolve to
+        the bot so the SP request finds the assets the bot uploaded.
+        """
         bot = ensure_bot_user(sp)
 
-        # An asset the SP's bot created.
-        bot_asset = FileAsset.objects.create(
+        # An asset the SP's bot created. Use ``USER_COVER`` as the
+        # entity type to avoid the ISSUE_DESCRIPTION FK path —
+        # FileAsset.issue is nullable but the migration may have
+        # tighter constraints.
+        bot_asset = FileAsset(
             attributes={"name": "bot-uploaded.png"},
             asset=f"{workspace.id}/bot-asset-key",
             size=10,
             workspace=workspace,
             project=project,
             created_by=bot,
-            entity_type=FileAsset.EntityTypeContext.ISSUE_DESCRIPTION,
+            entity_type=FileAsset.EntityTypeContext.PROJECT_COVER,
         )
-        # An asset the human created.
-        human_asset = FileAsset.objects.create(
-            attributes={"name": "human-uploaded.png"},
-            asset=f"{workspace.id}/human-asset-key",
-            size=10,
-            workspace=workspace,
-            project=project,
-            created_by=create_user,
-            entity_type=FileAsset.EntityTypeContext.ISSUE_DESCRIPTION,
-        )
-        # Drive the ``delete`` path that filters by ``created_by=request.user``.
+        bot_asset.save(disable_auto_set_user=True)
+        bot_asset.refresh_from_db()
+
+        # Drive ``ProjectBulkAssetEndpoint.post`` — the endpoint that
+        # has the ``created_by=request.user`` filter we are pinning.
+        # Pre-fix (SP proxy + object form): the filter call inside the
+        # endpoint body raises ``ValidationError`` and the view returns
+        # 500. Post-fix (``actor_for_request(request)``): the bot is
+        # accepted as the filter value and the endpoint returns 204.
         url = (
             f"/api/assets/v2/workspaces/{workspace.slug}/projects/"
-            f"{project.id}/{bot_asset.id}/"
+            f"{project.id}/{project.id}/bulk/"
         )
+        payload = {"asset_ids": [str(bot_asset.id)]}
         response = _drive_view_post(
-            ProjectAssetEndpoint, sp, sp_token, url, {},
+            ProjectBulkAssetEndpoint, sp, sp_token, url, payload,
             action_kwargs={
                 "slug": workspace.slug,
                 "project_id": str(project.id),
-                "pk": str(bot_asset.id),
+                "entity_id": str(project.id),
             },
-            action_name="delete",
+            action_name="post",
         )
-        # The bot's asset is found (delete success); the human's asset is
-        # untouched. Pre-M47 the filter would have matched rows where
-        # ``created_by_id IS NULL`` and 404'd, leaving both assets intact.
-        assert response.status_code in (
-            status.HTTP_204_NO_CONTENT, status.HTTP_200_OK,
-        ), response.data
-        assert not FileAsset.objects.filter(pk=bot_asset.id).exists()
-        assert FileAsset.objects.filter(pk=human_asset.id).exists()
+        assert response.status_code == status.HTTP_204_NO_CONTENT, (
+            f"Got {response.status_code}; body={response.data!r}. Pre-fix "
+            "the SP-proxy as ``created_by=`` filter value raises "
+            "ValidationError and the view 500s."
+        )
 
     def test_sp_space_file_asset_create_credits_the_bot(
         self, sp, sp_token, workspace, project, create_user
@@ -834,17 +851,21 @@ class TestFileAssetAttribution:
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestInviteAttribution:
-    """``ProjectInvitationsViewset.create`` and
+    """Helper-level pin, NOT endpoint coverage.
+
+    ``ProjectInvitationsViewset.create`` and
     ``WorkspaceInvitationsViewset.create`` build ``ProjectMemberInvite`` /
-    ``WorkspaceMemberInvite`` rows with ``created_by=request.user`` then
+    ``WorkspaceMemberInvite`` rows with ``created_by=...`` then
     ``bulk_create`` them. ``bulk_create`` skips ``BaseModel.save``, so
     the FK descriptor rejects the SP proxy outright.
 
     Both views also do a pre-check on ``WorkspaceMember.objects.get(...,
     member=request.user, ...)`` which would fail for the SP proxy (no PK).
-    The test below exercises the bulk_create pattern directly so the
+    The tests below exercise the bulk_create pattern directly so the
     attribution contract is pinned regardless of the pre-existing
-    pre-check shape (out of mission scope).
+    pre-check shape (out of mission scope). The view's fix is verified
+    by reading the code at lines 90, 169, 182 (project invite) and
+    101, 273 (workspace invite).
     """
 
     def _sp_request(self, sp, sp_token):

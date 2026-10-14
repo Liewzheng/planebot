@@ -59,7 +59,7 @@ from plane.utils.cycle_transfer_issues import transfer_cycle_issues
 from .. import BaseAPIView, BaseViewSet
 from plane.bgtasks.webhook_task import model_activity
 from plane.utils.timezone_converter import convert_to_utc, user_timezone_converter
-from plane.service_principals.attribution import actor_id_for_request
+from plane.service_principals.attribution import actor_id_for_request, actor_for_request
 
 
 class CycleViewSet(BaseViewSet):
@@ -561,11 +561,14 @@ class CycleFavoriteViewSet(BaseViewSet):
     model = UserFavorite
 
     def get_queryset(self):
+        # ``user=self.request.user`` would raise ``ValidationError`` on
+        # an SP proxy. Resolve to the bot so an SP request lists the
+        # bot's own cycle favorites.
         return self.filter_queryset(
             super()
             .get_queryset()
             .filter(workspace__slug=self.kwargs.get("slug"))
-            .filter(user=self.request.user)
+            .filter(user=actor_for_request(self.request))
             .select_related("cycle", "cycle__owned_by")
         )
 

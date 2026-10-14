@@ -66,7 +66,7 @@ from plane.bgtasks.webhook_task import model_activity
 from .. import BaseAPIView, BaseViewSet
 from plane.bgtasks.recent_visited_task import recent_visited_task
 from plane.utils.host import base_host
-from plane.service_principals.attribution import actor_id_for_request
+from plane.service_principals.attribution import actor_id_for_request, actor_for_request
 
 
 class ModuleViewSet(BaseViewSet):
@@ -794,11 +794,14 @@ class ModuleFavoriteViewSet(BaseViewSet):
     permission_classes = [ProjectLitePermission]
 
     def get_queryset(self):
+        # ``user=self.request.user`` would raise ``ValidationError`` on
+        # an SP proxy. Resolve to the bot so an SP request lists the
+        # bot's own module favorites.
         return self.filter_queryset(
             super()
             .get_queryset()
             .filter(workspace__slug=self.kwargs.get("slug"))
-            .filter(user=self.request.user)
+            .filter(user=actor_for_request(self.request))
             .select_related("module")
         )
 

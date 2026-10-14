@@ -216,12 +216,15 @@ class CommentReactionViewSet(BaseViewSet):
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
     def destroy(self, request, slug, project_id, comment_id, reaction_code):
+        # ``actor=request.user`` would raise ``ValidationError`` on an SP
+        # proxy. Resolve to the bot so an SP request finds the
+        # bot's own reactions.
         comment_reaction = CommentReaction.objects.get(
             workspace__slug=slug,
             project_id=project_id,
             comment_id=comment_id,
             reaction=reaction_code,
-            actor=request.user,
+            actor=actor_for_request(request),
         )
         issue_activity.delay(
             type="comment_reaction.activity.deleted",

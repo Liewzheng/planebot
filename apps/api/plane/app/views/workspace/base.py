@@ -48,7 +48,7 @@ from plane.license.utils.instance_value import get_configuration_value
 from plane.bgtasks.workspace_seed_task import workspace_seed
 from plane.utils.url import contains_url
 from plane.utils.csv_utils import sanitize_csv_row
-from plane.service_principals.attribution import actor_for_request
+from plane.service_principals.attribution import actor_for_request, actor_id_for_request
 
 
 class WorkSpaceViewSet(BaseViewSet):
@@ -233,9 +233,12 @@ class WeekInMonth(Func):
 
 class UserWorkspaceDashboardEndpoint(BaseAPIView):
     def get(self, request, slug):
+        # ``actor=request.user`` would raise ``ValidationError`` on an SP
+        # proxy. Resolve to the bot so an SP request shows the bot's
+        # own dashboard activity.
         issue_activities = (
             IssueActivity.objects.filter(
-                actor=request.user,
+                actor=actor_for_request(request),
                 workspace__slug=slug,
                 created_at__date__gte=date.today() + relativedelta(months=-3),
             )

@@ -500,17 +500,20 @@ class ProjectFavoritesViewSet(BaseViewSet):
     model = UserFavorite
 
     def get_queryset(self):
+        # ``user=self.request.user`` would raise ``ValidationError`` on
+        # an SP proxy. Resolve to the bot so an SP request lists the
+        # bot's own project favorites.
         return self.filter_queryset(
             super()
             .get_queryset()
             .filter(workspace__slug=self.kwargs.get("slug"))
-            .filter(user=self.request.user)
+            .filter(user=actor_for_request(self.request))
             .select_related("project", "project__project_lead", "project__default_assignee")
             .select_related("workspace", "workspace__owner")
         )
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        serializer.save(user=actor_for_request(self.request))
 
     def create(self, request, slug):
         _ = UserFavorite.objects.create(

@@ -13,6 +13,7 @@ from ..base import BaseAPIView, BaseViewSet
 from plane.app.permissions import WorkspaceMemberPermission
 from plane.db.models import FileAsset, Workspace
 from plane.app.serializers import FileAssetSerializer
+from plane.service_principals.attribution import actor_for_request
 
 
 class FileAssetEndpoint(BaseAPIView):
@@ -68,7 +69,13 @@ class UserAssetsEndpoint(BaseAPIView):
     parser_classes = (MultiPartParser, FormParser)
 
     def get(self, request, asset_key):
-        files = FileAsset.objects.filter(asset=asset_key, created_by=request.user)
+        # ``created_by=request.user`` would raise ``ValidationError`` on an
+        # SP proxy (the FK descriptor refuses ``AnonymousUser`` for a
+        # UUID column). Resolve to the bot so an SP request lands on
+        # the assets the bot uploaded.
+        files = FileAsset.objects.filter(
+            asset=asset_key, created_by=actor_for_request(request)
+        )
         if files.exists():
             serializer = FileAssetSerializer(files, context={"request": request})
             return Response({"data": serializer.data, "status": True}, status=status.HTTP_200_OK)
@@ -86,7 +93,10 @@ class UserAssetsEndpoint(BaseAPIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, asset_key):
-        file_asset = FileAsset.objects.get(asset=asset_key, created_by=request.user)
+        # See ``get`` above — same FK-descriptor rejection risk.
+        file_asset = FileAsset.objects.get(
+            asset=asset_key, created_by=actor_for_request(request)
+        )
         file_asset.is_deleted = True
         file_asset.save(update_fields=["is_deleted"])
         return Response(status=status.HTTP_204_NO_CONTENT)
