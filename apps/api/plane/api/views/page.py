@@ -223,6 +223,10 @@ class PageDetailAPIEndpoint(BaseAPIView):
 
     resource_type = "page"
 
+    # The row a PATCH/DELETE owns: ownership reads ``Page.created_by`` (the
+    # bot for an SP write), never ``owned_by`` (the human-facing owner).
+    authz_resource_model = Page
+
     serializer_class = PageSerializer
     model = Page
     permission_classes = [ProjectEntityPermission]

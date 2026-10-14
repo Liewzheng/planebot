@@ -166,6 +166,11 @@ class StateDetailAPIEndpoint(BaseAPIView):
 
     resource_type = "state"
 
+    # The row a PATCH owns (state DELETE needs ADMIN, which the engine exempts
+    # from the ownership step).
+    authz_resource_model = State
+    authz_resource_lookup = "state_id"
+
     serializer_class = StateSerializer
     model = State
     permission_classes = [ProjectEntityPermission]

@@ -31,6 +31,7 @@ from plane.db.models import Intake, IntakeIssue, Issue, Project, ProjectMember, 
 from plane.utils.host import base_host
 from plane.utils.content_validator import validate_html_content
 from .base import BaseAPIView
+from plane.service_principals.attribution import actor_id_for_request
 from plane.db.models.intake import SourceType
 from plane.utils.openapi import (
     intake_docs,
@@ -214,7 +215,7 @@ class IntakeIssueListCreateAPIEndpoint(BaseAPIView):
         issue_activity.delay(
             type="issue.activity.created",
             requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue.id),
             project_id=str(project_id),
             current_instance=None,
@@ -238,6 +239,19 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
     use_read_replica = True
 
     filterset_fields = ["status"]
+
+    def get_authz_resource(self, request, action):
+        # The URL carries the *issue* id; the row a PATCH owns is the intake
+        # issue linked to it (intake DELETE needs ADMIN, which the engine
+        # exempts from the ownership step).
+        issue_id = self.kwargs.get("issue_id")
+        if not issue_id:
+            return None
+        return IntakeIssue.objects.filter(
+            issue_id=issue_id,
+            project_id=self.kwargs.get("project_id"),
+            workspace__slug=self.kwargs.get("slug"),
+        ).first()
 
     def get_queryset(self):
         intake = Intake.objects.filter(
@@ -343,7 +357,7 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
         )
 
         # Only project members admins and created_by users can access this endpoint
-        if project_member.role <= 5 and str(intake_issue.created_by_id) != str(request.user.id):
+        if project_member.role <= 5 and str(intake_issue.created_by_id) != str(actor_id_for_request(request)):
             return Response(
                 {"error": "You cannot edit intake work items"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -408,7 +422,7 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
             issue_activity.delay(
                 type="issue.activity.updated",
                 requested_data=requested_data,
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue_id),
                 project_id=str(project_id),
                 current_instance=json.dumps(
@@ -429,7 +443,7 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
             issue_activity.delay(
                 type="intake.activity.created",
                 requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue_id),
                 project_id=str(project_id),
                 current_instance=current_instance,
@@ -484,7 +498,7 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
         if intake_issue.status in [-2, -1, 0, 2]:
             # Delete the issue also
             issue = Issue.objects.filter(workspace__slug=slug, project_id=project_id, pk=issue_id).first()
-            if issue.created_by_id != request.user.id and (
+            if issue.created_by_id != actor_id_for_request(request) and (
                 not ProjectMember.objects.filter(
                     workspace__slug=slug,
                     member=request.user,

@@ -51,6 +51,7 @@ from plane.utils.order_queryset import CYCLE_ORDER_BY_ALLOWLIST, ISSUE_ORDER_BY_
 from plane.utils.host import base_host
 from .base import BaseAPIView
 from plane.bgtasks.webhook_task import model_activity
+from plane.service_principals.attribution import actor_id_for_request
 from plane.utils.openapi.decorators import cycle_docs
 from plane.utils.openapi import (
     CURSOR_PARAMETER,
@@ -343,7 +344,7 @@ class CycleListCreateAPIEndpoint(BaseAPIView):
                     model_id=str(serializer.instance.id),
                     requested_data=request.data,
                     current_instance=None,
-                    actor_id=request.user.id,
+                    actor_id=actor_id_for_request(request),
                     slug=slug,
                     origin=base_host(request=request, is_app=True),
                 )
@@ -420,6 +421,10 @@ class CycleDetailAPIEndpoint(BaseAPIView):
     webhook_event = "cycle"
     permission_classes = [ProjectEntityPermission]
     use_read_replica = True
+
+    # The row a PATCH owns (cycle DELETE needs ADMIN, which the engine exempts
+    # from the ownership step).
+    authz_resource_model = Cycle
 
     def get_queryset(self):
         return (
@@ -602,7 +607,7 @@ class CycleDetailAPIEndpoint(BaseAPIView):
                 model_id=str(serializer.instance.id),
                 requested_data=request.data,
                 current_instance=current_instance,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
@@ -651,7 +656,7 @@ class CycleDetailAPIEndpoint(BaseAPIView):
                     "issues": [str(issue_id) for issue_id in cycle_issues],
                 }
             ),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=None,
             project_id=str(project_id),
             current_instance=None,
@@ -1055,7 +1060,7 @@ class CycleIssueListCreateAPIEndpoint(BaseAPIView):
         issue_activity.delay(
             type="cycle.activity.created",
             requested_data=json.dumps({"cycles_list": issues}),
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=None,
             project_id=str(self.kwargs.get("project_id", None)),
             current_instance=json.dumps(
@@ -1172,7 +1177,7 @@ class CycleIssueDetailAPIEndpoint(BaseAPIView):
                     "issues": [str(issue_id)],
                 }
             ),
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=str(issue_id),
             project_id=str(self.kwargs.get("project_id", None)),
             current_instance=None,

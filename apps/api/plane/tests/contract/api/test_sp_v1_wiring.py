@@ -565,11 +565,18 @@ class TestSPPageAllowDenyMatrix:
 
     @pytest.fixture
     def existing_page(self, db, workspace, page_project, create_user):
+        # A page with a *real* creator. Ownership reads ``created_by`` (the
+        # attribution column), never ``owned_by`` (the human-facing page
+        # owner), so an unowned row (``created_by=None``) is correctly
+        # fail-closed for a member-tier SP write. The two ownership tests
+        # below build their page through the real v1 create path instead, so
+        # the field asserted is the field the product stamps.
         page = Page.objects.create(
             name="Existing Page",
             description_html="<p>existing page body</p>",
             workspace=workspace,
             owned_by=create_user,
+            created_by=create_user,
         )
         ProjectPage.objects.create(
             project=page_project,
@@ -741,8 +748,24 @@ class TestSPPageAllowDenyMatrix:
         )
         assert response.status_code == status.HTTP_200_OK
 
+    def _create_page_as_sp(self, client, workspace, project, name="SP Page"):
+        """Create a page through the real v1 POST as the SP.
+
+        The row the product stamps is the row ownership reads: ``created_by``
+        = the SP's bot user (``BaseModel.save`` -> ``current_sp_actor``), while
+        ``owned_by`` stays the SP's human owner. Building the row here rather
+        than by hand keeps the assertion on the field the product writes.
+        """
+        response = client.post(
+            _page_list_url(workspace.slug, project.id),
+            data={"name": name, "description_html": "<p>created via SP</p>"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        return Page.objects.get(pk=response.data["id"])
+
     def test_fully_granted_sp_can_patch_page(
-        self, workspace, create_user, page_project, existing_page, spv1_client
+        self, workspace, create_user, page_project, spv1_client
     ):
         """PATCH (UPDATE) verb on the detail endpoint: a granted SP at
         the UPDATE floor (MEMBER=15) edits a page (200).
@@ -751,15 +774,26 @@ class TestSPPageAllowDenyMatrix:
         ``_METHOD_TO_ACTION`` mapping PATCH to UPDATE would otherwise
         silently default-deny every PATCH from a converted bot, with no
         test catching it.
+
+        The page is created through the real v1 path so its ``created_by`` is
+        the SP's bot user — the column the M40 ownership step reads (M41
+        passes the row in). A hand-built page with ``created_by=None`` is
+        correctly denied as unowned.
         """
         sp = _make_sp(workspace, create_user, name="pg-patch-ok")
+        _scope(sp, "page", "create", project=page_project)
         _scope(sp, "page", "update", project=page_project)
         _grant(sp, page_project, role_cap=15)
 
         spv1_client.credentials(HTTP_X_API_KEY="plane_svc_token_pg-patch-ok")
+        page = self._create_page_as_sp(
+            spv1_client, workspace, page_project, name="Patched Page"
+        )
+        assert page.created_by_id == sp.ensure_bot_user().pk
+
         response = spv1_client.patch(
             _page_detail_url(
-                workspace.slug, page_project.id, existing_page.id
+                workspace.slug, page_project.id, page.id
             ),
             data={"name": "Patched Page"},
             format="json",
@@ -793,31 +827,39 @@ class TestSPPageAllowDenyMatrix:
         )
 
     def test_fully_granted_sp_can_delete_archived_page(
-        self, workspace, create_user, page_project, existing_page, spv1_client
+        self, workspace, create_user, page_project, spv1_client
     ):
         """DELETE on the detail endpoint: a granted SP at cap=15 deletes
-        an archived page (204). The pre-delete ownership check in the view
-        (page.owned_by_id vs request.user.id) passes because the SP owner
-        is the page owner.
+        an archived page (204).
+
+        As with the PATCH case above, the page is created through the real v1
+        path so its ``created_by`` is the SP's bot user. The archive flag is
+        set with a queryset ``update`` — calling ``page.save()`` outside a
+        request would run ``BaseModel.save`` with no in-flight user and null
+        the very ``created_by`` the ownership step matches on.
         """
         from django.utils import timezone
 
         sp = _make_sp(workspace, create_user, name="pg-delete-ok")
+        _scope(sp, "page", "create", project=page_project)
         _scope(sp, "page", "delete", project=page_project)
         _grant(sp, page_project, role_cap=15)
-
-        # The page-detail view requires archived_at before delete; that
-        # guard belongs to the view, not to authz. Set it here so the
-        # only gate the request actually trips is the chain.
-        existing_page.archived_at = timezone.now().date()
-        existing_page.save()
 
         spv1_client.credentials(
             HTTP_X_API_KEY="plane_svc_token_pg-delete-ok"
         )
+        page = self._create_page_as_sp(
+            spv1_client, workspace, page_project, name="Archived Page"
+        )
+
+        # The page-detail view requires archived_at before delete; that
+        # guard belongs to the view, not to authz. Set it here so the
+        # only gate the request actually trips is the chain.
+        Page.objects.filter(pk=page.id).update(archived_at=timezone.now().date())
+
         response = spv1_client.delete(
             _page_detail_url(
-                workspace.slug, page_project.id, existing_page.id
+                workspace.slug, page_project.id, page.id
             )
         )
 
