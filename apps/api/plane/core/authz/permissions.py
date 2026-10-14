@@ -13,6 +13,18 @@ the back end will actually do.
 For human principals this reduces to the existing role-based check
 (workspace role >= required role, or project role >= required role).
 For SPs this is a batched :func:`authorize` over the standard action set.
+
+**Capability probe, not a per-row verdict (M40).** A probe carries no
+resource row — there is nothing to judge ownership against — so
+:func:`effective_actions` runs the chain *without* the per-resource
+ownership step (:func:`authorize` with ``enforce_ownership=False``) and
+reports **scope → grant → role_cap**. This is deliberate: the dispatch
+matrix answers "can this SP update work items at all?", and answering
+"no" because the probe has no row would make the admin UI claim a
+member-tier SP cannot touch even the rows it created — contradicting the
+role→capability grid. Enforcement is unaffected and stays fail-closed: a
+real write passes its row, and a write with no row is still denied
+(``DENY_OWNER_MISMATCH``). Nothing outside this probe is more permissive.
 """
 
 from __future__ import annotations
@@ -61,6 +73,13 @@ def effective_actions(
 ) -> list[ActionPermission]:
     """Return the standard action set annotated with allow/deny.
 
+    This is a **capability probe** (see the module docstring): it runs
+    :func:`authorize` with ``enforce_ownership=False``, so ``update``/
+    ``delete`` report whether the principal's scope + grant + role_cap
+    cover the action — not whether a particular row is owned. There is no
+    row here to own, and per-row ownership cannot be expressed in a
+    per-(resource_type, action) matrix.
+
     Args:
         principal: The resolved actor. ``None`` ⇒ every action denied.
         resource_type: Resource type to probe.
@@ -89,6 +108,10 @@ def effective_actions(
             resource_type,
             resource=project,
             ctx=ctx,
+            # The probe has no row to judge ownership against; report the
+            # scope/grant/role_cap capability. Enforcement callers never
+            # pass this (see permissions module docstring).
+            enforce_ownership=False,
         )
         results.append(
             ActionPermission(

@@ -31,6 +31,7 @@ from plane.core.authz import (
     DENY_INACTIVE_OWNER,
     DENY_INACTIVE_PRINCIPAL,
     DENY_NO_PRINCIPAL,
+    DENY_OWNER_MISMATCH,
     DENY_OWNER_NOT_WORKSPACE_MEMBER,
     DENY_OWNER_ROLE,
     DENY_ROLE_CAP,
@@ -57,7 +58,7 @@ from plane.core.authz import (
     visible_principal_qs,
     visible_sp_qs,
 )
-from plane.db.models import Project, ProjectMember, WorkspaceMember
+from plane.db.models import Issue, Label, Project, ProjectMember, WorkspaceMember
 from plane.service_principals.models import (
     ProjectGrant,
     ServicePrincipal,
@@ -159,6 +160,21 @@ def _add_grant(sp, project, role_cap=15, is_active=True):
         role_cap=role_cap,
         is_active=is_active,
     )
+
+
+def _create_with_author(model, **kwargs):
+    """Create a row whose author is set explicitly (M40 test helper).
+
+    ``BaseModel.save`` credits every write to the in-flight request user and
+    overwrites ``created_by`` with ``None`` when there is none — always the
+    case under pytest. The M40 ownership step reads that column, so a test
+    that needs an owned row must opt out of auto-attribution and then
+    re-read the persisted value.
+    """
+    obj = model(**kwargs)
+    obj.save(disable_auto_set_user=True)
+    obj.refresh_from_db()
+    return obj
 
 
 # --------------------------------------------------------------------------- #
@@ -470,11 +486,39 @@ class TestRoleCapStep:
     def test_role_cap_equals_required_is_allowed(
         self, sp, sp_principal, public_project, workspace
     ):
-        """Boundary case: cap exactly equals the required role must allow."""
+        """Boundary case: cap exactly equals the required role must allow.
+
+        Since M40 the ownership step runs after the role_cap step, so a
+        member-tier DELETE must also point at a row the SP owns: the call
+        passes a bot-authored work item. The ``resource=None`` form of the
+        same call is fail-closed (asserted below), which is the M40 contract
+        for callers that have not been wired to pass a row yet.
+        """
         # DELETE on work_item requires MEMBER (15).
         _add_scope(sp, ResourceType.WORK_ITEM, Action.DELETE, project=public_project)
         _add_grant(sp, public_project, role_cap=15)
+        issue = _create_with_author(
+            Issue,
+            name="Bot Issue",
+            project=public_project,
+            workspace=workspace,
+            created_by=sp.ensure_bot_user(),
+        )
         d = authorize(
+            sp_principal,
+            Action.DELETE,
+            ResourceType.WORK_ITEM,
+            resource=issue,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(public_project.id),
+            ),
+        )
+        assert d.allowed
+        assert d.reason == ALLOWED
+
+        # M40: no row ⇒ ownership cannot be verified ⇒ fail closed.
+        no_row = authorize(
             sp_principal,
             Action.DELETE,
             ResourceType.WORK_ITEM,
@@ -483,8 +527,8 @@ class TestRoleCapStep:
                 project_id=str(public_project.id),
             ),
         )
-        assert d.allowed
-        assert d.reason == ALLOWED
+        assert not no_row.allowed
+        assert no_row.reason == DENY_OWNER_MISMATCH
 
     def test_role_cap_one_below_required_denies(
         self, sp, sp_principal, public_project, workspace
@@ -615,15 +659,28 @@ class TestOwnerIntersectionStep:
         self, sp, sp_principal, public_project, workspace
     ):
         """Owner-intersection is non-cached: a demotion between calls takes
-        effect on the very next authorize() invocation (sp-design.md §5.2)."""
+        effect on the very next authorize() invocation (sp-design.md §5.2).
+
+        M40 note: the row handed in is owned by the SP's bot user, so the
+        ownership step passes and the owner-intersection deny is the step
+        actually under test (a foreign row would deny earlier, at step 3.5).
+        """
         _add_scope(sp, ResourceType.WORK_ITEM, Action.DELETE, project=public_project)
         _add_grant(sp, public_project, role_cap=15)
+        issue = _create_with_author(
+            Issue,
+            name="Bot Issue",
+            project=public_project,
+            workspace=workspace,
+            created_by=sp.ensure_bot_user(),
+        )
 
         # First call: owner is ADMIN (20) → allowed.
         d = authorize(
             sp_principal,
             Action.DELETE,
             ResourceType.WORK_ITEM,
+            resource=issue,
             ctx=AuthzContext(
                 workspace_slug=workspace.slug,
                 project_id=str(public_project.id),
@@ -642,6 +699,7 @@ class TestOwnerIntersectionStep:
             sp_principal,
             Action.DELETE,
             ResourceType.WORK_ITEM,
+            resource=issue,
             ctx=AuthzContext(
                 workspace_slug=workspace.slug,
                 project_id=str(public_project.id),
@@ -806,13 +864,26 @@ class TestLabelProjectScoped:
     def test_update_label_with_grant_allowed(
         self, sp, sp_principal, public_project, workspace
     ):
-        """UPDATE on label requires MEMBER (15); a 15-cap grant allows."""
+        """UPDATE on label requires MEMBER (15); a 15-cap grant allows.
+
+        M40 note: label is project-scoped (its ``project`` FK resolves the
+        grant), and the row must be authored by the SP's own bot user for the
+        ownership step to pass.
+        """
         _add_scope(sp, ResourceType.LABEL, Action.UPDATE, project=public_project)
         _add_grant(sp, public_project, role_cap=15)
+        label = _create_with_author(
+            Label,
+            name="Bot Label",
+            project=public_project,
+            workspace=workspace,
+            created_by=sp.ensure_bot_user(),
+        )
         d = authorize(
             sp_principal,
             Action.UPDATE,
             ResourceType.LABEL,
+            resource=label,
             ctx=AuthzContext(
                 workspace_slug=workspace.slug,
                 project_id=str(public_project.id),
