@@ -616,7 +616,11 @@ class IssueListCreateAPIEndpoint(BaseAPIView):
             # Refetch the issue
             issue = Issue.objects.filter(workspace__slug=slug, project_id=project_id, pk=serializer.data["id"]).first()
             issue.created_at = request.data.get("created_at", timezone.now())
-            issue.created_by_id = request.data.get("created_by", actor_id_for_request(request))
+            # Attribution is server-decided: a client-supplied ``created_by``
+            # cannot move the row under a different actor's ownership. See
+            # M48 / tower finding (vuln/medium) — v1 has no importer flow that
+            # needs to preserve an external author.
+            issue.created_by_id = actor_id_for_request(request)
             issue.save(update_fields=["created_at", "created_by"])
 
             # Track the issue
@@ -876,7 +880,9 @@ class IssueDetailAPIEndpoint(BaseAPIView):
                     # the issue with the provided data, else return with the
                     # default states given.
                     issue.created_at = request.data.get("created_at", timezone.now())
-                    issue.created_by_id = request.data.get("created_by", actor_id_for_request(request))
+                    # Attribution is server-decided; see M48 / the parallel
+                    # site in ``IssueListCreateAPIEndpoint.post`` for context.
+                    issue.created_by_id = actor_id_for_request(request)
                     issue.save(update_fields=["created_at", "created_by"])
 
                     issue_activity.delay(
@@ -1364,7 +1370,9 @@ class IssueLinkListCreateAPIEndpoint(BaseAPIView):
             serializer.save(project_id=project_id, issue_id=issue_id)
             crawl_work_item_link_title.delay(serializer.instance.id, serializer.instance.url)
             link = IssueLink.objects.get(pk=serializer.instance.id)
-            link.created_by_id = request.data.get("created_by", actor_id_for_request(request))
+            # Attribution is server-decided; see M48 / the parallel site in
+            # ``IssueListCreateAPIEndpoint.post`` for context.
+            link.created_by_id = actor_id_for_request(request)
             link.save(update_fields=["created_by"])
             issue_activity.delay(
                 type="link.activity.created",
@@ -1657,8 +1665,10 @@ class IssueCommentListCreateAPIEndpoint(BaseAPIView):
             issue_comment = IssueComment.objects.get(pk=serializer.instance.id)
             # Update the created_at and the created_by and save the comment
             issue_comment.created_at = request.data.get("created_at", timezone.now())
-            issue_comment.created_by_id = request.data.get("created_by", actor_id_for_request(request))
-            issue_comment.actor_id = request.data.get("created_by", actor_id_for_request(request))
+            # Attribution is server-decided; see M48 / the parallel site in
+            # ``IssueListCreateAPIEndpoint.post`` for context.
+            issue_comment.created_by_id = actor_id_for_request(request)
+            issue_comment.actor_id = actor_id_for_request(request)
             issue_comment.save(update_fields=["created_at", "created_by"])
 
             issue_activity.delay(

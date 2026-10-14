@@ -178,6 +178,25 @@ def work_item_url(slug, project_id):
     return f"/api/v1/workspaces/{slug}/projects/{project_id}/work-items/"
 
 
+def work_item_detail_url(slug, project_id, pk):
+    return f"/api/v1/workspaces/{slug}/projects/{project_id}/work-items/{pk}/"
+
+
+def issue_links_url(slug, project_id, issue_id):
+    return f"/api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/links/"
+
+
+def issue_comments_url(slug, project_id, issue_id):
+    return f"/api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/comments/"
+
+
+def issue_comment_detail_url(slug, project_id, issue_id, pk):
+    return (
+        f"/api/v1/workspaces/{slug}/projects/{project_id}/work-items/"
+        f"{issue_id}/comments/{pk}/"
+    )
+
+
 def authenticated_v1_request(token):
     """Drive M8's real auth class and return ``(drf_request, django_request)``.
 
@@ -581,3 +600,260 @@ class TestOrmAttribution:
         issue = Issue.objects.get(project=project, name="bot-work-item")
         assert issue.created_by_id != create_user.pk
         assert issue.created_by_id == sp.ensure_bot_user().pk
+
+
+# --------------------------------------------------------------------------- #
+# Client-supplied ``created_by`` is ignored (M48)                             #
+# --------------------------------------------------------------------------- #
+#
+# M41 wired the **default** at every v1 write site to ``actor_id_for_request``,
+# so an SP that omits ``created_by`` is now stamped with its bot user. M48
+# closes the remaining half: a client that *supplies* a ``created_by`` cannot
+# move the row under a different actor's ownership. The five sites that
+# previously read ``request.data.get("created_by", actor_id_for_request(...))``
+# now read ``actor_id_for_request(request)`` unconditionally.
+#
+# Why the change matters even after M40: ``created_by`` is an authorization
+# input (member-tier SPs may only update/delete rows their own bot created).
+# Letting a caller pick the value lets them pick who owns it.
+#
+# The tests below are differential. Each one is checked against the
+# pre-fix source: with the override restored, the assertions read the
+# spoofed uuid the client sent and the patch tests flip — every assertion
+# is recorded, the file turns red, then the fix is restored and the file
+# goes green again.
+
+
+@pytest.fixture
+def other_human(db):
+    """A second human user — useful as the spoof target so the test row's
+    real actor and the spoof target are both real ``User`` pks.
+
+    ``username`` is on a unique index in ``plane.db.models.user``; the
+    ``create_user`` fixture in the shared ``conftest`` leaves it empty, so a
+    second row with ``username=""`` would collide on insert. We pin a unique
+    handle here.
+    """
+    return User.objects.create(
+        username="spoof-target",
+        email="spoof-target@plane.so",
+        first_name="Spoof",
+        last_name="Target",
+    )
+
+
+def _sp_with_work_item_scope(workspace, owner, project, name):
+    sp = make_sp(workspace, owner, name=name)
+    for action in ("read", "create", "update", "delete"):
+        add_scope(sp, "work_item", action, project=project)
+    add_grant(sp, project, role_cap=15)
+    return sp
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestClientSuppliedCreatedByIgnored:
+    """A client cannot move a freshly-created v1 row under another actor by
+    sending ``created_by`` in the request body — the view stamps the row
+    with ``actor_id_for_request(request)`` and never the spoofed value.
+
+    Pre-fix (the override was active), every assertion below read the
+    spoofed uuid the client sent. The tests are designed to flip
+    individually, not all at once, so a future regression at any one site
+    shows up as a localized failure.
+    """
+
+    def test_human_work_item_post_ignores_client_supplied_created_by(
+        self, workspace, project, create_user, other_human, session_client
+    ):
+        """Human path: the row is credited to the requesting human even when
+        the client names someone else in the payload."""
+        response = session_client.post(
+            work_item_url(workspace.slug, project.id),
+            {
+                "name": "spoof-as-other-human",
+                "created_by": str(other_human.pk),
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+
+        issue = Issue.objects.get(project=project, name="spoof-as-other-human")
+        assert issue.created_by_id == create_user.pk, (
+            "v1 stamped the spoof target (other_human.pk) instead of the "
+            "requesting human — the request.data.get('created_by') override "
+            "is back."
+        )
+        assert issue.created_by_id != other_human.pk
+
+    def test_sp_work_item_post_with_created_by_pointing_at_owner_stamps_bot(
+        self, workspace, project, create_user
+    ):
+        """SP path: the bot user is the actor; the spoofed ``created_by`` (the
+        human owner) must not leak into the row."""
+        sp = _sp_with_work_item_scope(
+            workspace, create_user, project, name="bot-claims-owner"
+        )
+
+        response = client_for(sp).post(
+            work_item_url(workspace.slug, project.id),
+            {
+                "name": "sp-tries-to-blame-owner",
+                "created_by": str(sp.owner.pk),
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+
+        bot = sp.ensure_bot_user()
+        issue = Issue.objects.get(project=project, name="sp-tries-to-blame-owner")
+        assert issue.created_by_id == bot.pk, (
+            "v1 stamped the owner — the SP successfully forged attribution "
+            "back onto the human that filed its token."
+        )
+        assert issue.created_by_id != create_user.pk
+        assert issue.created_by_id != sp.owner.pk
+
+    def test_sp_a_work_item_post_with_created_by_pointing_to_sp_b_stamps_sp_a(
+        self, workspace, project, create_user
+    ):
+        """SP ↔ SP: the row is owned by whichever SP actually wrote it, not by
+        whoever the payload named — and the authz step on the subsequent
+        PATCH matches the writer, not the spoofed name."""
+        sp_a = _sp_with_work_item_scope(
+            workspace, create_user, project, name="forge-a"
+        )
+        sp_b = _sp_with_work_item_scope(
+            workspace, create_user, project, name="forge-b"
+        )
+        sp_b_bot = sp_b.ensure_bot_user()
+
+        # The payload names SP-B's bot; the row must be owned by SP-A.
+        created_response = client_for(sp_a).post(
+            work_item_url(workspace.slug, project.id),
+            {
+                "name": "sp-a-forgeries-sp-b",
+                "created_by": str(sp_b_bot.pk),
+            },
+            format="json",
+        )
+        assert created_response.status_code == status.HTTP_201_CREATED, (
+            created_response.data
+        )
+
+        issue = Issue.objects.get(project=project, name="sp-a-forgeries-sp-b")
+        sp_a_bot = sp_a.ensure_bot_user()
+        assert issue.created_by_id == sp_a_bot.pk, (
+            "v1 stamped the spoofed uuid (sp_b's bot) instead of the actual "
+            "writer (sp_a's bot) — the ownership step on the next PATCH will "
+            "see the wrong owner."
+        )
+        assert issue.created_by_id != sp_b_bot.pk
+
+        # PATCH as the real owner succeeds (member tier).
+        own_patch = client_for(sp_a).patch(
+            work_item_detail_url(workspace.slug, project.id, issue.pk),
+            data={"name": "renamed-by-owner"},
+            format="json",
+        )
+        assert own_patch.status_code == status.HTTP_200_OK, (
+            f"SP-A (the writer) was denied a PATCH on its own row: "
+            f"{own_patch.data!r}. The ownership step now sees SP-A's bot, "
+            f"not the spoofed SP-B value."
+        )
+        issue.refresh_from_db()
+        assert issue.name == "renamed-by-owner"
+
+        # PATCH as the named-forger is denied by the ownership step.
+        other_patch = client_for(sp_b).patch(
+            work_item_detail_url(workspace.slug, project.id, issue.pk),
+            data={"name": "renamed-by-spoofer"},
+            format="json",
+        )
+        assert other_patch.status_code == status.HTTP_403_FORBIDDEN, (
+            f"SP-B (the spoof target) was allowed a PATCH on SP-A's row: "
+            f"{other_patch.data!r}."
+        )
+        assert "may only update a work_item it created" in other_patch.json()[
+            "detail"
+        ]
+
+        # The denied write changed nothing.
+        issue.refresh_from_db()
+        assert issue.name == "renamed-by-owner"
+
+    def test_human_link_post_ignores_client_supplied_created_by(
+        self, workspace, project, create_user, other_human, session_client
+    ):
+        """Link path variant: a human attaching a link cannot set
+        ``created_by`` on it either."""
+        issue = Issue.objects.create(
+            name="link-target",
+            project_id=project.id,
+            workspace_id=project.workspace_id,
+            created_by_id=create_user.pk,
+        )
+
+        response = session_client.post(
+            issue_links_url(workspace.slug, project.id, issue.id),
+            {
+                "title": "T",
+                "url": "https://example.com/spec",
+                "issue_id": str(issue.id),
+                "created_by": str(other_human.pk),
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+
+        from plane.db.models import IssueLink
+
+        link = IssueLink.objects.get(
+            issue=issue, url="https://example.com/spec"
+        )
+        assert link.created_by_id == create_user.pk, (
+            "v1 stamped the spoof target on the link instead of the "
+            "requesting human — the request.data.get('created_by') override "
+            "is back at the link-create site."
+        )
+        assert link.created_by_id != other_human.pk
+
+    def test_human_comment_post_ignores_client_supplied_created_by(
+        self, workspace, project, create_user, other_human, session_client
+    ):
+        """Comment path variant: the row's ``created_by`` *and* its
+        ``actor_id`` (the second attribution column the comment view writes
+        from the same ``request.data.get('created_by')`` site) both belong
+        to the requesting human, never to the spoofed uuid."""
+        issue = Issue.objects.create(
+            name="comment-target",
+            project_id=project.id,
+            workspace_id=project.workspace_id,
+            created_by_id=create_user.pk,
+        )
+
+        response = session_client.post(
+            issue_comments_url(workspace.slug, project.id, issue.id),
+            {
+                "comment_html": "<p>hi</p>",
+                "created_by": str(other_human.pk),
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+
+        from plane.db.models import IssueComment
+
+        comment = IssueComment.objects.get(issue=issue, comment_html="<p>hi</p>")
+        assert comment.created_by_id == create_user.pk, (
+            "v1 stamped the spoof target on the comment instead of the "
+            "requesting human — the request.data.get('created_by') override "
+            "is back at the comment-create site."
+        )
+        assert comment.actor_id == create_user.pk, (
+            "v1 stamped the spoof target on the comment's actor_id — the "
+            "second attribution column read from request.data.get('created_by') "
+            "is back."
+        )
+        assert comment.created_by_id != other_human.pk
+        assert comment.actor_id != other_human.pk

@@ -70,7 +70,22 @@ class IssueSerializer(BaseSerializer):
 
     class Meta:
         model = Issue
-        read_only_fields = ["id", "workspace", "project", "updated_by", "updated_at", "completed_at"]
+        # Defence-in-depth: ``created_by`` is also pinned server-side in the
+        # view (M48); the v1 write path overwrites ``created_by`` *after*
+        # ``serializer.save()`` from ``request.data``, so a ``read_only``
+        # declaration here does not, by itself, close the gap. The serializer
+        # write would still be the row's initial value before the view's
+        # overwrite, which is why the view's site is the fix and this entry
+        # only narrows what the serializer hands back on ``save()``.
+        read_only_fields = [
+            "id",
+            "workspace",
+            "project",
+            "created_by",
+            "updated_by",
+            "updated_at",
+            "completed_at",
+        ]
         exclude = ["description_json", "description_stripped"]
 
     def validate(self, data):
