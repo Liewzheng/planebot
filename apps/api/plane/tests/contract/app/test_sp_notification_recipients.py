@@ -26,30 +26,44 @@ recipient is not a ``ProjectMember`` and has not subscribed to the issue:
 The widening is gated on the actor being a bot — human-actor writes keep the
 legacy recipient path byte-for-byte. That is the human-path control test below.
 
-The eleven tests in this file are paired with the M52/M53 diff in
-``plane/bgtasks/notification_task.py``. Each clause of the M52 block is pinned
-by exactly one test; the M53 discriminator additions cover the bug-classes
-the original test set missed. The revert recipe is captured in the report:
+The thirteen tests in this file are paired with the M52/M53 diff in
+``plane/bgtasks/notification_task.py``. Each clause is pinned by one or
+two tests (counted below); the M53 additions cover the bug-classes the
+original test set missed, **plus** the M53 r2 row-counted second
+delta (soft-delete propagation, P3-2) and the SQL NULL trap fix
+(P2-1). The revert recipe is captured in the report (all numbers
+measured at M53 r2):
 
-  - reverting *both* M52 cooperators-filter exclusions (or the bot guard
-    plus the project-membership guard together) flips six tests red.
-  - reverting *just* the project-membership guard flips
-    ``test_sp_create_excludes_ex_project_member_cooperator`` red.
-  - reverting *just* the bot guard flips
-    ``test_sp_create_with_other_sp_bot_subscriber_still_notifies_human_cooperator``
-    red (the ``DoesNotExist`` cascade hits its single discriminator
-    subscriber).
-  - reverting *just* the missing-preference tolerance flips
-    ``test_sp_create_tolerates_missing_notification_preference`` red (every
-    recipient silently loses its notification).
-  - reverting the M53 helper back to the r2 ``.exclude(...)`` shape (or
-    any other ``NOT (EXISTS(a) AND EXISTS(b))`` form that is not
-    project-scoped on the ``is_active=False`` arm) flips
+  - reverting *both* M52 cooperators-filter exclusions (the bot guard
+    and the project-membership guard together) flips **three** tests
+    red (the two ``TestSpNotifyCooperatorFilterRegression`` tests and
+    ``test_cooperators_queryset_excludes_only_project_local_inactive``).
+    "Six" — the count in the prior version of this header — is the
+    number of reds when *the whole M52 block* is disabled (``_spnotify_
+    extend=False``), which is a different revert.
+  - reverting *just* the project-membership guard flips **two** tests
+    red: ``test_sp_create_excludes_ex_project_member_cooperator`` AND
     ``test_cooperators_queryset_excludes_only_project_local_inactive``
-    red; the user-facing test
+    (both pin the same ORM-level clause).
+  - reverting *just* the bot guard flips **one** test red:
+    ``test_sp_create_with_other_sp_bot_subscriber_still_notifies_human_
+    cooperator`` (the ``DoesNotExist`` cascade hits its single
+    discriminator subscriber).
+  - reverting *just* the missing-preference tolerance flips **one**
+    test red:
+    ``test_sp_create_tolerates_missing_notification_preference``
+    (every recipient silently loses its notification).
+  - reverting the M53 helper back to the r2 ``.exclude(...)`` shape
+    (or any other ``NOT (EXISTS(a) AND EXISTS(b))`` form that is not
+    project-scoped on the ``is_active=False`` arm) flips **one** test
+    red: ``test_cooperators_queryset_excludes_only_project_local_
+    inactive``; the user-facing test
     ``test_sp_create_with_inactive_membership_in_other_project_still_
     notifies_cooperator`` stays green through legacy, which is the
     reviewer's "harmless in effect" finding.
+  - reverting the M53 r2 ``member__isnull=False`` NULL guard flips
+    **one** test red:
+    ``test_cooperators_queryset_survives_null_member_row``.
 
 Discriminator mechanics per test:
 
@@ -734,7 +748,11 @@ class TestSpNotifyNoDuplicates:
 #      "even if not a ProjectMember"). See the report for the full rationale.
 #
 # The two regressions are pinned by the tests below, *separately*: each
-# clause of the cooperators exclude is its own discriminator.
+# clause of the cooperators exclude is its own discriminator. The M53
+# ORM-level tests (in ``TestSpNotifyCooperatorScopeIsProjectLocal`` and
+# ``TestSpNotifyCooperatorNullGuard``) also touch the project-
+# membership guard, so that clause is now pinned by *two* tests, not
+# one — corrected at M53 r2.
 #
 #   * ``test_sp_create_with_other_sp_bot_subscriber_still_notifies_human_
 #     cooperator`` pins the bot guard (``subscriber__is_bot=False``).
@@ -742,18 +760,25 @@ class TestSpNotifyNoDuplicates:
 #     ``DoesNotExist`` in the log; reverting *only* the
 #     project-membership guard does not flip it.
 #
-#   * ``test_sp_create_excludes_ex_project_member_cooperator`` pins the
-#     project-membership guard
+#   * ``test_sp_create_excludes_ex_project_member_cooperator`` AND
+#     ``test_cooperators_queryset_excludes_only_project_local_inactive``
+#     both pin the project-membership guard
 #     (``.exclude(member_project__project_id=...,
 #     member_project__is_active=False)``/M53 helper). Reverting *only*
-#     that exclusion flips this test red; reverting *only* the bot
-#     guard does not.
+#     that exclusion flips **both** tests red; reverting *only* the
+#     bot guard does not.
 #
-# The M53 reviewer's note 3 corrected the earlier claim that
+#   * ``test_cooperators_queryset_survives_null_member_row`` pins the
+#     M53 r2 ``member__isnull=False`` NULL guard. Reverting *only* that
+#     predicate flips this test red and leaves the others green.
+#
+# The M53 r2 reviewer's note 3 corrected the earlier claim that
 # "Reverting either cooperators filter flips both tests to red" — that
-# was wrong. Each test pins one clause; nothing else covers the missing
-# clauses (the M53 tolerance test pins the third clause, the missing-
-# preference fallback, in a separate file location).
+# was wrong. Each test pins one clause; the project-membership guard
+# happens to be pinned twice now because the M53 ORM discriminator and
+# the M52 ex-member regression cover the same clause at different
+# observability levels. The M53 tolerance test pins the missing-
+# preference fallback in a separate class.
 
 
 @pytest.fixture
@@ -1182,9 +1207,13 @@ class TestSpNotifyCooperatorScopeIsProjectLocal:
         ``test_cooperators_queryset_excludes_only_project_local_inactive``
         does the red-before/green-after duty at the ORM level.
 
-        Reverting the entire ``.exclude(...)`` (so cooperators admit
-        every IssueSubscriber) flips both this test and the existing
-        ``test_sp_create_excludes_ex_project_member_cooperator`` to red.
+        What this test **does not** discriminate (measured at M53 r2):
+        removing the cooperators ``.exclude(...)`` entirely does **not**
+        flip this test red — it only **adds** subscribers to the
+        cooperators set, and this test asserts a recipient is *present*
+        (not absent). The ORM discriminator is what pins the helper
+        output; this end-to-end test pins the user-facing contract for
+        future regressions of the legacy path.
         """
         issue = _make_issue(project_in_ws, ws_owned, bot)
         IssueSubscriber.objects.create(
@@ -1211,6 +1240,286 @@ class TestSpNotifyCooperatorScopeIsProjectLocal:
             "task's legacy recipient path covers this case today "
             "(\"harmless in effect\"); if the legacy path is ever "
             "weakened, this test guards the contract."
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Cooperators-filter NULL-member guard (M53 r2 P2 fix)                          #
+# --------------------------------------------------------------------------- #
+#
+# The r2 ``.exclude(member_project__project_id=...,
+# member_project__is_active=False)`` form was rebuilt in M53 as a
+# project-scoped subquery of the shape ``NOT (subscriber_id IN (SELECT
+# member_id FROM project_members WHERE project_id=THIS AND NOT
+# is_active))``. The reviewer pointed out a SQL NULL trap: ``ProjectMember.
+# member`` is ``null=True``, the DB accepts a row with ``member=NULL``,
+# and ``x NOT IN (…, NULL)`` evaluates to NULL (not TRUE) in SQL. A
+# single NULL-member row in the subquery makes the predicate NULL for
+# *every* subscriber — the cooperators arm is silently emptied.
+#
+# The fix (``member__isnull=False`` on the inner filter) excludes the
+# NULL-member row from the subquery's result set, restoring the
+# expected NOT-IN semantics. The r2 EXISTS form was immune to this
+# because NULL never equals anything, so the M53 helper's null-guard
+# is what keeps the project-scope fix from trading one wrongness for
+# another.
+
+
+@pytest.fixture
+def normal_cooperator_subscriber(db, ws_owned, project_in_ws):
+    """A plain subscriber User row — no project membership, no bot
+    flag. The per-test call creates the ``IssueSubscriber`` row
+    (because ``IssueSubscriber.issue_id`` is non-null). Used by the
+    NULL-trap test as the regression target: when the production
+    helper accidentally returns the empty set, *this* subscriber is
+    the one who would have been notified but wasn't."""
+    return User.objects.create(
+        email="normal-cooperator@plane.so",
+        username="normal_cooperator_human",
+        first_name="Normal",
+        last_name="Cooperator",
+    )
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestSpNotifyCooperatorNullGuard:
+    def test_cooperators_queryset_survives_null_member_row(
+        self, ws_owned, project_in_ws, bot, normal_cooperator_subscriber
+    ):
+        """Plant a ``ProjectMember(project_id=THIS, is_active=False,
+        member=None)`` row and assert the cooperators helper still
+        returns the normal subscriber.
+
+        Without the M53 r2 null guard, SQL semantics make every
+        subscriber disappear from the cooperators arm (one NULL row
+        in the subquery → ``x NOT IN (…, NULL)`` → NULL for every
+        subscriber → entire arm empties). With ``member__isnull=
+        False`` the NULL row is filtered out at the subquery, so the
+        helper output is the regular subscriber set minus the
+        (none-of-them-exists) inactive members, and the subscriber is
+        included.
+
+        This test was added at M53 r2 after the reviewer caught the
+        NULL trap; it pins the load-bearing role of the
+        ``member__isnull=False`` predicate in the production helper.
+        Reverting just the null guard (keeping the rest of the M53
+        helper intact) flips this test red.
+        """
+        issue = _make_issue(project_in_ws, ws_owned, bot)
+
+        # The normal subscriber is the regression target — they must
+        # survive the planted NULL-member row.
+        IssueSubscriber.objects.create(
+            project=project_in_ws,
+            issue=issue,
+            subscriber=normal_cooperator_subscriber,
+        )
+
+        # Plant the poison row: a ProjectMember in THIS project with
+        # is_active=False and member=None. The column is null=True so
+        # this is a valid row; ``member=None`` is the trigger.
+        ProjectMember.objects.create(
+            project=project_in_ws,
+            member=None,
+            role=15,
+            is_active=False,
+        )
+
+        # Sanity: the row was created.
+        null_rows = ProjectMember.objects.filter(
+            project_id=project_in_ws.id,
+            member__isnull=True,
+        )
+        assert null_rows.count() == 1, (
+            f"Plant step must produce exactly one NULL-member row; "
+            f"got {null_rows.count()}."
+        )
+
+        # The cooperators helper MUST still return the subscriber.
+        cooperator_ids = _spnotify_cooperator_ids_for(
+            project_id=project_in_ws.id, issue_id=issue.id
+        )
+        assert normal_cooperator_subscriber.pk in cooperator_ids, (
+            "Production cooperators helper returned an empty set (or "
+            "dropped the subscriber) when a NULL-member ProjectMember "
+            "row exists for this project. This is the SQL NULL trap: "
+            "``x NOT IN (…, NULL)`` evaluates to NULL and the entire "
+            "cooperators arm empties. The M53 r2 null guard "
+            "(``member__isnull=False`` on the inner filter) is the "
+            "fix — reverting it flips this assertion to red."
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Cooperators-filter soft-delete propagation (M53 r2 second delta)            #
+# --------------------------------------------------------------------------- #
+#
+# The r2 ``.exclude(member_project__project_id=...,
+# member_project__is_active=False)`` form relied on a reverse-FK
+# join through ``IssueSubscriber.subscriber.member_project``. That
+# join is built from the related manager's default queryset, which
+# soft-deletes via ``deleted_at IS NULL`` on ``ProjectMember`` — but
+# only on the FK *from* the subscriber. The r2 SQL itself compiles
+# to bare ``EXISTS(SELECT 1 FROM "project_members" U2 WHERE
+# (NOT U2."is_active" AND U2."member_id" = …))`` — **no**
+# ``deleted_at`` predicate anywhere. A subscriber whose only
+# THIS-project ``ProjectMember`` row is soft-deleted (still in the
+# DB, ``deleted_at`` set, ``is_active=False``) would have been
+# treated as "inactive in this project" by r2's exclude and dropped
+# from the cooperators arm. Their notification would never arrive.
+#
+# The M53 helper wraps the inner lookup in a single project-scoped
+# ``ProjectMember.objects.filter(...)`` subquery. That lookup **does**
+# carry the related model's default soft-delete-aware manager — and
+# the manager adds ``deleted_at IS NULL`` automatically (visible in
+# the compiled SQL ``U0."deleted_at" IS NULL AND NOT
+# U0."is_active" AND U0."project_id" = …``). So a soft-deleted row
+# is **not** seen as "inactive in this project" by the M53 helper:
+# it is invisible to the exclude entirely, and the subscriber
+# stays in the cooperators set.
+#
+# This is the M53 r2 second semantic delta (correctness improvement,
+# not behavioural neutrality). It aligns with the mission rule
+# "cooperators with no ProjectMember row at all are still notified":
+# a soft-deleted row is, from the cooperators' perspective,
+# equivalent to no row at all.
+
+
+@pytest.fixture
+def soft_deleted_only_member(db, ws_owned, project_in_ws):
+    """A human subscriber whose ONLY ProjectMember row in this project
+    was soft-deleted (the row is still in the DB with ``deleted_at``
+    set, but the default manager hides it). No active
+    ``ProjectMember`` row exists for this project — so legacy
+    ``IssueSubscriber ∩ active_ProjectMember`` cannot catch them;
+    M53's exclusion-aware cooperators arm is the only path that can
+    deliver the notification.
+
+    Per the M53 r2 reviewer's verification: r2 form gives this user
+    zero notifications (the EXCLUDE sees the inactive row, drops
+    them, no other arm catches them); M53 form gives them a
+    notification. The direction matches the mission rule."""
+    user = User.objects.create(
+        email="soft-deleted-only@plane.so",
+        username="soft_deleted_only_human",
+        first_name="Soft",
+        last_name="Deleted",
+    )
+    WorkspaceMember.objects.create(
+        workspace=ws_owned, member=user, role=15, is_active=True
+    )
+    # A ProjectMember row for THIS project. Soft-delete it BEFORE the
+    # first save completes the row, but keep is_active as written by
+    # the test so we know the row physically exists.
+    ProjectMember.objects.create(
+        project=project_in_ws,
+        member=user,
+        role=15,
+        is_active=False,
+    )
+    # Now soft-delete (set deleted_at on the row) — the row is still
+    # in the table, but the default queryset filters it out.
+    ProjectMember.all_objects.filter(
+        project=project_in_ws, member=user
+    ).update(deleted_at="2025-01-01 00:00:00+00:00")
+    return user
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestSpNotifyCooperatorSoftDeletePropagation:
+    def test_cooperators_helper_includes_subscriber_with_only_soft_deleted_pm_row(
+        self, ws_owned, project_in_ws, bot, soft_deleted_only_member, celery_eager
+    ):
+        """A subscriber whose only THIS-project ``ProjectMember`` row
+        is soft-deleted must remain in the cooperators set.
+
+        Pre-M53 (r2 ``.exclude(...)``): the compiled SQL has **no**
+        ``deleted_at`` predicate; the EXCLUDE sees the row, treats
+        it as "inactive in this project", and drops the subscriber
+        from the cooperators arm. Combined with no legacy catch
+        (no active row), the user gets zero notifications.
+
+        Post-M53 (project-scoped subquery): the inner ``ProjectMember
+        .objects.filter(...)`` carries the default manager's
+        ``deleted_at IS NULL`` automatically; the soft-deleted row
+        is invisible to the exclude, the subscriber stays in the
+        cooperators set, the notification is delivered.
+
+        The M53 r2 reviewer constructed the r2 scenario and
+        confirmed both directions empirically (deleted_at set, no
+        notification; deleted_at cleared, notification arrives).
+        This test pins the M53-side delivery for the same case —
+        reverting M53 (back to the r2 ``.exclude(...)`` shape)
+        flips this test red, while restoring M53 flips it green.
+        """
+        issue = _make_issue(project_in_ws, ws_owned, bot)
+        IssueSubscriber.objects.create(
+            project=project_in_ws,
+            issue=issue,
+            subscriber=soft_deleted_only_member,
+        )
+
+        # Sanity: the row exists (uses all_objects because the
+        # default manager hides soft-deleted rows), and the default
+        # manager hides it from any other lookup.
+        all_pm_rows = ProjectMember.all_objects.filter(
+            project=project_in_ws, member=soft_deleted_only_member
+        )
+        assert all_pm_rows.count() == 1, (
+            "Fixture pre-condition: a ProjectMember row for this user "
+            "in this project must physically exist (soft-deleted)."
+        )
+        # Default manager hides it — that's what triggers the
+        # soft-delete propagation.
+        visible_rows = ProjectMember.objects.filter(
+            project=project_in_ws, member=soft_deleted_only_member
+        )
+        assert visible_rows.count() == 0, (
+            "Fixture pre-condition: the default ProjectMember manager "
+            "must hide the soft-deleted row."
+        )
+
+        # Direct ORM-level assertion first.
+        cooperator_ids = _spnotify_cooperator_ids_for(
+            project_id=project_in_ws.id, issue_id=issue.id
+        )
+        assert soft_deleted_only_member.pk in cooperator_ids, (
+            "Production cooperators helper must keep a subscriber "
+            "whose only THIS-project ProjectMember row is "
+            "soft-deleted. The M53 subquery respects the soft-delete "
+            "manager (``U0.deleted_at IS NULL`` in the compiled SQL), "
+            "the r2 ``.exclude(...)`` form did not — reverting M53 "
+            "flips this assertion to red."
+        )
+
+        # End-to-end mirror: drive the notification task and assert
+        # the user received a Notification. The reviewer constructed
+        # the same case on r2 and observed zero deliveries; this
+        # test pins the M53-side delivery.
+        activities = _issue_activity_dicts(
+            issue, project_in_ws, ws_owned, bot.pk
+        )
+
+        _drive_notifications(
+            type="issue.activity.created",
+            issue_id=issue.id,
+            project_id=project_in_ws.id,
+            actor_id=bot.pk,
+            subscriber=True,
+            issue_activities_created=activities,
+        )
+
+        receivers = _notification_receivers(issue.id)
+        assert soft_deleted_only_member.pk in receivers, (
+            "End-to-end: a subscriber with only a soft-deleted "
+            "ProjectMember row in THIS project must receive a "
+            "Notification. The M53 helper surfaces them via the "
+            "cooperators arm; legacy ``IssueSubscriber ∩ "
+            "active_ProjectMember`` cannot catch them (no active "
+            "row exists). On r2 the cooperators arm dropped them "
+            "and they received zero notifications."
         )
 
 

@@ -208,11 +208,17 @@ def _spnotify_cooperator_ids_qs(project_id, issue_id):
 
       2. The exclude below is *project-scoped*: a subscriber is dropped
          only if they have a ``ProjectMember(project_id=THIS,
-         is_active=False)`` row. A subscriber active in this project
-         with stale inactive rows in some *other* project is NOT
-         dropped. A subscriber with no ``ProjectMember`` row at all is
-         also unaffected — by mission rule "even if not a
-         ProjectMember" they remain a valid cooperator.
+         is_active=False, member_id IS NOT NULL, deleted_at IS NULL)``
+         row. A subscriber active in this project with stale inactive
+         rows in some *other* project is NOT dropped. A subscriber with
+         no ``ProjectMember`` row at all is also unaffected — by
+         mission rule "even if not a ProjectMember" they remain a
+         valid cooperator. The ``member__isnull=False`` predicate is
+         the M53 r2 fix: ``ProjectMember.member`` is ``null=True`` and
+         SQL ``NOT IN (…, NULL)`` evaluates to NULL (not TRUE), so a
+         single NULL-member row in the subquery would otherwise null
+         out the entire cooperators arm. The r2 ``EXISTS`` form was
+         immune to this because NULL never equals.
 
     Implemented as a positive ``NOT IN`` subquery rather than the r2
     form ``.exclude(member_project__project_id=...,
@@ -233,7 +239,10 @@ def _spnotify_cooperator_ids_qs(project_id, issue_id):
             subscriber__is_bot=False,
         ).exclude(
             subscriber__in=ProjectMember.objects.filter(
-                project_id=project_id, is_active=False
+                project_id=project_id,
+                is_active=False,
+                # SQL NULL guard — see the docstring above.
+                member__isnull=False,
             ).values("member_id")
         )
     )
