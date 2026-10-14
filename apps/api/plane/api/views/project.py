@@ -738,7 +738,13 @@ class ProjectSummaryAPIEndpoint(BaseAPIView):
 
         Get the summary of a project
         """
-        project = Project.objects.filter(pk=project_id, workspace__slug=slug).first()
+        # Filter through ``visible_projects`` so a service principal without a
+        # ProjectGrant on this project gets a 404 rather than its name/
+        # identifier/counts leaking. The engine skips the ProjectGrant step for
+        # ``project`` (a workspace-level resource type), so a view-level filter
+        # is the only enforcement point here (PLANE-111 — companion of the
+        # list/lite/detail migration in this file).
+        project = visible_projects(request, slug).filter(pk=project_id).first()
         if not project:
             return Response({"error": "Project not found"}, status=status.HTTP_404_NOT_FOUND)
         fields = request.GET.get("fields", "").split(",")

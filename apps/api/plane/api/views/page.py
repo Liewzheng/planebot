@@ -28,12 +28,13 @@ from plane.app.permissions import ProjectEntityPermission
 from plane.db.models import (
     Page,
     Project,
-    ProjectMember,
     UserFavorite,
     UserRecentVisit,
 )
 
 from .base import BaseAPIView
+from .issue import request_can_admin_or_own
+from plane.service_principals.attribution import actor_id_for_request
 from plane.bgtasks.page_version_task import track_page_version
 from plane.utils.order_queryset import PAGE_ORDER_BY_ALLOWLIST, sanitize_order_by
 from plane.utils.page_content import content_is_unchanged, sync_page_description_formats
@@ -389,14 +390,12 @@ class PageDetailAPIEndpoint(BaseAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if page.owned_by_id != request.user.id and (
-            not ProjectMember.objects.filter(
-                workspace__slug=slug,
-                member=request.user,
-                role=20,
-                project_id=project_id,
-                is_active=True,
-            ).exists()
+        if not request_can_admin_or_own(
+            request,
+            slug=slug,
+            project_id=project_id,
+            own_id=page.owned_by_id,
+            actor_id=actor_id_for_request(request),
         ):
             return Response(
                 {"error": "Only admin or owner can delete the page"},

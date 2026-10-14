@@ -36,11 +36,11 @@ from plane.db.models import (
     ModuleIssue,
     ModuleLink,
     Project,
-    ProjectMember,
     UserFavorite,
 )
 
 from .base import BaseAPIView
+from .issue import request_can_admin_or_own
 from plane.service_principals.attribution import (
     actor_for_request,
     actor_id_for_request,
@@ -558,14 +558,12 @@ class ModuleDetailAPIEndpoint(BaseAPIView):
         Only admins or the module creator can perform this action.
         """
         module = Module.objects.get(workspace__slug=slug, project_id=project_id, pk=pk)
-        if module.created_by_id != actor_id_for_request(request) and (
-            not ProjectMember.objects.filter(
-                workspace__slug=slug,
-                member=request.user,
-                role=20,
-                project_id=project_id,
-                is_active=True,
-            ).exists()
+        if not request_can_admin_or_own(
+            request,
+            slug=slug,
+            project_id=project_id,
+            own_id=module.created_by_id,
+            actor_id=actor_id_for_request(request),
         ):
             return Response(
                 {"error": "Only admin or creator can delete the module"},

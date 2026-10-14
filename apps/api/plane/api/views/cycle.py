@@ -43,13 +43,13 @@ from plane.db.models import (
     Project,
     FileAsset,
     IssueLink,
-    ProjectMember,
     UserFavorite,
 )
 from plane.utils.cycle_transfer_issues import transfer_cycle_issues
 from plane.utils.order_queryset import CYCLE_ORDER_BY_ALLOWLIST, ISSUE_ORDER_BY_ALLOWLIST, sanitize_order_by
 from plane.utils.host import base_host
 from .base import BaseAPIView
+from .issue import request_can_admin_or_own
 from plane.bgtasks.webhook_task import model_activity
 from plane.service_principals.attribution import actor_id_for_request
 from plane.utils.openapi.decorators import cycle_docs
@@ -631,14 +631,12 @@ class CycleDetailAPIEndpoint(BaseAPIView):
         Only admins or the cycle creator can perform this action.
         """
         cycle = Cycle.objects.get(workspace__slug=slug, project_id=project_id, pk=pk)
-        if cycle.owned_by_id != request.user.id and (
-            not ProjectMember.objects.filter(
-                workspace__slug=slug,
-                member=request.user,
-                role=20,
-                project_id=project_id,
-                is_active=True,
-            ).exists()
+        if not request_can_admin_or_own(
+            request,
+            slug=slug,
+            project_id=project_id,
+            own_id=cycle.owned_by_id,
+            actor_id=actor_id_for_request(request),
         ):
             return Response(
                 {"error": "Only admin or creator can delete the cycle"},
@@ -1264,14 +1262,19 @@ class TransferCycleIssueAPIEndpoint(BaseAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Call the utility function to handle the transfer
+        # Call the utility function to handle the transfer. ``user_id``
+        # is consumed only as the activity row's ``actor_id`` (see
+        # ``plane.utils.cycle_transfer_issues``); under a service-principal
+        # request, ``self.request.user`` is the SP's human owner, so an
+        # SP-driven transfer would otherwise be signed by the owner in
+        # the audit trail (M41 r2 finding P2-3). Use the acting principal.
         result = transfer_cycle_issues(
             slug=slug,
             project_id=project_id,
             cycle_id=cycle_id,
             new_cycle_id=new_cycle_id,
             request=request,
-            user_id=self.request.user.id,
+            user_id=actor_id_for_request(request),
         )
 
         # Handle the result

@@ -221,6 +221,33 @@ def request_has_issue_permission(request, project_id, issue=None, allowed_roles=
     )
 
 
+def request_can_admin_or_own(request, *, slug, project_id, own_id, actor_id):
+    """The legacy "only admin or creator can delete" check, keyed on the
+    *acting* principal rather than ``request.user`` (M41 r2 sweep — review
+    finding P2-2).
+
+    A human: same logic as today — they own the row (the project-typed
+    ``own_id`` column equals their id) or hold the project admin role. A
+    service principal: ``True`` — the authz chain has already evaluated
+    the action in :class:`AIScopeEnforcementMixin.check_permissions`
+    (``authorize()`` ran the per-resource ownership step at step 3.5 for
+    member-tier deletes, and admin-tier deletes are ownership-exempt).
+    Re-running the owner-keyed membership check on ``request.user`` would
+    consult the SP **owner's** ProjectMember row, the wrong principal for
+    a ``plane_svc_`` token, and would 403 a delete the chain approved.
+    Mirrors :func:`request_has_issue_permission`.
+    """
+    if sp_from_request(request) is not None:
+        return True
+    return own_id == actor_id or ProjectMember.objects.filter(
+        workspace__slug=slug,
+        project_id=project_id,
+        member=request.user,
+        role=20,
+        is_active=True,
+    ).exists()
+
+
 class WorkspaceIssueAPIEndpoint(BaseAPIView):
 
     resource_type = "work_item"
@@ -976,14 +1003,12 @@ class IssueDetailAPIEndpoint(BaseAPIView):
         Only admins or the item creator can perform this action.
         """
         issue = Issue.objects.get(workspace__slug=slug, project_id=project_id, pk=pk)
-        if issue.created_by_id != actor_id_for_request(request) and (
-            not ProjectMember.objects.filter(
-                workspace__slug=slug,
-                member=request.user,
-                role=20,
-                project_id=project_id,
-                is_active=True,
-            ).exists()
+        if not request_can_admin_or_own(
+            request,
+            slug=slug,
+            project_id=project_id,
+            own_id=issue.created_by_id,
+            actor_id=actor_id_for_request(request),
         ):
             return Response(
                 {"error": "Only admin or creator can delete the work item"},
