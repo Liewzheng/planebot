@@ -68,13 +68,18 @@ class ServicePrincipal(BaseModel):
     # The shadow bot user this SP's writes are credited to (``is_bot=True``,
     # ``bot_type=SERVICE_PRINCIPAL``, ``display_name`` ``svc-<name> (bot)``).
     # It is deliberately **not** a workspace member: attribution points at it,
-    # authorization never consults it. Created lazily by
-    # ``attribution.ensure_bot_user`` and backfilled for pre-existing rows by
-    # migration 0005.
+    # authorization never consults it.
+    #
+    # Provisioned on four paths, all of which end with this column set:
+    # eagerly by the SP management API; inherited from the account's existing
+    # bot by ``migrate_ai_accounts_to_service_principals``; backfilled for
+    # pre-existing rows by migration 0005; and lazily by
+    # ``attribution.ensure_bot_user`` on first write.
     #
     # A NULL value means "no attribution target yet". Ownership checks must
     # therefore fail closed on NULL rather than comparing it to another NULL —
-    # a row whose ``created_by`` is NULL did NOT belong to this SP.
+    # a row whose ``created_by`` is NULL did NOT belong to this SP. The FK is
+    # SET_NULL, so deleting a bot user puts this column back to NULL.
     bot_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

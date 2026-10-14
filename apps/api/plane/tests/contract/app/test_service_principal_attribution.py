@@ -35,12 +35,17 @@ is the attribution *layer*, which is what M40's ownership engine keys on.
 from __future__ import annotations
 
 import importlib
+from io import StringIO
 
 import pytest
+from django.core.management import call_command
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.test import APIClient, APIRequestFactory
 
+from plane.ai_accounts.models import AIAccount
 from plane.db.models import (
     APIToken,
     Issue,
@@ -225,7 +230,7 @@ def run_bot_user_backfill():
 class TestShadowBotUserIdentity:
     def test_api_created_sp_provisions_bot_user(self, session_client, workspace):
         """Creating an SP through the management API provisions its bot user
-        eagerly, so ``bot_user`` is populated for every live SP."""
+        eagerly, so an SP made here never depends on the lazy path."""
         response = session_client.post(
             f"/api/workspaces/{workspace.slug}/service-principals/",
             {"name": "deploy-bot", "description": ""},
@@ -315,7 +320,7 @@ class TestShadowBotUserIdentity:
     def test_backfill_reuses_the_inherited_ai_account_bot(self, workspace, create_user, sp):
         """An SP converted from an AIAccount keeps the bot user whose earlier
         writes are already attributed to it, so its history stays continuous."""
-        from plane.ai_accounts.models import AIAccount, AIAccountMigrationRecord
+        from plane.ai_accounts.models import AIAccountMigrationRecord
 
         inherited = User.objects.create(
             username="bot_user_inherited",
@@ -340,6 +345,40 @@ class TestShadowBotUserIdentity:
         # keeps moving through the visibility predicates it already did.
         assert sp.bot_user.display_name == f"svc-{sp.name} (bot)"
         assert sp.bot_user.bot_type == "AI_AGENT"
+
+    def test_conversion_after_the_backfill_still_links_the_inherited_bot(
+        self, workspace, create_user
+    ):
+        """The other half of the same invariant: an account converted *after*
+        0005 ran must inherit its bot user at conversion time.
+
+        Without the link the SP keeps ``bot_user = NULL`` until its first
+        write, and the lazy path then mints a fresh bot — silently losing the
+        attribution of everything the inherited bot wrote before the
+        conversion, which is exactly what 0005's inherited branch preserves.
+        """
+        inherited = User.objects.create(
+            username="bot_user_converted",
+            display_name="Plane",
+            email="bot_user_converted@plane.so",
+            is_bot=True,
+            bot_type="AI_AGENT",
+        )
+        account = AIAccount.objects.create(
+            workspace=workspace, owner=create_user, bot_user=inherited, name="converted-now"
+        )
+
+        call_command(
+            "migrate_ai_accounts_to_service_principals",
+            stdout=StringIO(),
+            stderr=StringIO(),
+        )
+
+        sp = ServicePrincipal.objects.get(id=account.id)
+        assert sp.bot_user_id == inherited.pk
+        # And the lazy path must not mint a second bot on top of it.
+        assert ensure_bot_user(sp).pk == inherited.pk
+        assert User.objects.filter(username=bot_username(sp)).count() == 0
 
 
 # --------------------------------------------------------------------------- #
@@ -407,6 +446,48 @@ class TestActorResolver:
 
         assert sp_from_request(django_request) is None
         assert actor_for_request(django_request) == sp.owner
+
+    def test_human_user_token_lookup_cost_is_per_request_not_per_write(
+        self, workspace, create_user
+    ):
+        """``BaseModel.save`` consults the resolver on **every** write, so the
+        *negative* answer has to be memoised too: a v1 request driven by a
+        human ``plane_api_`` token would otherwise run a
+        ``service_principals ⋈ apitokens`` SELECT on every insert/update.
+
+        Measured: 1 query on the first resolution, 0 for every later one on
+        the same request (5 further calls below), versus 1 per call before the
+        miss was cached.
+        """
+        token = APIToken.objects.create(
+            user=create_user, label="human", token="plane_api_human_cached", workspace=workspace
+        )
+        request = type("_R", (), {"user": create_user, "auth": token.token})()
+
+        with CaptureQueriesContext(connection) as first:
+            assert sp_from_request(request) is None
+        with CaptureQueriesContext(connection) as subsequent:
+            for _ in range(5):
+                assert sp_from_request(request) is None
+
+        assert len(first.captured_queries) == 1
+        assert len(subsequent.captured_queries) == 0
+
+    def test_service_token_lookup_is_also_memoised(self, sp):
+        """The positive answer is memoised as well — one lookup per request,
+        not one per write."""
+        request = type(
+            "_R", (), {"user": sp.owner, "auth": token_of(sp)}
+        )()
+
+        with CaptureQueriesContext(connection) as first:
+            assert sp_from_request(request) == sp
+        with CaptureQueriesContext(connection) as subsequent:
+            for _ in range(5):
+                assert sp_from_request(request) == sp
+
+        assert len(first.captured_queries) == 1
+        assert len(subsequent.captured_queries) == 0
 
 
 # --------------------------------------------------------------------------- #

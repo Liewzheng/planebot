@@ -53,7 +53,7 @@ from urllib.parse import urlparse
 
 from django.conf import settings
 from django.contrib.auth.hashers import make_password
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 
 from .constants import BOT_TYPE_SERVICE_PRINCIPAL, PrincipalType
 
@@ -64,8 +64,13 @@ if TYPE_CHECKING:  # pragma: no cover — typing only
 
 # Cache slot for the resolved SP on the request object, so the token → SP
 # lookup runs at most once per request even though ``BaseModel.save`` consults
-# it on every single write.
+# it on every single write. The *miss* is cached too (as this sentinel):
+# otherwise a v1 request carrying a human ``plane_api_`` token — where the
+# lookup legitimately finds nothing — would repeat the SELECT for every write
+# in the request. The sentinel is distinct from ``None`` so "not looked up
+# yet" and "looked up, not a service principal" stay distinguishable.
 _SP_CACHE_ATTR = "_sp_attribution_principal"
+_SP_CACHE_MISS = object()
 
 
 def bot_display_name(sp_name: str) -> str:
@@ -105,6 +110,11 @@ def ensure_bot_user(service_principal: "ServicePrincipal") -> "User":
 
     Idempotent and race-tolerant: the username is unique, so a concurrent
     first-use loses the insert and re-reads the winner rather than failing.
+    The insert runs in its own savepoint because it is normally reached from
+    inside a view's ``transaction.atomic()`` — without the savepoint a lost
+    race would poison the enclosing transaction and the recovery SELECT would
+    raise ``InternalError`` instead of recovering.
+
     No ``WorkspaceMember`` / ``ProjectMember`` row is ever created here — that
     is the invariant that keeps the bot out of permission decisions.
     """
@@ -119,18 +129,21 @@ def ensure_bot_user(service_principal: "ServicePrincipal") -> "User":
         bot = User.objects.get(username=username)
     except User.DoesNotExist:
         try:
-            bot = User.objects.create(
-                username=username,
-                display_name=bot_display_name(service_principal.name),
-                first_name=bot_first_name(service_principal.name),
-                last_name="Bot",
-                email=bot_email(service_principal),
-                is_bot=True,
-                bot_type=BOT_TYPE_SERVICE_PRINCIPAL,
-                is_active=True,
-                password=make_password(uuid.uuid4().hex),
-                is_password_autoset=True,
-            )
+            # Own savepoint: a failure here must not abort the caller's
+            # transaction, or the recovery read below cannot run.
+            with transaction.atomic():
+                bot = User.objects.create(
+                    username=username,
+                    display_name=bot_display_name(service_principal.name),
+                    first_name=bot_first_name(service_principal.name),
+                    last_name="Bot",
+                    email=bot_email(service_principal),
+                    is_bot=True,
+                    bot_type=BOT_TYPE_SERVICE_PRINCIPAL,
+                    is_active=True,
+                    password=make_password(uuid.uuid4().hex),
+                    is_password_autoset=True,
+                )
         except IntegrityError:
             # Lost a race against a concurrent writer (username or email).
             bot = User.objects.get(username=username)
@@ -183,22 +196,26 @@ def sp_from_request(request) -> Optional["ServicePrincipal"]:
 
     ``None`` means "this request is not a service principal" — a session, a
     user API token, an anonymous call, or no request at all (celery, shell).
+
+    The answer is memoised on the request *including a negative one*: the ORM
+    consults this on every write, and a v1 write driven by a human
+    ``plane_api_`` token resolves to ``None`` on every one of them. At most one
+    lookup per request, whichever way it goes.
     """
     if request is None:
         return None
 
     cached = getattr(request, _SP_CACHE_ATTR, None)
     if cached is not None:
-        return cached
+        return None if cached is _SP_CACHE_MISS else cached
 
     sp = _resolve_sp(request)
-    if sp is not None:
-        # Best effort: request objects that forbid attribute writes simply
-        # skip the cache and pay the lookup again.
-        try:
-            setattr(request, _SP_CACHE_ATTR, sp)
-        except (AttributeError, TypeError):  # pragma: no cover — defensive
-            pass
+    # Best effort: request objects that forbid attribute writes simply skip
+    # the cache and pay the lookup again.
+    try:
+        setattr(request, _SP_CACHE_ATTR, sp if sp is not None else _SP_CACHE_MISS)
+    except (AttributeError, TypeError):  # pragma: no cover — defensive
+        pass
     return sp
 
 

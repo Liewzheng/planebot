@@ -127,9 +127,12 @@ class ServicePrincipalListCreateAPIEndpoint(BaseAPIView):
                 avatar=avatar,
             )
             # The shadow bot user every one of this SP's writes will be
-            # credited to. Created eagerly (not only on first write) so
-            # ``bot_user`` is populated for every live SP — an ownership
-            # check can then read it directly, and a NULL stays unambiguous.
+            # credited to. Created eagerly (not only on first write) so an SP
+            # made here has an attribution target from the start — an
+            # ownership check can then read ``bot_user`` directly. A NULL is
+            # still possible in principle (the FK is SET_NULL, and rows can be
+            # inserted outside this endpoint), so it must keep meaning "no
+            # attribution target" rather than matching another NULL.
             sp.ensure_bot_user()
             token = APIToken.objects.create(
                 user=request.user,
