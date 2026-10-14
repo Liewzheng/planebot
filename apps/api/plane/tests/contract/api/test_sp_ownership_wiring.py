@@ -1029,14 +1029,20 @@ def _members_lite_url(workspace_slug, project_id):
     )
 
 
+def _members_detail_url(workspace_slug, project_id, pk):
+    return (
+        f"/api/v1/workspaces/{workspace_slug}/projects/{project_id}"
+        f"/members/{pk}/"
+    )
+
+
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestSPProjectMembersRosterHonorsGrants:
     """PLANE-111 follow-through: a service principal must not see the
     roster of a project it holds no ProjectGrant on.
 
-    Both endpoints (``/projects/<id>/members/`` and the lite variant
-    at ``/projects/<id>/project-members-lite/``) declare
+    Three project-scoped sibling endpoints declare
     ``resource_type="member"`` — a workspace-level resource in the
     engine, so the grant step is skipped — and the handler body
     keys off ``project_id`` only. Without a view-level filter the
@@ -1052,7 +1058,8 @@ class TestSPProjectMembersRosterHonorsGrants:
     Two-sided: ungranted → 404; granted → 200 with the roster.
     The reviewer's probe (workspace-wide ``member:read`` scope, no
     ProjectGrant) showed the un-migrated endpoint returned 200;
-    this test catches it.
+    this test catches it. The list and lite endpoints were the r3
+    fix; the detail GET was the r4 sweep-close (r3 missed it).
     """
 
     def _make_summary_shape_sp(self, workspace, owner, name):
@@ -1162,3 +1169,76 @@ class TestSPProjectMembersRosterHonorsGrants:
             member["email"] == create_user.email
             for member in body
         )
+
+    def test_ungranted_project_member_detail_404(
+        self, workspace, create_user
+    ):
+        """The detail GET (``/projects/<pid>/members/<pk>/``) — the
+        third sibling endpoint. Reviewer-m41-r3 caught that the r3
+        sweep closed the list + lite but missed this one: the handler
+        did a bare ``ProjectMember.objects.get(...)`` with no project
+        visibility check, so an SP with only a workspace-wide
+        ``member:read`` scope got a 200 with the row's
+        ``{id, first_name, last_name, email, display_name}``. The
+        guard the list + lite endpoints got is the same one this
+        endpoint needs.
+
+        Discrimination verified by reverting ``api/views/member.py``
+        against the **correct** pre-fix baseline ``391d9be4d6`` (the
+        reviewer flagged that the r3 ``git checkout HEAD~2 --`` resolved
+        to ``a8da0c8617`` which already contained
+        ``visible_projects``; HEAD~3 from the r4 tip is the right
+        parent).
+        """
+        secret = Project.objects.create(
+            name="Secret MacDock",
+            identifier="MD",
+            workspace=workspace,
+            created_by=create_user,
+            network=2,
+        )
+        victim = ProjectMember.objects.create(
+            project=secret, member=create_user, role=20, is_active=True
+        )
+
+        sp = self._make_summary_shape_sp(
+            workspace, create_user, "members-detail-sp"
+        )
+
+        response = _client(sp).get(
+            _members_detail_url(workspace.slug, secret.id, victim.id)
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND, (
+            response.status_code, response.data
+        )
+
+    def test_granted_project_member_detail_still_200(
+        self, workspace, create_user
+    ):
+        """Companion control: the detail GET still returns the member
+        when the SP is granted into the project. Without it, the
+        filter could be over-narrowing and the family-wide contract
+        would still be broken — just symmetrically."""
+        granted = Project.objects.create(
+            name="Granted Project",
+            identifier="GP",
+            workspace=workspace,
+            created_by=create_user,
+            network=2,
+        )
+        victim = ProjectMember.objects.create(
+            project=granted, member=create_user, role=20, is_active=True
+        )
+        sp = self._make_summary_shape_sp(
+            workspace, create_user, "members-detail-granted-sp"
+        )
+        ProjectGrant.objects.create(
+            service_principal=sp, project=granted, role_cap=15
+        )
+
+        response = _client(sp).get(
+            _members_detail_url(workspace.slug, granted.id, victim.id)
+        )
+        assert response.status_code == status.HTTP_200_OK, response.data
+        body = response.json()
+        assert body["email"] == create_user.email

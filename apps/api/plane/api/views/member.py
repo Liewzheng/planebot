@@ -218,6 +218,19 @@ class ProjectMemberDetailAPIEndpoint(ProjectMemberListCreateAPIEndpoint):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Filter through ``visible_projects`` so a service principal without
+        # a ProjectGrant on this project gets a 404 rather than the row's
+        # user profile leaking. Companion of the list / lite endpoints
+        # fixed in r3 — the r3 sweep missed this single-member GET
+        # (reviewer-m41-r3 finding P2-1). The engine's grant step is
+        # skipped for ``member`` (workspace-level resource type), so a
+        # view-level filter is the only enforcement point (PLANE-111).
+        if not visible_projects(request, slug).filter(pk=project_id).exists():
+            return Response(
+                {"error": "Project does not exist"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         # Get the workspace members that are present inside the workspace
         project_members = ProjectMember.objects.get(project_id=project_id, workspace__slug=slug, pk=pk)
         user = User.objects.get(id=project_members.member_id)
