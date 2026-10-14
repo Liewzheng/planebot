@@ -24,7 +24,7 @@ from plane.app.serializers import (
 )
 from plane.utils.cache import invalidate_cache
 from plane.bgtasks.issue_activities_task import issue_activity
-from plane.service_principals.attribution import actor_id_for_request
+from plane.service_principals.attribution import actor_id_for_request, actor_for_request
 
 
 def generate_random_name(length=10):
@@ -80,6 +80,10 @@ class BulkEstimatePointEndpoint(BaseViewSet):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        # ``bulk_create`` skips ``Model.save``'s ``current_sp_actor`` hook —
+        # fill the attribution columns explicitly so an SP write credits
+        # the SP's bot, not the owner. Same rationale as the headline
+        # ``CycleIssue.bulk_create`` fix.
         estimate_points = EstimatePoint.objects.bulk_create(
             [
                 EstimatePoint(
@@ -89,8 +93,8 @@ class BulkEstimatePointEndpoint(BaseViewSet):
                     description=estimate_point.get("description", ""),
                     project_id=project_id,
                     workspace_id=estimate.workspace_id,
-                    created_by=request.user,
-                    updated_by=request.user,
+                    created_by=actor_for_request(request),
+                    updated_by=actor_for_request(request),
                 )
                 for estimate_point in estimate_points
             ],

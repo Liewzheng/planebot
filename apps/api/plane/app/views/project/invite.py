@@ -35,6 +35,7 @@ from plane.db.models import (
 )
 from plane.db.models.project import ProjectNetwork
 from plane.utils.host import base_host
+from plane.service_principals.attribution import actor_for_request
 
 
 class ProjectInvitationsViewset(BaseViewSet):
@@ -86,7 +87,7 @@ class ProjectInvitationsViewset(BaseViewSet):
                             algorithm="HS256",
                         ),
                         role=email.get("role", 5),
-                        created_by=request.user,
+                        created_by=actor_for_request(request),
                     )
                 )
             except ValidationError:
@@ -159,6 +160,9 @@ class UserProjectInvitationsViewset(BaseViewSet):
             workspace__slug=slug, project_id__in=validated_project_ids, member=request.user
         ).update(is_active=True)
 
+        # ``bulk_create`` skips ``Model.save``'s ``current_sp_actor`` hook —
+        # fill the attribution columns explicitly so an SP write credits
+        # the SP's bot, not the owner.
         ProjectMember.objects.bulk_create(
             [
                 ProjectMember(
@@ -166,7 +170,7 @@ class UserProjectInvitationsViewset(BaseViewSet):
                     member=request.user,
                     role=workspace_role,
                     workspace=workspace,
-                    created_by=request.user,
+                    created_by=actor_for_request(request),
                 )
                 for project_id in validated_project_ids
             ],
@@ -179,7 +183,7 @@ class UserProjectInvitationsViewset(BaseViewSet):
                     project_id=project_id,
                     user=request.user,
                     workspace=workspace,
-                    created_by=request.user,
+                    created_by=actor_for_request(request),
                 )
                 for project_id in validated_project_ids
             ],

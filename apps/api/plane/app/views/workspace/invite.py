@@ -30,6 +30,7 @@ from plane.bgtasks.workspace_invitation_task import workspace_invitation
 from plane.db.models import User, Workspace, WorkspaceMember, WorkspaceMemberInvite
 from plane.utils.cache import invalidate_cache, invalidate_cache_directly
 from plane.utils.host import base_host
+from plane.service_principals.attribution import actor_for_request
 from .. import BaseViewSet
 
 
@@ -98,7 +99,7 @@ class WorkspaceInvitationsViewset(BaseViewSet):
                             algorithm="HS256",
                         ),
                         role=email.get("role", 5),
-                        created_by=request.user,
+                        created_by=actor_for_request(request),
                     )
                 )
             except ValidationError:
@@ -263,14 +264,16 @@ class UserWorkspaceInvitationsViewSet(BaseViewSet):
                 is_active=True, role=invitation.role
             )
 
-        # Bulk create the user for all the workspaces
+        # Bulk create the user for all the workspaces. ``bulk_create``
+        # skips ``Model.save``'s ``current_sp_actor`` hook, so fill
+        # ``created_by`` explicitly to credit an SP write to the bot.
         WorkspaceMember.objects.bulk_create(
             [
                 WorkspaceMember(
                     workspace=invitation.workspace,
                     member=request.user,
                     role=invitation.role,
-                    created_by=request.user,
+                    created_by=actor_for_request(request),
                 )
                 for invitation in workspace_invitations
             ],

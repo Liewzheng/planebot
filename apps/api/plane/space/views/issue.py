@@ -68,7 +68,7 @@ from plane.db.models import (
 )
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.issue_filters import issue_filters
-from plane.service_principals.attribution import actor_id_for_request
+from plane.service_principals.attribution import actor_id_for_request, actor_for_request
 
 
 # Public Spaces board writes must bind caller-supplied object ids to the board's
@@ -298,10 +298,12 @@ class IssueCommentPublicViewSet(BaseViewSet):
 
         serializer = IssueCommentSerializer(data=request.data)
         if serializer.is_valid():
+            # ``IssueComment.actor`` is a separate FK from ``created_by`` —
+            # ``BaseModel.save`` does not rewrite it.
             serializer.save(
                 project_id=project_deploy_board.project_id,
                 issue_id=issue_id,
-                actor=request.user,
+                actor=actor_for_request(request),
                 access="EXTERNAL",
             )
             issue_activity.delay(
@@ -341,7 +343,7 @@ class IssueCommentPublicViewSet(BaseViewSet):
             project_id=project_deploy_board.project_id,
             workspace_id=project_deploy_board.workspace_id,
             access="EXTERNAL",
-            actor=request.user,
+            actor=actor_for_request(request),
         )
         serializer = IssueCommentSerializer(comment, data=request.data, partial=True)
         if serializer.is_valid():
@@ -373,7 +375,7 @@ class IssueCommentPublicViewSet(BaseViewSet):
             project_id=project_deploy_board.project_id,
             workspace_id=project_deploy_board.workspace_id,
             access="EXTERNAL",
-            actor=request.user,
+            actor=actor_for_request(request),
         )
         issue_activity.delay(
             type="comment.activity.deleted",
@@ -430,7 +432,7 @@ class IssueReactionPublicViewSet(BaseViewSet):
             serializer.save(
                 project_id=project_deploy_board.project_id,
                 issue_id=issue_id,
-                actor=request.user,
+                actor=actor_for_request(request),
             )
             if not ProjectMember.objects.filter(
                 project_id=project_deploy_board.project_id,
@@ -469,7 +471,7 @@ class IssueReactionPublicViewSet(BaseViewSet):
             project_id=project_deploy_board.project_id,
             issue_id=issue_id,
             reaction=reaction_code,
-            actor=request.user,
+            actor=actor_for_request(request),
         )
         issue_activity.delay(
             type="issue_reaction.activity.deleted",
@@ -527,7 +529,7 @@ class CommentReactionPublicViewSet(BaseViewSet):
             serializer.save(
                 project_id=project_deploy_board.project_id,
                 comment_id=comment_id,
-                actor=request.user,
+                actor=actor_for_request(request),
             )
             if not ProjectMember.objects.filter(
                 project_id=project_deploy_board.project_id,
@@ -572,7 +574,7 @@ class CommentReactionPublicViewSet(BaseViewSet):
             comment_id=comment_id,
             comment__access="EXTERNAL",
             reaction=reaction_code,
-            actor=request.user,
+            actor=actor_for_request(request),
         )
         issue_activity.delay(
             type="comment_reaction.activity.deleted",

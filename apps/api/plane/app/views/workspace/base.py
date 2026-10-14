@@ -48,6 +48,7 @@ from plane.license.utils.instance_value import get_configuration_value
 from plane.bgtasks.workspace_seed_task import workspace_seed
 from plane.utils.url import contains_url
 from plane.utils.csv_utils import sanitize_csv_row
+from plane.service_principals.attribution import actor_for_request
 
 
 class WorkSpaceViewSet(BaseViewSet):
@@ -331,7 +332,10 @@ class WorkspaceThemeViewSet(BaseViewSet):
         workspace = Workspace.objects.get(slug=slug)
         serializer = WorkspaceThemeSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(workspace=workspace, actor=request.user)
+            # ``WorkspaceTheme.actor`` is a separate FK — ``BaseModel.save``
+            # does not rewrite it. Resolve to the SP's bot so an SP request
+            # credits the bot, not the human owner.
+            serializer.save(workspace=workspace, actor=actor_for_request(request))
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

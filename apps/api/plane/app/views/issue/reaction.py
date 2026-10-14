@@ -20,7 +20,7 @@ from plane.app.permissions import allow_permission, ROLE
 from plane.db.models import IssueReaction
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.host import base_host
-from plane.service_principals.attribution import actor_id_for_request
+from plane.service_principals.attribution import actor_for_request, actor_id_for_request
 
 
 class IssueReactionViewSet(BaseViewSet):
@@ -47,7 +47,10 @@ class IssueReactionViewSet(BaseViewSet):
     def create(self, request, slug, project_id, issue_id):
         serializer = IssueReactionSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(issue_id=issue_id, project_id=project_id, actor=request.user)
+            # ``IssueReaction.actor`` is a separate FK — ``BaseModel.save``
+            # does not rewrite it. Resolve to the SP's bot so an SP request
+            # credits the bot, not the human owner.
+            serializer.save(issue_id=issue_id, project_id=project_id, actor=actor_for_request(request))
             issue_activity.delay(
                 type="issue_reaction.activity.created",
                 requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),

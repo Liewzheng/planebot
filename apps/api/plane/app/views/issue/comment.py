@@ -23,7 +23,7 @@ from plane.db.models import IssueComment, ProjectMember, CommentReaction, Projec
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.host import base_host
 from plane.bgtasks.webhook_task import model_activity
-from plane.service_principals.attribution import actor_id_for_request
+from plane.service_principals.attribution import actor_for_request, actor_id_for_request
 
 
 class IssueCommentViewSet(BaseViewSet):
@@ -82,7 +82,11 @@ class IssueCommentViewSet(BaseViewSet):
             )
         serializer = IssueCommentSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(project_id=project_id, issue_id=issue_id, actor=request.user)
+            # ``IssueComment.actor`` is a separate FK from ``created_by`` —
+            # ``BaseModel.save`` does not rewrite it, so the SP proxy would
+            # otherwise be rejected by the FK descriptor ("must be a User
+            # instance") or persisted with ``actor_id=NULL``.
+            serializer.save(project_id=project_id, issue_id=issue_id, actor=actor_for_request(request))
             issue_activity.delay(
                 type="comment.activity.created",
                 requested_data=json.dumps(serializer.data, cls=DjangoJSONEncoder),
