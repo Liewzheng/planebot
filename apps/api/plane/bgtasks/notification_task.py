@@ -306,7 +306,75 @@ def notifications(
                 assignee__in=Subquery(project_members),
             ).values_list("assignee", flat=True)
 
-            issue_subscribers = list(set(issue_subscribers) - {uuid.UUID(actor_id)})
+            # ----- M52 SPNOTIFY (begin) ------------------------------------------------- #
+            # Extend the subscription-activity recipient set with three classes the user
+            # asked for explicitly: the workspace owner, the project owner, and every
+            # IssueSubscriber ("task cooperator"). The widening fires only when the
+            # actor is a bot — i.e. when an SP wrote the row. Human-actor writes keep
+            # the legacy recipient path (project_members ∩ IssueSubscriber, minus
+            # mentions / the actor), which is what test 4 in
+            # tests/contract/app/test_sp_notification_recipients.py pins byte-for-byte.
+            #
+            # Project owner is the union of ``Project.project_lead`` and
+            # ``ProjectMember(role=20, is_active=True)``: the schema lets either field
+            # name "the project owner", and silently taking only one would drop half
+            # the cases. Workspace owner is ``Workspace.owner`` (single FK).
+            #
+            # The notification *content* is unchanged: ``triggered_by_id`` stays the
+            # bot (M39/M41/M47 wired that on the write side), and the activity data
+            # flows through unchanged. We only widen the recipient set.
+            _spnotify_actor = User.objects.filter(pk=actor_id).first()
+            _spnotify_extend = bool(_spnotify_actor and _spnotify_actor.is_bot)
+
+            try:
+                _spnotify_actor_uuid = uuid.UUID(actor_id)
+            except (ValueError, TypeError):
+                _spnotify_actor_uuid = None
+
+            _spnotify_mention_uuids = {
+                uuid.UUID(m) for m in (new_mentions + comment_mentions) if m
+            }
+            _spnotify_exclude = _spnotify_mention_uuids | (
+                {_spnotify_actor_uuid} if _spnotify_actor_uuid else set()
+            )
+
+            if _spnotify_extend:
+                # ``Workspace.owner`` is a non-null FK; resolve via the workspace
+                # already loaded on ``project``.
+                _spnotify_ws_owner_id = project.workspace.owner_id
+
+                _spnotify_project_owner_ids = set()
+                if project.project_lead_id:
+                    _spnotify_project_owner_ids.add(project.project_lead_id)
+                _spnotify_project_owner_ids.update(
+                    ProjectMember.objects.filter(
+                        project_id=project_id, role=20, is_active=True
+                    ).values_list("member_id", flat=True)
+                )
+
+                _spnotify_cooperator_ids = set(
+                    IssueSubscriber.objects.filter(
+                        project_id=project_id, issue_id=issue_id
+                    ).values_list("subscriber_id", flat=True)
+                )
+
+                _spnotify_extension_uuids = (
+                    ({_spnotify_ws_owner_id} if _spnotify_ws_owner_id else set())
+                    | _spnotify_project_owner_ids
+                    | _spnotify_cooperator_ids
+                ) - _spnotify_exclude
+
+                issue_subscribers = list(
+                    set(issue_subscribers)
+                    | _spnotify_extension_uuids
+                    - ({_spnotify_actor_uuid} if _spnotify_actor_uuid else set())
+                )
+            else:
+                issue_subscribers = list(
+                    set(issue_subscribers)
+                    - ({_spnotify_actor_uuid} if _spnotify_actor_uuid else set())
+                )
+            # ----- M52 SPNOTIFY (end) --------------------------------------------------- #
 
             for subscriber in issue_subscribers:
                 if issue.created_by_id and issue.created_by_id == subscriber:
