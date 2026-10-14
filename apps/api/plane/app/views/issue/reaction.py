@@ -20,6 +20,7 @@ from plane.app.permissions import allow_permission, ROLE
 from plane.db.models import IssueReaction
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.host import base_host
+from plane.service_principals.attribution import actor_for_request, actor_id_for_request
 
 
 class IssueReactionViewSet(BaseViewSet):
@@ -46,11 +47,14 @@ class IssueReactionViewSet(BaseViewSet):
     def create(self, request, slug, project_id, issue_id):
         serializer = IssueReactionSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(issue_id=issue_id, project_id=project_id, actor=request.user)
+            # ``IssueReaction.actor`` is a separate FK — ``BaseModel.save``
+            # does not rewrite it. Resolve to the SP's bot so an SP request
+            # credits the bot, not the human owner.
+            serializer.save(issue_id=issue_id, project_id=project_id, actor=actor_for_request(request))
             issue_activity.delay(
                 type="issue_reaction.activity.created",
                 requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue_id),
                 project_id=str(project_id),
                 current_instance=None,
@@ -63,17 +67,20 @@ class IssueReactionViewSet(BaseViewSet):
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
     def destroy(self, request, slug, project_id, issue_id, reaction_code):
+        # ``actor=request.user`` would raise ``ValidationError`` on an SP
+        # proxy. Resolve to the bot so an SP request finds the
+        # bot's own reactions.
         issue_reaction = IssueReaction.objects.get(
             workspace__slug=slug,
             project_id=project_id,
             issue_id=issue_id,
             reaction=reaction_code,
-            actor=request.user,
+            actor=actor_for_request(request),
         )
         issue_activity.delay(
             type="issue_reaction.activity.deleted",
             requested_data=None,
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=str(self.kwargs.get("issue_id", None)),
             project_id=str(self.kwargs.get("project_id", None)),
             current_instance=json.dumps({"reaction": str(reaction_code), "identifier": str(issue_reaction.id)}),

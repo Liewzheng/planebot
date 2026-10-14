@@ -40,6 +40,7 @@ from plane.utils.filters import ComplexFilterBackend
 from plane.utils.filters import IssueFilterSet
 from .. import BaseViewSet
 from plane.utils.host import base_host
+from plane.service_principals.attribution import actor_id_for_request, actor_for_request
 
 
 class ModuleIssueViewSet(BaseViewSet):
@@ -228,8 +229,8 @@ class ModuleIssueViewSet(BaseViewSet):
                     module_id=module_id,
                     project_id=project_id,
                     workspace_id=project.workspace_id,
-                    created_by=request.user,
-                    updated_by=request.user,
+                    created_by=actor_for_request(request),
+                    updated_by=actor_for_request(request),
                 )
                 for issue in issues
             ],
@@ -241,7 +242,7 @@ class ModuleIssueViewSet(BaseViewSet):
             issue_activity.delay(
                 type="module.activity.created",
                 requested_data=json.dumps({"module_id": str(module_id)}),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue),
                 project_id=project_id,
                 current_instance=None,
@@ -268,8 +269,8 @@ class ModuleIssueViewSet(BaseViewSet):
                         module_id=module,
                         project_id=project_id,
                         workspace_id=project.workspace_id,
-                        created_by=request.user,
-                        updated_by=request.user,
+                        created_by=actor_for_request(request),
+                        updated_by=actor_for_request(request),
                     )
                     for module in modules
                 ],
@@ -281,7 +282,7 @@ class ModuleIssueViewSet(BaseViewSet):
                 issue_activity.delay(
                     type="module.activity.created",
                     requested_data=json.dumps({"module_id": module}),
-                    actor_id=str(request.user.id),
+                    actor_id=str(actor_id_for_request(request)),
                     issue_id=issue_id,
                     project_id=project_id,
                     current_instance=None,
@@ -302,7 +303,7 @@ class ModuleIssueViewSet(BaseViewSet):
             issue_activity.delay(
                 type="module.activity.deleted",
                 requested_data=json.dumps({"module_id": str(module_id)}),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue_id),
                 project_id=str(project_id),
                 current_instance=json.dumps(
@@ -333,7 +334,7 @@ class ModuleIssueViewSet(BaseViewSet):
         issue_activity.delay(
             type="module.activity.deleted",
             requested_data=json.dumps({"module_id": str(module_id)}),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue_id),
             project_id=str(project_id),
             current_instance=json.dumps({"module_name": module_issue.first().module.name}),

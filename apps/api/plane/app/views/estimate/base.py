@@ -24,6 +24,7 @@ from plane.app.serializers import (
 )
 from plane.utils.cache import invalidate_cache
 from plane.bgtasks.issue_activities_task import issue_activity
+from plane.service_principals.attribution import actor_id_for_request, actor_for_request
 
 
 def generate_random_name(length=10):
@@ -79,6 +80,10 @@ class BulkEstimatePointEndpoint(BaseViewSet):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        # ``bulk_create`` skips ``Model.save``'s ``current_sp_actor`` hook —
+        # fill the attribution columns explicitly so an SP write credits
+        # the SP's bot, not the owner. Same rationale as the headline
+        # ``CycleIssue.bulk_create`` fix.
         estimate_points = EstimatePoint.objects.bulk_create(
             [
                 EstimatePoint(
@@ -88,8 +93,8 @@ class BulkEstimatePointEndpoint(BaseViewSet):
                     description=estimate_point.get("description", ""),
                     project_id=project_id,
                     workspace_id=estimate.workspace_id,
-                    created_by=request.user,
-                    updated_by=request.user,
+                    created_by=actor_for_request(request),
+                    updated_by=actor_for_request(request),
                 )
                 for estimate_point in estimate_points
             ],
@@ -210,7 +215,7 @@ class EstimatePointEndpoint(BaseViewSet):
                 issue_activity.delay(
                     type="issue.activity.updated",
                     requested_data=json.dumps({"estimate_point": (str(new_estimate_id) if new_estimate_id else None)}),
-                    actor_id=str(request.user.id),
+                    actor_id=str(actor_id_for_request(request)),
                     issue_id=issue.id,
                     project_id=str(project_id),
                     current_instance=json.dumps(
@@ -229,7 +234,7 @@ class EstimatePointEndpoint(BaseViewSet):
                 issue_activity.delay(
                     type="issue.activity.updated",
                     requested_data=json.dumps({"estimate_point": None}),
-                    actor_id=str(request.user.id),
+                    actor_id=str(actor_id_for_request(request)),
                     issue_id=issue.id,
                     project_id=str(project_id),
                     current_instance=json.dumps(

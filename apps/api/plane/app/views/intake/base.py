@@ -52,6 +52,7 @@ from plane.utils.timezone_converter import user_timezone_converter
 from plane.utils.global_paginator import paginate
 from plane.utils.host import base_host
 from plane.db.models.intake import SourceType
+from plane.service_principals.attribution import actor_id_for_request
 
 
 class IntakeViewSet(BaseViewSet):
@@ -280,7 +281,7 @@ class IntakeIssueViewSet(BaseViewSet):
             issue_activity.delay(
                 type="issue.activity.created",
                 requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(serializer.data["id"]),
                 project_id=str(project_id),
                 current_instance=None,
@@ -289,11 +290,11 @@ class IntakeIssueViewSet(BaseViewSet):
                 origin=base_host(request=request, is_app=True),
                 intake=str(intake_issue.id),
             )
-            # updated issue description version
+            # updated issue description version — owned by the acting principal.
             issue_description_version_task.delay(
                 updated_issue=json.dumps(request.data, cls=DjangoJSONEncoder),
                 issue_id=str(serializer.data["id"]),
-                user_id=request.user.id,
+                user_id=actor_id_for_request(request),
                 is_creating=True,
             )
             intake_issue = (
@@ -441,7 +442,7 @@ class IntakeIssueViewSet(BaseViewSet):
                     issue_activity.delay(
                         type="issue.activity.updated",
                         requested_data=issue_requested_data,
-                        actor_id=str(request.user.id),
+                        actor_id=str(actor_id_for_request(request)),
                         issue_id=str(issue.id),
                         project_id=str(project_id),
                         current_instance=issue_current_instance,
@@ -450,11 +451,11 @@ class IntakeIssueViewSet(BaseViewSet):
                         origin=base_host(request=request, is_app=True),
                         intake=str(intake_issue.id),
                     )
-                    # updated issue description version
+                    # updated issue description version — owned by the acting principal.
                     issue_description_version_task.delay(
                         updated_issue=issue_current_instance,
                         issue_id=str(pk),
-                        user_id=request.user.id,
+                        user_id=actor_id_for_request(request),
                     )
 
         if intake_serializer:
@@ -463,7 +464,7 @@ class IntakeIssueViewSet(BaseViewSet):
             issue_activity.delay(
                 type="intake.activity.created",
                 requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(pk),
                 project_id=str(project_id),
                 current_instance=intake_current_instance,

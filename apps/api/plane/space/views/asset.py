@@ -19,6 +19,7 @@ from plane.bgtasks.storage_metadata_task import get_asset_object_metadata
 from plane.db.models import DeployBoard, FileAsset
 from plane.settings.storage import S3Storage
 from plane.utils.path_validator import sanitize_filename
+from plane.service_principals.attribution import actor_for_request
 
 # Module imports
 from .base import BaseAPIView
@@ -128,13 +129,15 @@ class EntityAssetEndpoint(BaseAPIView):
         # asset key
         asset_key = f"{deploy_board.workspace_id}/{uuid.uuid4().hex}-{name}"
 
-        # Create a File Asset
+        # Create a File Asset — resolve the SP proxy to its bot user so the
+        # FK descriptor accepts the value and an SP write credits the bot,
+        # not the owner.
         asset = FileAsset.objects.create(
             attributes={"name": name, "type": type, "size": size_limit},
             asset=asset_key,
             size=size_limit,
             workspace=deploy_board.workspace,
-            created_by=request.user,
+            created_by=actor_for_request(request),
             entity_type=entity_type,
             project_id=deploy_board.project_id,
             comment_id=entity_identifier,

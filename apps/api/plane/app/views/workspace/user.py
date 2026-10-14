@@ -63,6 +63,7 @@ from plane.utils.order_queryset import ACTIVITY_ORDER_BY_ALLOWLIST, order_issue_
 from plane.utils.paginator import GroupedOffsetPaginator, SubGroupedOffsetPaginator
 from plane.utils.filters import ComplexFilterBackend
 from plane.utils.filters import IssueFilterSet
+from plane.service_principals.attribution import actor_for_request
 
 
 class UserLastProjectWithWorkspaceEndpoint(BaseAPIView):
@@ -531,9 +532,12 @@ class WorkspaceUserProfileStatsEndpoint(BaseAPIView):
 
 class UserActivityGraphEndpoint(BaseAPIView):
     def get(self, request, slug):
+        # ``actor=request.user`` would raise ``ValidationError`` on an SP
+        # proxy. Resolve to the bot so an SP request shows the bot's
+        # own activity graph.
         issue_activities = (
             IssueActivity.objects.filter(
-                actor=request.user,
+                actor=actor_for_request(request),
                 workspace__slug=slug,
                 created_at__date__gte=date.today() + relativedelta(months=-6),
             )

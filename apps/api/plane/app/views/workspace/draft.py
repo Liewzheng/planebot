@@ -41,6 +41,7 @@ from .. import BaseViewSet
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.issue_filters import issue_filters
 from plane.utils.host import base_host
+from plane.service_principals.attribution import actor_id_for_request, actor_for_request
 
 
 class WorkspaceDraftIssueViewSet(BaseViewSet):
@@ -98,7 +99,13 @@ class WorkspaceDraftIssueViewSet(BaseViewSet):
     @allow_permission(allowed_roles=[ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST], level="WORKSPACE")
     def list(self, request, slug):
         filters = issue_filters(request.query_params, "GET")
-        issues = self.get_queryset().filter(created_by=request.user).order_by("-created_at")
+        # ``created_by=request.user`` would raise ``ValidationError`` on an
+        # SP proxy (FK descriptor refuses ``AnonymousUser`` for a UUID
+        # column). Resolve to the bot so an SP request lists the drafts
+        # the bot created.
+        issues = self.get_queryset().filter(
+            created_by=actor_for_request(request)
+        ).order_by("-created_at")
 
         issues = issues.filter(**filters)
         # List Paginate
@@ -160,7 +167,10 @@ class WorkspaceDraftIssueViewSet(BaseViewSet):
         level="WORKSPACE",
     )
     def partial_update(self, request, slug, pk):
-        issue = self.get_queryset().filter(pk=pk, created_by=request.user).first()
+        # See ``list`` above — same FK-descriptor rejection risk.
+        issue = self.get_queryset().filter(
+            pk=pk, created_by=actor_for_request(request)
+        ).first()
 
         if not issue:
             return Response({"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -185,7 +195,10 @@ class WorkspaceDraftIssueViewSet(BaseViewSet):
 
     @allow_permission(allowed_roles=[ROLE.ADMIN], creator=True, model=Issue, level="WORKSPACE")
     def retrieve(self, request, slug, pk=None):
-        issue = self.get_queryset().filter(pk=pk, created_by=request.user).first()
+        # See ``list`` above — same FK-descriptor rejection risk.
+        issue = self.get_queryset().filter(
+            pk=pk, created_by=actor_for_request(request)
+        ).first()
 
         if not issue:
             return Response(
@@ -227,7 +240,7 @@ class WorkspaceDraftIssueViewSet(BaseViewSet):
             issue_activity.delay(
                 type="issue.activity.created",
                 requested_data=json.dumps(self.request.data, cls=DjangoJSONEncoder),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(serializer.data.get("id", None)),
                 project_id=str(draft_issue.project_id),
                 current_instance=None,
@@ -249,7 +262,7 @@ class WorkspaceDraftIssueViewSet(BaseViewSet):
                 issue_activity.delay(
                     type="cycle.activity.created",
                     requested_data=None,
-                    actor_id=str(self.request.user.id),
+                    actor_id=str(actor_id_for_request(self.request)),
                     issue_id=None,
                     project_id=str(self.kwargs.get("project_id", None)),
                     current_instance=json.dumps(
@@ -284,7 +297,7 @@ class WorkspaceDraftIssueViewSet(BaseViewSet):
                     issue_activity.delay(
                         type="module.activity.created",
                         requested_data=json.dumps({"module_id": str(module)}),
-                        actor_id=str(request.user.id),
+                        actor_id=str(actor_id_for_request(request)),
                         issue_id=serializer.data.get("id", None),
                         project_id=draft_issue.project_id,
                         current_instance=None,

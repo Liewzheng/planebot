@@ -32,6 +32,7 @@ from plane.db.models import (
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.issue_relation_mapper import get_actual_relation
 from plane.utils.host import base_host
+from plane.service_principals.attribution import actor_id_for_request, actor_for_request
 
 
 class IssueRelationViewSet(BaseViewSet):
@@ -236,8 +237,8 @@ class IssueRelationViewSet(BaseViewSet):
                     relation_type=(get_actual_relation(relation_type)),
                     project_id=project_id,
                     workspace_id=project.workspace_id,
-                    created_by=request.user,
-                    updated_by=request.user,
+                    created_by=actor_for_request(request),
+                    updated_by=actor_for_request(request),
                 )
                 for issue in issues
             ],
@@ -248,7 +249,7 @@ class IssueRelationViewSet(BaseViewSet):
         issue_activity.delay(
             type="issue_relation.activity.created",
             requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue_id),
             project_id=str(project_id),
             current_instance=None,
@@ -282,7 +283,7 @@ class IssueRelationViewSet(BaseViewSet):
         issue_activity.delay(
             type="issue_relation.activity.deleted",
             requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue_id),
             project_id=str(project_id),
             current_instance=current_instance,

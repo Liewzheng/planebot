@@ -23,6 +23,7 @@ from .. import BaseViewSet
 from plane.app.serializers import CycleIssueSerializer
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.db.models import Cycle, CycleIssue, Issue, FileAsset, IssueLink
+from plane.service_principals.attribution import actor_id_for_request
 from plane.utils.grouper import (
     issue_group_values,
     issue_on_results,
@@ -260,14 +261,19 @@ class CycleIssueViewSet(BaseViewSet):
             ).values_list("id", flat=True)
         )
 
-        # New issues to create
+        # New issues to create.
+        # ``bulk_create`` bypasses ``Model.save()``, so ``BaseModel.save``'s
+        # ``current_sp_actor()`` cannot credit the SP's bot user here — the
+        # actor id must be filled in by the caller (an SP would otherwise
+        # stamp ``created_by_id`` / ``updated_by_id`` as NULL, since
+        # ``request.user.id`` is None on the SP proxy).
         created_records = CycleIssue.objects.bulk_create(
             [
                 CycleIssue(
                     project_id=project_id,
                     workspace_id=cycle.workspace_id,
-                    created_by_id=request.user.id,
-                    updated_by_id=request.user.id,
+                    created_by_id=actor_id_for_request(request),
+                    updated_by_id=actor_id_for_request(request),
                     cycle_id=cycle_id,
                     issue_id=issue,
                 )
@@ -301,7 +307,7 @@ class CycleIssueViewSet(BaseViewSet):
         issue_activity.delay(
             type="cycle.activity.created",
             requested_data=json.dumps({"cycles_list": issues}),
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=None,
             project_id=str(self.kwargs.get("project_id", None)),
             current_instance=json.dumps(
@@ -332,7 +338,7 @@ class CycleIssueViewSet(BaseViewSet):
                     "issues": [str(issue_id)],
                 }
             ),
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=str(issue_id),
             project_id=str(self.kwargs.get("project_id", None)),
             current_instance=None,

@@ -24,6 +24,7 @@ from plane.settings.storage import S3Storage
 from plane.app.permissions import allow_permission, ROLE
 from plane.utils.cache import invalidate_cache_directly
 from plane.utils.path_validator import sanitize_filename
+from plane.service_principals.attribution import actor_for_request
 from plane.bgtasks.storage_metadata_task import get_asset_object_metadata
 from plane.throttles.asset import AssetRateThrottle
 
@@ -145,13 +146,17 @@ class UserAssetsV2Endpoint(BaseAPIView):
         # asset key
         asset_key = f"{uuid.uuid4().hex}-{name}"
 
-        # Create a File Asset
+        # Create a File Asset — resolve the SP proxy to its bot user so the
+        # FK descriptor accepts the value and an SP write credits the bot,
+        # not the owner. ``user`` and ``created_by`` are both attribution
+        # FKs that ``BaseModel.save`` does not rewrite (only ``created_by``/
+        # ``updated_by``).
         asset = FileAsset.objects.create(
             attributes={"name": name, "type": type, "size": size_limit},
             asset=asset_key,
             size=size_limit,
-            user=request.user,
-            created_by=request.user,
+            user=actor_for_request(request),
+            created_by=actor_for_request(request),
             entity_type=entity_type,
         )
 
@@ -407,13 +412,13 @@ class WorkspaceFileAssetEndpoint(BaseAPIView):
         if is_mermaid:
             attributes["mermaid_source_hash"] = request.data.get("mermaid_source_hash")
 
-        # Create a File Asset
+        # Create a File Asset — resolve the SP proxy to its bot user.
         asset = FileAsset.objects.create(
             attributes=attributes,
             asset=asset_key,
             size=size_limit,
             workspace=workspace,
-            created_by=request.user,
+            created_by=actor_for_request(request),
             entity_type=entity_type,
             **self.get_entity_id_field(entity_type=entity_type, entity_id=entity_identifier),
         )
@@ -642,13 +647,13 @@ class ProjectAssetEndpoint(BaseAPIView):
         # asset key
         asset_key = f"{workspace.id}/{uuid.uuid4().hex}-{name}"
 
-        # Create a File Asset
+        # Create a File Asset — resolve the SP proxy to its bot user.
         asset = FileAsset.objects.create(
             attributes={"name": name, "type": type, "size": size_limit},
             asset=asset_key,
             size=size_limit,
             workspace=workspace,
-            created_by=request.user,
+            created_by=actor_for_request(request),
             entity_type=entity_type,
             project_id=project_id,
             **self.get_entity_id_field(entity_type, entity_identifier),
@@ -741,10 +746,19 @@ class ProjectBulkAssetEndpoint(BaseAPIView):
         # unassociated-or-same-project bound prevent cross-project/user IDOR (a caller can
         # only touch their own uploads, cannot move an asset in from another project, and
         # @allow_permission already scopes them to this project).
+        # ``created_by=request.user`` here is a *filter* (not a row
+        # creation). For an SP, ``FileAsset.objects.filter(created_by=
+        # <SP proxy>)`` raises ``ValidationError(['"AnonymousUser" is
+        # not a valid UUID.'])`` at queryset construction — the FK
+        # descriptor refuses the ``AnonymousUser`` subclass for a UUID
+        # column. (Only the attname path ``=request.user.id``, which
+        # is ``None``, would yield ``created_by_id IS NULL``; the object
+        # form does not match unowned rows, it raises.) Resolve to
+        # the bot so the SP request does not 500 here.
         assets = FileAsset.objects.filter(
             id__in=asset_ids,
             workspace__slug=slug,
-            created_by=request.user,
+            created_by=actor_for_request(request),
         ).filter(Q(project_id=project_id) | Q(project_id__isnull=True))
 
         # Get the first asset

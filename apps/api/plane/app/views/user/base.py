@@ -51,6 +51,7 @@ from plane.bgtasks.user_deactivation_email_task import user_deactivation_email
 from plane.utils.host import base_host
 from plane.bgtasks.user_email_update_task import send_email_update_magic_code, send_email_update_confirmation
 from plane.authentication.rate_limit import EmailVerificationThrottle
+from plane.service_principals.attribution import actor_for_request
 
 
 logger = logging.getLogger("plane")
@@ -380,7 +381,13 @@ class UpdateUserTourCompletedEndpoint(BaseAPIView):
 
 class UserActivityEndpoint(BaseAPIView, BasePaginator):
     def get(self, request):
-        queryset = IssueActivity.objects.filter(actor=request.user).select_related(
+        # ``actor=request.user`` would raise ``ValidationError`` on an SP
+        # proxy (FK descriptor refuses ``AnonymousUser`` for a UUID
+        # column). Resolve to the bot so an SP request lists the bot's
+        # own activity.
+        queryset = IssueActivity.objects.filter(
+            actor=actor_for_request(request)
+        ).select_related(
             "actor", "workspace", "issue", "project"
         )
 

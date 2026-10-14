@@ -68,6 +68,7 @@ from plane.db.models import (
 )
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.issue_filters import issue_filters
+from plane.service_principals.attribution import actor_id_for_request, actor_for_request
 
 
 # Public Spaces board writes must bind caller-supplied object ids to the board's
@@ -297,16 +298,18 @@ class IssueCommentPublicViewSet(BaseViewSet):
 
         serializer = IssueCommentSerializer(data=request.data)
         if serializer.is_valid():
+            # ``IssueComment.actor`` is a separate FK from ``created_by`` —
+            # ``BaseModel.save`` does not rewrite it.
             serializer.save(
                 project_id=project_deploy_board.project_id,
                 issue_id=issue_id,
-                actor=request.user,
+                actor=actor_for_request(request),
                 access="EXTERNAL",
             )
             issue_activity.delay(
                 type="comment.activity.created",
                 requested_data=json.dumps(serializer.data, cls=DjangoJSONEncoder),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue_id),
                 project_id=str(project_deploy_board.project_id),
                 current_instance=None,
@@ -340,7 +343,7 @@ class IssueCommentPublicViewSet(BaseViewSet):
             project_id=project_deploy_board.project_id,
             workspace_id=project_deploy_board.workspace_id,
             access="EXTERNAL",
-            actor=request.user,
+            actor=actor_for_request(request),
         )
         serializer = IssueCommentSerializer(comment, data=request.data, partial=True)
         if serializer.is_valid():
@@ -348,7 +351,7 @@ class IssueCommentPublicViewSet(BaseViewSet):
             issue_activity.delay(
                 type="comment.activity.updated",
                 requested_data=json.dumps(request.data, cls=DjangoJSONEncoder),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=str(issue_id),
                 project_id=str(project_deploy_board.project_id),
                 current_instance=json.dumps(IssueCommentSerializer(comment).data, cls=DjangoJSONEncoder),
@@ -372,12 +375,12 @@ class IssueCommentPublicViewSet(BaseViewSet):
             project_id=project_deploy_board.project_id,
             workspace_id=project_deploy_board.workspace_id,
             access="EXTERNAL",
-            actor=request.user,
+            actor=actor_for_request(request),
         )
         issue_activity.delay(
             type="comment.activity.deleted",
             requested_data=json.dumps({"comment_id": str(pk)}),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(issue_id),
             project_id=str(project_deploy_board.project_id),
             current_instance=json.dumps(IssueCommentSerializer(comment).data, cls=DjangoJSONEncoder),
@@ -429,7 +432,7 @@ class IssueReactionPublicViewSet(BaseViewSet):
             serializer.save(
                 project_id=project_deploy_board.project_id,
                 issue_id=issue_id,
-                actor=request.user,
+                actor=actor_for_request(request),
             )
             if not ProjectMember.objects.filter(
                 project_id=project_deploy_board.project_id,
@@ -443,7 +446,7 @@ class IssueReactionPublicViewSet(BaseViewSet):
             issue_activity.delay(
                 type="issue_reaction.activity.created",
                 requested_data=json.dumps(self.request.data, cls=DjangoJSONEncoder),
-                actor_id=str(self.request.user.id),
+                actor_id=str(actor_id_for_request(self.request)),
                 issue_id=str(self.kwargs.get("issue_id", None)),
                 project_id=str(project_deploy_board.project_id),
                 current_instance=None,
@@ -468,12 +471,12 @@ class IssueReactionPublicViewSet(BaseViewSet):
             project_id=project_deploy_board.project_id,
             issue_id=issue_id,
             reaction=reaction_code,
-            actor=request.user,
+            actor=actor_for_request(request),
         )
         issue_activity.delay(
             type="issue_reaction.activity.deleted",
             requested_data=None,
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=str(self.kwargs.get("issue_id", None)),
             project_id=str(project_deploy_board.project_id),
             current_instance=json.dumps({"reaction": str(reaction_code), "identifier": str(issue_reaction.id)}),
@@ -526,7 +529,7 @@ class CommentReactionPublicViewSet(BaseViewSet):
             serializer.save(
                 project_id=project_deploy_board.project_id,
                 comment_id=comment_id,
-                actor=request.user,
+                actor=actor_for_request(request),
             )
             if not ProjectMember.objects.filter(
                 project_id=project_deploy_board.project_id,
@@ -540,7 +543,7 @@ class CommentReactionPublicViewSet(BaseViewSet):
             issue_activity.delay(
                 type="comment_reaction.activity.created",
                 requested_data=json.dumps(self.request.data, cls=DjangoJSONEncoder),
-                actor_id=str(self.request.user.id),
+                actor_id=str(actor_id_for_request(self.request)),
                 issue_id=None,
                 # This route's URL only supplies `anchor` and `comment_id`,
                 # never `project_id` - self.kwargs.get("project_id") was
@@ -571,12 +574,12 @@ class CommentReactionPublicViewSet(BaseViewSet):
             comment_id=comment_id,
             comment__access="EXTERNAL",
             reaction=reaction_code,
-            actor=request.user,
+            actor=actor_for_request(request),
         )
         issue_activity.delay(
             type="comment_reaction.activity.deleted",
             requested_data=None,
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=None,
             project_id=str(project_deploy_board.project_id),
             current_instance=json.dumps(
@@ -627,7 +630,7 @@ class IssueVotePublicViewSet(BaseViewSet):
             return Response({"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND)
 
         issue_vote, _ = IssueVote.objects.get_or_create(
-            actor_id=request.user.id,
+            actor_id=actor_id_for_request(request),
             project_id=project_deploy_board.project_id,
             issue_id=issue_id,
         )
@@ -645,7 +648,7 @@ class IssueVotePublicViewSet(BaseViewSet):
         issue_activity.delay(
             type="issue_vote.activity.created",
             requested_data=json.dumps(self.request.data, cls=DjangoJSONEncoder),
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=str(self.kwargs.get("issue_id", None)),
             project_id=str(project_deploy_board.project_id),
             current_instance=None,
@@ -658,14 +661,14 @@ class IssueVotePublicViewSet(BaseViewSet):
         project_deploy_board = DeployBoard.objects.get(anchor=anchor, entity_name="project")
         issue_vote = IssueVote.objects.get(
             issue_id=issue_id,
-            actor_id=request.user.id,
+            actor_id=actor_id_for_request(request),
             project_id=project_deploy_board.project_id,
             workspace_id=project_deploy_board.workspace_id,
         )
         issue_activity.delay(
             type="issue_vote.activity.deleted",
             requested_data=None,
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=str(self.kwargs.get("issue_id", None)),
             project_id=str(project_deploy_board.project_id),
             current_instance=json.dumps({"vote": str(issue_vote.vote), "identifier": str(issue_vote.id)}),

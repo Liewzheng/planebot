@@ -59,6 +59,7 @@ from plane.utils.cycle_transfer_issues import transfer_cycle_issues
 from .. import BaseAPIView, BaseViewSet
 from plane.bgtasks.webhook_task import model_activity
 from plane.utils.timezone_converter import convert_to_utc, user_timezone_converter
+from plane.service_principals.attribution import actor_id_for_request, actor_for_request
 
 
 class CycleViewSet(BaseViewSet):
@@ -320,7 +321,7 @@ class CycleViewSet(BaseViewSet):
                     model_id=str(cycle["id"]),
                     requested_data=request.data,
                     current_instance=None,
-                    actor_id=request.user.id,
+                    actor_id=actor_id_for_request(request),
                     slug=slug,
                     origin=base_host(request=request, is_app=True),
                 )
@@ -399,7 +400,7 @@ class CycleViewSet(BaseViewSet):
                 model_id=str(cycle["id"]),
                 requested_data=request.data,
                 current_instance=current_instance,
-                actor_id=request.user.id,
+                actor_id=actor_id_for_request(request),
                 slug=slug,
                 origin=base_host(request=request, is_app=True),
             )
@@ -489,7 +490,7 @@ class CycleViewSet(BaseViewSet):
                     "issues": [str(issue_id) for issue_id in cycle_issues],
                 }
             ),
-            actor_id=str(request.user.id),
+            actor_id=str(actor_id_for_request(request)),
             issue_id=str(pk),
             project_id=str(project_id),
             current_instance=None,
@@ -560,11 +561,14 @@ class CycleFavoriteViewSet(BaseViewSet):
     model = UserFavorite
 
     def get_queryset(self):
+        # ``user=self.request.user`` would raise ``ValidationError`` on
+        # an SP proxy. Resolve to the bot so an SP request lists the
+        # bot's own cycle favorites.
         return self.filter_queryset(
             super()
             .get_queryset()
             .filter(workspace__slug=self.kwargs.get("slug"))
-            .filter(user=self.request.user)
+            .filter(user=actor_for_request(self.request))
             .select_related("cycle", "cycle__owned_by")
         )
 
@@ -572,7 +576,7 @@ class CycleFavoriteViewSet(BaseViewSet):
     def create(self, request, slug, project_id):
         _ = UserFavorite.objects.create(
             project_id=project_id,
-            user=request.user,
+            user=actor_for_request(request),
             entity_type="cycle",
             entity_identifier=request.data.get("cycle"),
         )
@@ -602,14 +606,17 @@ class TransferCycleIssueEndpoint(BaseAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Transfer cycle issues and create progress snapshot
+        # Transfer cycle issues and create progress snapshot. The helper
+        # forwards ``user_id`` as the audit actor for the cycle.activity.created
+        # row it emits, so resolve the acting principal here — an SP transfer
+        # must be signed by the SP's bot user, not by the token's owner.
         result = transfer_cycle_issues(
             slug=slug,
             project_id=project_id,
             cycle_id=cycle_id,
             new_cycle_id=new_cycle_id,
             request=request,
-            user_id=request.user.id,
+            user_id=actor_id_for_request(request),
         )
 
         # Handle error response

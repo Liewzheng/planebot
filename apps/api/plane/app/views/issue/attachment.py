@@ -27,6 +27,7 @@ from plane.settings.storage import S3Storage
 from plane.utils.path_validator import sanitize_filename
 from plane.bgtasks.storage_metadata_task import get_asset_object_metadata
 from plane.utils.host import base_host
+from plane.service_principals.attribution import actor_id_for_request, actor_for_request
 
 
 class IssueAttachmentEndpoint(BaseAPIView):
@@ -48,7 +49,7 @@ class IssueAttachmentEndpoint(BaseAPIView):
             issue_activity.delay(
                 type="attachment.activity.created",
                 requested_data=None,
-                actor_id=str(self.request.user.id),
+                actor_id=str(actor_id_for_request(self.request)),
                 issue_id=str(self.kwargs.get("issue_id", None)),
                 project_id=str(self.kwargs.get("project_id", None)),
                 current_instance=json.dumps(serializer.data, cls=DjangoJSONEncoder),
@@ -74,7 +75,7 @@ class IssueAttachmentEndpoint(BaseAPIView):
         issue_activity.delay(
             type="attachment.activity.deleted",
             requested_data=None,
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=str(self.kwargs.get("issue_id", None)),
             project_id=str(self.kwargs.get("project_id", None)),
             current_instance=None,
@@ -123,7 +124,7 @@ class IssueAttachmentV2Endpoint(BaseAPIView):
             asset=asset_key,
             size=size_limit,
             workspace_id=workspace.id,
-            created_by=request.user,
+            created_by=actor_for_request(request),
             issue_id=issue_id,
             project_id=project_id,
             entity_type=FileAsset.EntityTypeContext.ISSUE_ATTACHMENT,
@@ -158,7 +159,7 @@ class IssueAttachmentV2Endpoint(BaseAPIView):
         issue_activity.delay(
             type="attachment.activity.deleted",
             requested_data=None,
-            actor_id=str(self.request.user.id),
+            actor_id=str(actor_id_for_request(self.request)),
             issue_id=str(issue_id),
             project_id=str(project_id),
             current_instance=None,
@@ -214,7 +215,7 @@ class IssueAttachmentV2Endpoint(BaseAPIView):
             issue_activity.delay(
                 type="attachment.activity.created",
                 requested_data=None,
-                actor_id=str(self.request.user.id),
+                actor_id=str(actor_id_for_request(self.request)),
                 issue_id=str(self.kwargs.get("issue_id", None)),
                 project_id=str(self.kwargs.get("project_id", None)),
                 current_instance=json.dumps(serializer.data, cls=DjangoJSONEncoder),

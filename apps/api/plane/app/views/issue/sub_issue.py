@@ -28,6 +28,7 @@ from plane.utils.timezone_converter import user_timezone_converter
 from collections import defaultdict
 from plane.utils.host import base_host
 from plane.utils.order_queryset import order_issue_queryset
+from plane.service_principals.attribution import actor_id_for_request
 
 
 class SubIssuesEndpoint(BaseAPIView):
@@ -252,7 +253,7 @@ class SubIssuesEndpoint(BaseAPIView):
             issue_activity.delay(
                 type="issue.activity.updated",
                 requested_data=json.dumps({"parent": str(issue_id)}),
-                actor_id=str(request.user.id),
+                actor_id=str(actor_id_for_request(request)),
                 issue_id=sub_issue_id,
                 project_id=str(project_id),
                 current_instance=json.dumps({"parent": sub_issue_id}),

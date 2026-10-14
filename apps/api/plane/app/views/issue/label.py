@@ -18,6 +18,7 @@ from plane.app.serializers import LabelSerializer
 from plane.app.permissions import allow_permission, ProjectBasePermission, ROLE
 from plane.db.models import Project, Label
 from plane.utils.cache import invalidate_cache
+from plane.service_principals.attribution import actor_for_request
 
 
 class LabelViewSet(BaseViewSet):
@@ -94,6 +95,11 @@ class BulkCreateIssueLabelsEndpoint(BaseAPIView):
 
         project = Project.objects.get(pk=project_id)
 
+        # ``bulk_create`` skips ``Model.save``, so the bot path M39 added
+        # to ``BaseModel.save`` never runs here — fill ``created_by`` /
+        # ``updated_by`` explicitly so an SP write is credited to the SP's
+        # shadow bot, not the token's human owner (or, for the SP proxy,
+        # rejected by the FK descriptor as "must be a User instance").
         labels = Label.objects.bulk_create(
             [
                 Label(
@@ -102,8 +108,8 @@ class BulkCreateIssueLabelsEndpoint(BaseAPIView):
                     color=f"#{random.randint(0, 0xFFFFFF + 1):06X}",
                     project_id=project_id,
                     workspace_id=project.workspace_id,
-                    created_by=request.user,
-                    updated_by=request.user,
+                    created_by=actor_for_request(request),
+                    updated_by=actor_for_request(request),
                 )
                 for label in label_data
             ],

@@ -25,6 +25,7 @@ from plane.db.models import (
 from plane.utils.paginator import BasePaginator
 from plane.utils.order_queryset import NOTIFICATION_ORDER_BY_ALLOWLIST, sanitize_order_by
 from plane.app.permissions import allow_permission, ROLE
+from plane.service_principals.attribution import actor_for_request
 
 # Module imports
 from ..base import BaseAPIView, BaseViewSet
@@ -108,8 +109,13 @@ class NotificationViewSet(BaseViewSet, BasePaginator):
         if "subscribed" in type:
             issue_ids = (
                 IssueSubscriber.objects.filter(workspace__slug=slug, subscriber_id=request.user.id)
-                .annotate(created=Exists(Issue.objects.filter(created_by=request.user, pk=OuterRef("issue_id"))))
-                .annotate(assigned=Exists(IssueAssignee.objects.filter(pk=OuterRef("issue_id"), assignee=request.user)))
+                .annotate(created=Exists(Issue.objects.filter(
+                    created_by=actor_for_request(request), pk=OuterRef("issue_id")
+                )))
+                # ``assignee=request.user`` is the identical same-shape
+                # site as ``created_by`` above (object form raises
+                # ValidationError for the SP proxy). Resolve to the bot.
+                .annotate(assigned=Exists(IssueAssignee.objects.filter(pk=OuterRef("issue_id"), assignee=actor_for_request(request))))
                 .filter(created=False, assigned=False)
                 .values_list("issue_id", flat=True)
             )
@@ -129,7 +135,12 @@ class NotificationViewSet(BaseViewSet, BasePaginator):
             ).exists():
                 notifications = notifications.none()
             else:
-                issue_ids = Issue.objects.filter(workspace__slug=slug, created_by=request.user).values_list(
+                # ``created_by=request.user`` would raise ``ValidationError``
+                # on an SP proxy. Resolve to the bot so an SP request lists
+                # the bot's created issues.
+                issue_ids = Issue.objects.filter(
+                    workspace__slug=slug, created_by=actor_for_request(request)
+                ).values_list(
                     "pk", flat=True
                 )
                 q_filters |= Q(entity_identifier__in=issue_ids)
@@ -280,7 +291,9 @@ class MarkAllReadNotificationViewSet(BaseViewSet):
             ).exists():
                 notifications = Notification.objects.none()
             else:
-                issue_ids = Issue.objects.filter(workspace__slug=slug, created_by=request.user).values_list(
+                issue_ids = Issue.objects.filter(
+                    workspace__slug=slug, created_by=actor_for_request(request)
+                ).values_list(
                     "pk", flat=True
                 )
                 notifications = notifications.filter(entity_identifier__in=issue_ids)
