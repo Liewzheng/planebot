@@ -523,9 +523,9 @@
           "created_on": "建立於",
           "edit": "編輯",
           "delete": "刪除",
-          "manage_scopes": "管理範圍",
           "manage_grants": "管理授權",
-          "rotate_token": "輪換權杖"
+          "rotate_token": "輪換權杖",
+          "view_capabilities": "角色能力表"
         },
         "avatar": {
           "label": "大頭貼",
@@ -639,6 +639,64 @@
             "title": "錯誤！",
             "message": "無法更新授權",
             "missing_project": "每個授權必須引用一個專案。"
+          }
+        },
+        "access": {
+          "title": "管理授權與範圍",
+          "description": "為每個專案指定該主體承載的角色。選擇角色會寫入該專案的授權，並依後端執行的同一份授權矩陣重建它的範圍列；儲存會整批替換全部授權與全部範圍。",
+          "role": "角色",
+          "role_none": "無權限",
+          "role_disabled": "已停用",
+          "no_projects": "此工作區還沒有專案。",
+          "apply_all_label": "套用到全部專案：",
+          "apply_all_button": "套用",
+          "apply_all_hint": "把所選角色套用到本工作區的全部 {count} 個專案。",
+          "table_hint": "重建某個專案的範圍會覆蓋你在下方「進階」中為它逐格調整過的列。",
+          "advanced_title": "進階：逐格微調",
+          "expand_cells_button": "依角色展開為逐格範圍",
+          "expand_cells_hint": "把每個專案的範圍列替換為「所指派角色可執行的每個能力一列」（共 {count} 列）。",
+          "replace_notice": "儲存會整批替換授權集合與範圍集合——你在此處移除的列會在伺服器上被刪除。",
+          "save": "儲存授權",
+          "saving": "正在儲存",
+          "success": {
+            "title": "成功！",
+            "message": "授權與範圍更新成功"
+          },
+          "error": {
+            "title": "錯誤！",
+            "message": "無法更新授權",
+            "step_grants": "授權未能儲存，範圍保持不變，因此該主體維持現有權限。",
+            "step_scopes": "授權已儲存，但範圍未能儲存。在範圍儲存成功前該主體會被拒絕——引擎需要兩者同時滿足。"
+          },
+          "replace_confirm": {
+            "title": "替換授權與範圍？",
+            "message": "儲存會整批替換兩個集合：授權 {grants_before} → {grants_after}，範圍 {scopes_before} → {scopes_after}。新集合中缺少的列會被刪除。",
+            "confirm": "替換並儲存"
+          }
+        },
+        "capabilities": {
+          "title": "角色能力對照表",
+          "description": "每個儲存格表示服務主體對該資源執行該動作所需的最低角色，也就是它在该專案的授權必須達到的角色上限。整張表由後端執行的同一份矩陣（ACTION_REQUIRED_ROLE）產生，因此表格與引擎不會出現分歧。",
+          "group_project_resources": "專案內資源",
+          "group_workspace_resources": "工作區層級資源",
+          "group_workspace_note": "僅支援讀取——引擎對它們的寫入一律直接拒絕。",
+          "legend_required_role": "儲存格 = 所需最低角色（授權角色上限必須不低於此值）。",
+          "legend_not_registered": "— 表示該動作不可用：工作區層級資源的寫入由引擎直接拒絕，未註冊的資源/動作組合一律預設拒絕。",
+          "legend_ownership": "* 標記歸屬規則生效後會收緊的儲存格。",
+          "rules_title": "每條規則的含義",
+          "rules": {
+            "scope_grant": "在專案內放行需要三件事同時成立：有範圍列涵蓋該動作、該專案有啟用的授權、且授權角色上限不低於表中要求的最低角色。",
+            "owner_floor": "此外，主體的所有者必須是工作區的有效成員，且其自身的工作區角色不低於該動作要求的角色。",
+            "guest": "訪客：只能讀取，永遠不能建立、更新或刪除。",
+            "member": "成員：可以讀取專案內全部資源，並建立日常工作所需的物件（工作項、評論、頁面、週期、模組、狀態、Sticky、資產、標籤）。",
+            "member_ownership": "成員只能更新或刪除自己建立的資源；他人的內容只能閱讀與評論。",
+            "admin": "管理員：不受歸屬限制，可操作任意資源，包括刪除不是自己建立的內容。",
+            "unknown_owner": "歸屬未知（早於建立者記錄的歷史資料）時預設拒絕。",
+            "coming_soon": "以上三條歸屬規則尚未生效——它們隨「依資源歸屬校驗」一併落地。在此之前成員上限仍可更新/刪除表中任意資源；帶 * 的儲存格就是生效後會收緊的部分。",
+            "workspace_level": "專案、成員、使用者、邀請屬於工作區層級資源：可以讀取但不能寫入，且讀取範圍必須是工作區層級（所有專案）。",
+            "read_covers_list": "「讀取」範圍同時滿足列表請求，因此表中沒有單獨的 list 列。",
+            "default_deny": "表中未涵蓋的內容——包括後端從未註冊的資源/動作組合——一律預設拒絕。",
+            "invite": "讀取邀請需要成員以上，比其它工作區層級資源更嚴格。"
           }
         },
         "toasts": {

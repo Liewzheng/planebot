@@ -523,9 +523,9 @@
           "created_on": "Creado el",
           "edit": "Editar",
           "delete": "Eliminar",
-          "manage_scopes": "Gestionar scopes",
           "manage_grants": "Gestionar grants",
-          "rotate_token": "Rotar token"
+          "rotate_token": "Rotar token",
+          "view_capabilities": "Role capabilities"
         },
         "avatar": {
           "label": "Avatar",
@@ -639,6 +639,64 @@
             "title": "¡Error!",
             "message": "No se pudieron actualizar los grants",
             "missing_project": "Cada grant debe hacer referencia a un proyecto."
+          }
+        },
+        "access": {
+          "title": "Manage access",
+          "description": "Assign the role this principal carries in each project. Choosing a role writes the project's grant and rebuilds its scope rows from the same authorization matrix the backend enforces; saving replaces the whole grant set and the whole scope set.",
+          "role": "Role",
+          "role_none": "No access",
+          "role_disabled": "Disabled",
+          "no_projects": "This workspace has no projects yet.",
+          "apply_all_label": "Apply to all projects:",
+          "apply_all_button": "Apply",
+          "apply_all_hint": "Applies the role to all {count} projects in this workspace.",
+          "table_hint": "Rebuilding a project's scopes replaces any per-cell rows you edited for it in the advanced section below.",
+          "advanced_title": "Advanced: per-cell tuning",
+          "expand_cells_button": "Expand roles into per-cell scopes",
+          "expand_cells_hint": "Replaces every project's scope rows with one row per capability the assigned role can perform ({count} rows).",
+          "replace_notice": "Saving replaces the grant set and the scope set in full — rows you removed here are deleted on the server.",
+          "save": "Save access",
+          "saving": "Saving",
+          "success": {
+            "title": "Success!",
+            "message": "Grants and scopes updated successfully"
+          },
+          "error": {
+            "title": "Error!",
+            "message": "Access could not be updated",
+            "step_grants": "The grants could not be saved. The scopes were left unchanged, so the principal keeps its current access.",
+            "step_scopes": "The grants were saved, but the scopes could not be. Until the scopes are saved the principal is denied — the engine needs both halves."
+          },
+          "replace_confirm": {
+            "title": "Replace grants and scopes?",
+            "message": "Saving replaces both sets in full: grants {grants_before} → {grants_after}, scopes {scopes_before} → {scopes_after}. Rows missing from the new sets are deleted.",
+            "confirm": "Replace and save"
+          }
+        },
+        "capabilities": {
+          "title": "Role capability table",
+          "description": "Each cell is the lowest role a service principal needs for that action on that resource — the role cap its grant in that project must reach. The whole table is generated from the same matrix the backend evaluates (ACTION_REQUIRED_ROLE), so the table and the engine cannot drift apart.",
+          "group_project_resources": "Project resources",
+          "group_workspace_resources": "Workspace-level resources",
+          "group_workspace_note": "Reads only — the engine rejects writes on these outright.",
+          "legend_required_role": "Cell value = minimum role required (the grant's role cap must be at least this).",
+          "legend_not_registered": "— means the action is unavailable: the engine refuses writes on workspace-level resources outright, and any resource/action pair it never registered is denied by default.",
+          "legend_ownership": "* marks cells the ownership rule will tighten once it lands.",
+          "rules_title": "What each rule means",
+          "rules": {
+            "scope_grant": "Inside a project three things must all hold: a scope row covers the action, the project has an active grant, and the grant's role cap reaches the minimum role in the table.",
+            "owner_floor": "On top of that, the principal's owner must be an active workspace member whose own workspace role reaches the role the action requires.",
+            "guest": "Guest: read only. It can never create, update or delete.",
+            "member": "Member: reads every project resource and creates the everyday ones (work items, comments, pages, cycles, modules, states, stickies, assets, labels).",
+            "member_ownership": "Member may only update or delete resources it created itself; other people's items stay read-and-comment only.",
+            "admin": "Admin: not limited by ownership — it can act on any resource, including deleting ones it did not create.",
+            "unknown_owner": "When ownership is unknown (records that predate creator tracking) the default is deny.",
+            "coming_soon": "The three ownership rules above are not enforced yet — they land together with per-resource ownership enforcement. Until then a Member role cap still allows update and delete on anything in the table; the cells marked * are the ones that will tighten.",
+            "workspace_level": "Project, member, user and invite are workspace-level: they can be read but never written, and their read scope has to be workspace-wide (all projects).",
+            "read_covers_list": "A read scope also satisfies list requests, which is why no separate list row appears anywhere.",
+            "default_deny": "Anything the table does not cover — including a resource/action pair the backend never registered — is denied by default.",
+            "invite": "Reading invites needs Member or above, stricter than the other workspace-level resources."
           }
         },
         "toasts": {
