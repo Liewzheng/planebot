@@ -3,12 +3,13 @@
 # See the LICENSE file for details.
 
 """Contract tests: SP write notifications reach workspace owner, project owner, and
-task cooperators (M52 / SPNOTIFY).
+task cooperators (M52 / SPNOTIFY, with M53 follow-up for the cooperators exclude
+shape and the missing-preference tolerance).
 
 The user's complaint verbatim: "我的 SP 干活，要通知我" — when the bot writes, the
 human who runs the workflow never hears about it. After M39/M41/M47 the *actor*
 column on the notification row already credits the SP's bot (so "who did it" is
-right); this mission widens only the *recipient* set.
+right); M52 widens only the *recipient* set.
 
 Per the user, three classes must be notified on every SP write, even when the
 recipient is not a ``ProjectMember`` and has not subscribed to the issue:
@@ -23,13 +24,32 @@ recipient is not a ``ProjectMember`` and has not subscribed to the issue:
                        dropped non-member subscribers).
 
 The widening is gated on the actor being a bot — human-actor writes keep the
-legacy recipient path byte-for-byte. That is test 5 below.
+legacy recipient path byte-for-byte. That is the human-path control test below.
 
-The eight tests in this file are paired with the M52 diff in
-``plane/bgtasks/notification_task.py``: reverting the new M52 block (lines 309–419
-on the patched branch) flips the seven SP-path tests to red and leaves test 5
-(the human control) green; running on ``integration/selfhost@378afd449e`` (the
-tip before this mission) flips every SP-path test to red.
+The eleven tests in this file are paired with the M52/M53 diff in
+``plane/bgtasks/notification_task.py``. Each clause of the M52 block is pinned
+by exactly one test; the M53 discriminator additions cover the bug-classes
+the original test set missed. The revert recipe is captured in the report:
+
+  - reverting *both* M52 cooperators-filter exclusions (or the bot guard
+    plus the project-membership guard together) flips six tests red.
+  - reverting *just* the project-membership guard flips
+    ``test_sp_create_excludes_ex_project_member_cooperator`` red.
+  - reverting *just* the bot guard flips
+    ``test_sp_create_with_other_sp_bot_subscriber_still_notifies_human_cooperator``
+    red (the ``DoesNotExist`` cascade hits its single discriminator
+    subscriber).
+  - reverting *just* the missing-preference tolerance flips
+    ``test_sp_create_tolerates_missing_notification_preference`` red (every
+    recipient silently loses its notification).
+  - reverting the M53 helper back to the r2 ``.exclude(...)`` shape (or
+    any other ``NOT (EXISTS(a) AND EXISTS(b))`` form that is not
+    project-scoped on the ``is_active=False`` arm) flips
+    ``test_cooperators_queryset_excludes_only_project_local_inactive``
+    red; the user-facing test
+    ``test_sp_create_with_inactive_membership_in_other_project_still_
+    notifies_cooperator`` stays green through legacy, which is the
+    reviewer's "harmless in effect" finding.
 
 Discriminator mechanics per test:
 
@@ -55,19 +75,22 @@ Discriminator mechanics per test:
   this test passes (no extras); post-M52 it still passes because the
   widening is gated on ``actor.is_bot``.
 * ``test_sp_create_does_not_duplicate_when_overlap`` — overlap between the
-  three classes (workspace owner + project lead + admin role member) must
-  yield exactly one notification per activity, not three. ``ws_owner`` is
-  deliberately *not* an ``IssueSubscriber`` so the pre-M52
-  ``IssueSubscriber ∩ ProjectMember`` intersect yields zero rows and the
-  assertion discriminates the dedup on the M52 branch.
+  four coverage classes (workspace owner + project lead + admin role
+  member + IssueSubscriber) yields exactly one ``Notification``. The test
+  covers the *dedup*; see the per-test docstring for the precise
+  pre/post-M52 breakdown (the prior claim "Pre-M52: zero rows for
+  ``ws_owner``" was wrong — the recipient set has one row on both
+  sides, via the legacy IssueSubscriber ∩ ProjectMember intersect).
 * ``test_sp_create_with_other_sp_bot_subscriber_still_notifies_human_cooperator``
   — **r2 regression** for the M52 r1 p1. When a non-acting bot
   (``is_bot=True``) ``IssueSubscriber`` row is on the issue, pre-fix the
   loop's ``UserNotificationPreference.objects.get`` raised
   ``DoesNotExist`` and the task's catch-all aborted, dropping every
   notification for the write. Post-fix: bots are hard-excluded from the
-  cooperators set AND the preference lookup tolerates a missing row, so
-  the task completes and the human cooperator receives 1 notification.
+  cooperators set (this test pins that arm — reverting just *that*
+  exclusion flips it red), and the preference lookup tolerates a missing
+  row (pinned by
+  ``test_sp_create_tolerates_missing_notification_preference``).
 * ``test_sp_create_excludes_ex_project_member_cooperator`` — **r2 policy
   decision** test for the M52 r1 P2. A user who left the project
   (``ProjectMember.is_active=False``) but is still an active
@@ -76,10 +99,37 @@ Discriminator mechanics per test:
   full rationale). Pre-fix (r1) the cooperators query took every
   ``IssueSubscriber`` row, so this user was added to the recipient set
   (base 0 → branch 1, reviewer-verified).
+* ``test_cooperators_queryset_excludes_only_project_local_inactive`` —
+  **M53 red-before/green-after** for the cooperators-exclude SQL shape.
+  Drives the production helper ``_spnotify_cooperator_ids_for`` (and the
+  queryset form ``_spnotify_cooperator_ids_qs``) directly. Pre-M53 the
+  helper compiled to ``NOT (EXISTS(inactive-anywhere) AND
+  EXISTS(row-in-this-project))`` (the r2 `.exclude(A, B)` form); the
+  ``is_active`` arm is not project-scoped, so a user active in *this*
+  project with an inactive row in *another* project gets wrongly dropped
+  from the cooperators queryset. Post-M53 the exclude is rewritten as
+  ``.exclude(subscriber__in=ProjectMember.objects.filter(
+  project_id=THIS, is_active=False).values("member_id"))``, a single
+  project-scoped subquery. The test asserts both the helper output and
+  the compiled SQL shape; the user-facing discrimination path is
+  ``test_sp_create_with_inactive_membership_in_other_project_still_
+  notifies_cooperator``.
+* ``test_sp_create_with_inactive_membership_in_other_project_still_
+  notifies_cooperator`` — end-to-end mirror of the discriminator above.
+  Passes on both r2 and M53 forms (the legacy path catches the user
+  end-to-end — the reviewer's "harmless in effect" verdict) but pins
+  the user-facing contract: an active member of *this* project with
+  an inactive row in *another* must receive notifications.
+* ``test_sp_create_tolerates_missing_notification_preference`` — **M53
+  regression guard** for the missing-preference tolerance. Reverting
+  *just* the tolerance (keeping the bot guard intact) flips this test
+  red while leaving the other ten tests green — so this is the only
+  test that pins the load-bearing role of the unsaved fallback
+  ``UserNotificationPreference`` instance.
 
-Each "red-before, green-after" pair is recorded by reverting the M52 block in
-``notification_task.py`` and re-running just this file; the revert recipe is
-captured in the report.
+Each red-before/green-after pair is recorded by reverting only the named
+clause in ``notification_task.py`` and re-running just this file; the
+revert recipe is captured in the report.
 """
 
 from __future__ import annotations
@@ -91,6 +141,10 @@ from django.core.serializers.json import DjangoJSONEncoder
 
 from plane.app.serializers.issue import IssueActivitySerializer
 from plane.bgtasks.notification_task import notifications
+from plane.bgtasks.notification_task import (
+    _spnotify_cooperator_ids_for,
+    _spnotify_cooperator_ids_qs,
+)
 from plane.celery import app as celery_app
 from plane.db.models import (
     Issue,
@@ -101,6 +155,7 @@ from plane.db.models import (
     ProjectMember,
     State,
     User,
+    UserNotificationPreference,
     Workspace,
     WorkspaceMember,
 )
@@ -379,7 +434,8 @@ class TestSpNotifyWorkspaceOwner:
             "extension). Post-M52 the workspace owner is added to the "
             "recipient set explicitly. If this assertion fails on the "
             "M52 branch the widening block at "
-            "``notification_task.py:309-378`` is no longer in effect."
+            "``notification_task.py:_spnotify_cooperator_ids_qs`` "
+            "is no longer in effect."
         )
         # ``triggered_by`` is the bot — actor semantics unchanged.
         ws_owner_notifs = Notification.objects.filter(
@@ -577,18 +633,34 @@ class TestSpNotifyNoDuplicates:
     def test_sp_create_does_not_duplicate_when_overlap(
         self, ws_owned, project_in_ws, bot, ws_owner, create_user, celery_eager
     ):
-        """When the three M52 recipient classes overlap on a single user
+        """When the four M52 coverage classes overlap on a single user
         (``ws_owner`` is the workspace owner, *and* the project lead, *and*
         a ``ProjectMember(role=20, is_active=True)``, *and* an
         ``IssueSubscriber``), exactly one ``Notification`` row must land.
 
-        Pre-M52: zero rows for ``ws_owner`` (the intersect is empty and no
-        extension fires).
+        Pre-M52: **one** row for ``ws_owner``. The legacy intersect
+        ``IssueSubscriber ∩ ProjectMember`` already fires — ``ws_owner``
+        is an active ``ProjectMember`` (role 20) for ``project_in_ws``
+        and an ``IssueSubscriber``, so pre-M52 the recipient set has
+        ``{ws_owner}`` and the loop creates one ``Notification``. Note:
+        the earlier docstring claimed "Pre-M52: zero rows for ws_owner",
+        which is false — the reviewer verified this directly (and the
+        test passes on the pre-M52 base). The pre-M52 code did *not*
+        extend to the workspace owner / project-lead arms; that gap is
+        covered by ``test_sp_create_notifies_workspace_owner`` and the
+        two project-owner tests, not by this one.
 
-        Post-M52: the four overlap arms are unioned into a single set of
-        UUIDs before the recipient loop runs; the loop emits one
+        Post-M52: the union of the four overlap arms collapses to a
+        single UUID before the recipient loop runs; the loop emits one
         ``Notification`` per (activity, recipient) pair. With a single
-        activity row in the test, the count is exactly one."""
+        activity row in the test, the count is exactly one.
+
+        What this test pins: the *dedup*. If a future change emits one
+        ``Notification`` per arm (four per activity, here), this
+        assertion flips to red. The single-row outcome is what the
+        union-set guarantee delivers; per-class arms are covered by
+        the corresponding per-class tests above.
+        """
         ws_owner.refresh_from_db()
         # Make ``ws_owner`` satisfy every class at once: workspace owner
         # (already, from ``ws_owned``), project lead, admin ProjectMember,
@@ -661,9 +733,27 @@ class TestSpNotifyNoDuplicates:
 #      cooperators with no ProjectMember row at all are kept (mission rule:
 #      "even if not a ProjectMember"). See the report for the full rationale.
 #
-# The two regressions are pinned by the tests below. Reverting either
-# cooperators filter flips both tests to red; restoring the filter flips them
-# back to green.
+# The two regressions are pinned by the tests below, *separately*: each
+# clause of the cooperators exclude is its own discriminator.
+#
+#   * ``test_sp_create_with_other_sp_bot_subscriber_still_notifies_human_
+#     cooperator`` pins the bot guard (``subscriber__is_bot=False``).
+#     Reverting *only* the bot guard flips this test red with
+#     ``DoesNotExist`` in the log; reverting *only* the
+#     project-membership guard does not flip it.
+#
+#   * ``test_sp_create_excludes_ex_project_member_cooperator`` pins the
+#     project-membership guard
+#     (``.exclude(member_project__project_id=...,
+#     member_project__is_active=False)``/M53 helper). Reverting *only*
+#     that exclusion flips this test red; reverting *only* the bot
+#     guard does not.
+#
+# The M53 reviewer's note 3 corrected the earlier claim that
+# "Reverting either cooperators filter flips both tests to red" — that
+# was wrong. Each test pins one clause; nothing else covers the missing
+# clauses (the M53 tolerance test pins the third clause, the missing-
+# preference fallback, in a separate file location).
 
 
 @pytest.fixture
@@ -855,4 +945,435 @@ class TestSpNotifyCooperatorFilterRegression:
             "excluded from the cooperators set to avoid leaking issue "
             "content to users who no longer have project read access. "
             "Reverting the .exclude(...) flips this to red."
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Cooperators-filter discriminant: project-scope of the inactive check        #
+# --------------------------------------------------------------------------- #
+#
+# M53 follow-up: the r2 reviewer noted that
+# ``.exclude(subscriber__member_project__project_id=project_id,
+#            subscriber__member_project__is_active=False)``
+# compiles to ``NOT (EXISTS(inactive-anywhere) AND EXISTS(row-in-this-project))``
+# because Django splits a multi-valued ``.exclude`` into two existential
+# branches that get AND-ed under De Morgan. The ``is_active=False`` arm is
+# therefore **not** project-scoped — a user who is active in *this* project
+# but has an inactive ``ProjectMember`` row in *some other* project is
+# wrongly dropped from the cooperators queryset.
+#
+# The end-to-end notification task masks this defect: when the user is an
+# *active* member of the current project, the legacy recipient path
+# (``IssueSubscriber ∩ ProjectMember(project_id=THIS, is_active=True)``)
+# catches them anyway. The r2 reviewer noted this as "harmless in effect".
+# The cross-project inactive history is only observable at the ORM level
+# — i.e. when you evaluate the cooperators queryset directly, the r2 form
+# wrongly excludes the user; the M53 subquery form does not.
+#
+# The two tests below cover both observability levels:
+#   1. ``test_cooperators_queryset_excludes_only_project_local_inactive``
+#      drives the cooperators queryset directly with the same ORM pattern
+#      the M52 block uses, against the r2 form and the M53 form, and
+#      asserts the project-scoped semantics hold (red-before/green-after
+#      on the queryset result alone — independent of legacy).
+#   2. ``test_sp_create_with_inactive_membership_in_other_project_still_
+#      notifies_cooperator`` drives the full notification task and asserts
+#      the user is notified end-to-end. Because legacy catches this user
+#      the test passes on either form (the "harmless in effect" verdict);
+#      but if the legacy path is ever weakened, this test is the safety
+#      net that pins the user-facing behaviour.
+
+
+@pytest.fixture
+def other_project(db, ws_owned):
+    """A second project in the same workspace, used to host a deceptive
+    ``ProjectMember(is_active=False)`` row for the discriminant test."""
+    other = Project.objects.create(
+        name="Other Project",
+        identifier="OTH",
+        workspace=ws_owned,
+        created_by=User.objects.create(
+            email="other-creator@plane.so",
+            username="other_creator",
+            first_name="Other",
+            last_name="Creator",
+        ),
+        network=2,
+    )
+    State.objects.create(
+        name="Backlog",
+        project=other,
+        workspace=ws_owned,
+        group="backlog",
+        default=True,
+    )
+    return other
+
+
+@pytest.fixture
+def cross_project_user(db, ws_owned, project_in_ws, other_project):
+    """A human who is *active* in ``project_in_ws`` and *inactive* in
+    ``other_project``. The two rows share the workspace; the existence of
+    the OTHER inactive row is what proves the project-scoping of the
+    cooperators exclude (see the discriminant test below)."""
+    user = User.objects.create(
+        email="cross-project@plane.so",
+        username="cross_project_human",
+        first_name="Cross",
+        last_name="Project",
+    )
+    WorkspaceMember.objects.create(
+        workspace=ws_owned, member=user, role=15, is_active=True
+    )
+    # Active in THIS project (role 15 = viewer, NOT 20, NOT project_lead).
+    ProjectMember.objects.create(
+        project=project_in_ws, member=user, role=15, is_active=True
+    )
+    # INACTIVE in ANOTHER project — the "deceptive" row that exposes the
+    # r2 defect.
+    ProjectMember.objects.create(
+        project=other_project, member=user, role=15, is_active=False
+    )
+    return user
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestSpNotifyCooperatorScopeIsProjectLocal:
+    def test_cooperators_queryset_excludes_only_project_local_inactive(
+        self,
+        ws_owned,
+        project_in_ws,
+        other_project,
+        bot,
+        cross_project_user,
+    ):
+        """Direct-ORM probe of the production helper
+        ``_spnotify_cooperator_ids_for(project_id, issue_id)``.
+
+        This is the red-before / green-after test the M53 mission
+        requires. The end-to-end notification task includes a legacy
+        recipient path
+        (``IssueSubscriber ∩ ProjectMember(project_id=THIS,
+        is_active=True)``) that catches an active member of *this*
+        project even when the cooperators queryset wrongly drops them
+        — so the user-facing test alone cannot discriminate r2 from
+        M53 forms (the reviewer's "harmless in effect" verdict). This
+        test calls the production helper directly so the r2 form
+        failure (user wrongly dropped) flips the assertion red even
+        with no legacy path involved.
+
+        Subtest 1 — the production helper (``_spnotify_cooperator_ids_
+        for``) — must include the user.
+
+        Subtest 2 — compile SQL: must be a single ``NOT IN (SELECT
+        ... WHERE project_id=THIS AND NOT is_active)`` shape with a
+        ``project_id = <THIS>`` predicate inside the subquery (not
+        ``EXISTS(inactive-anywhere) AND EXISTS(row-in-this)``).
+
+        Subtest 3 — boundary: a subscriber with NO ``ProjectMember``
+        row at all in the current project stays in the helper output
+        (mission rule "even if not a ProjectMember"). This guards the
+        narrowing against an over-restrictive reimplementation that
+        re-imposes project-membership as a precondition.
+
+        Reverting the helper back to ``.exclude(member_project__project_id
+        =..., member_project__is_active=False)`` flips subtest 1 to
+        red (helper returns empty), and subtest 2 to red (helper SQL
+        compiles to ``NOT (EXISTS(inactive-anywhere) AND
+        EXISTS(row-in-this-project))``).
+        """
+        issue = _make_issue(project_in_ws, ws_owned, bot)
+
+        # Subscriber 1: cross-project case (active in THIS, inactive in
+        # OTHER) — the r2 form wrongly drops them at ORM level.
+        IssueSubscriber.objects.create(
+            project=project_in_ws,
+            issue=issue,
+            subscriber=cross_project_user,
+        )
+
+        # Subscriber 2: never-member case (no ProjectMember row for THIS
+        # OR OTHER). Must stay in the helper output — boundary guard.
+        never_member = User.objects.create(
+            email="never-member@plane.so",
+            username="never_member_human",
+            first_name="Never",
+            last_name="Member",
+        )
+        WorkspaceMember.objects.create(
+            workspace=ws_owned, member=never_member, role=15, is_active=True
+        )
+        IssueSubscriber.objects.create(
+            project=project_in_ws,
+            issue=issue,
+            subscriber=never_member,
+        )
+
+        # ---- Subtest 1: helper output. ----
+        cooperator_ids = _spnotify_cooperator_ids_for(
+            project_id=project_in_ws.id, issue_id=issue.id
+        )
+        assert cross_project_user.pk in cooperator_ids, (
+            "Production cooperators helper must keep a subscriber who is "
+            "active in THIS project even if they have an inactive row in "
+            "another project. Reverting M53's helper to the r2 form "
+            "(``.exclude(member_project__project_id=..., "
+            "member_project__is_active=False)``) flips this red."
+        )
+        assert never_member.pk in cooperator_ids, (
+            "Subscriber with no ProjectMember row at all in THIS project "
+            "must stay in the helper output — mission rule 'even if not "
+            "a ProjectMember'. Reverting M53's helper to the r2 form "
+            "should not flip this to red (B=FALSE → AND=FALSE → "
+            "NOT=TRUE → kept), but a stricter reimplementation could."
+        )
+
+        # ---- Subtest 2: SQL shape. ----
+        qs = _spnotify_cooperator_ids_qs(
+            project_id=project_in_ws.id, issue_id=issue.id
+        )
+        helper_sql = str(qs.query)
+        assert "NOT" in helper_sql.upper() and "IN (" in helper_sql.upper(), (
+            "M53-form helper must compile to a ``NOT (...) IN (subquery)`` "
+            "shape (a positive subquery negated). The r2 form compiles to "
+            "an ``EXISTS(...) AND EXISTS(...)`` pair instead. Got:\n"
+            f"{helper_sql}"
+        )
+        # The subquery's `project_id` predicate must scope to THIS.
+        # ``project_id = <uuid-of-this-project>`` appears inside the
+        # SELECT U0 ... WHERE.
+        assert "project_id" in helper_sql, (
+            f"Helper SQL must include a ``project_id`` predicate inside "
+            f"the subquery:\n{helper_sql}"
+        )
+        # The r2 form's distinctive signature is "EXISTS(...) AND
+        # EXISTS(...)"; reject it explicitly.
+        assert "EXISTS" not in helper_sql.upper(), (
+            "Helper SQL must NOT compile to the r2 form's "
+            "``NOT (EXISTS(inactive-anywhere) AND EXISTS(row-in-this))`` "
+            "shape — that leaks cross-project inactive history into the "
+            "exclude (M53 P3 note 1). Got:\n"
+            f"{helper_sql}"
+        )
+
+    def test_sp_create_with_inactive_membership_in_other_project_still_notifies_cooperator(
+        self,
+        ws_owned,
+        project_in_ws,
+        other_project,
+        bot,
+        cross_project_user,
+        celery_eager,
+    ):
+        """End-to-end probe: a subscriber who is ``active`` in
+        ``project_in_ws`` but holds an ``inactive`` ``ProjectMember`` row
+        in a *different* project (``other_project``) must still receive a
+        Notification when the SP bot writes to ``project_in_ws``.
+
+        The user-facing test that pins the cooperative recipient
+        contract under the mission rules. The full notification task
+        routes each subscriber through both the legacy recipient path
+        (``IssueSubscriber ∩ ProjectMember(project_id=THIS, is_active=
+        True)``) and the M53 cooperators arm; the legacy arm catches
+        this user regardless of which cooperators query form is in
+        effect, so this test passes on both r2 and M53 forms (the
+        reviewer's "harmless in effect" verdict). The companion
+        ``test_cooperators_queryset_excludes_only_project_local_inactive``
+        does the red-before/green-after duty at the ORM level.
+
+        Reverting the entire ``.exclude(...)`` (so cooperators admit
+        every IssueSubscriber) flips both this test and the existing
+        ``test_sp_create_excludes_ex_project_member_cooperator`` to red.
+        """
+        issue = _make_issue(project_in_ws, ws_owned, bot)
+        IssueSubscriber.objects.create(
+            project=project_in_ws,
+            issue=issue,
+            subscriber=cross_project_user,
+        )
+        activities = _issue_activity_dicts(issue, project_in_ws, ws_owned, bot.pk)
+
+        _drive_notifications(
+            type="issue.activity.created",
+            issue_id=issue.id,
+            project_id=project_in_ws.id,
+            actor_id=bot.pk,
+            subscriber=True,
+            issue_activities_created=activities,
+        )
+
+        receivers = _notification_receivers(issue.id)
+        assert cross_project_user.pk in receivers, (
+            "An IssueSubscriber who is an *active* ProjectMember of THIS "
+            "project must be notified, even if they hold an inactive "
+            "ProjectMember row in *another* project. The end-to-end "
+            "task's legacy recipient path covers this case today "
+            "(\"harmless in effect\"); if the legacy path is ever "
+            "weakened, this test guards the contract."
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Cooperators-filter tolerance: missing UserNotificationPreference              #
+# --------------------------------------------------------------------------- #
+#
+# M52 r1 fell over hard when an IssueSubscriber row belonged to a bot user
+# (``subscriber__is_bot=False`` fixed the cooperators side), but there is a
+# second failure class the existing tests do not pin: a *human* subscriber
+# whose ``UserNotificationPreference`` row is missing or was never created.
+# The ``create_user_notification`` post_save signal
+# (``plane/db/models/user.py:298-312``) auto-creates one for every non-bot
+# user, but the signal may not have fired (e.g. data imported outside the
+# ORM, a row deleted out of band) — and the loop's unguarded
+# ``.get(user_id=subscriber)`` would raise ``DoesNotExist`` and trip the
+# task's catch-all to silently abort before ``bulk_create``.
+#
+# The M53 fix is a tolerance in the loop itself: an unsaved fallback
+# ``UserNotificationPreference`` instance is constructed when the row is
+# missing, so a single subscriber without a preference still receives
+# their notification and other recipients are unaffected.
+#
+# R3 probe: reverting *just* the tolerance (keeping ``subscriber__is_bot
+# =False`` intact) → 8 passed / 0 failed, so no existing test pins the
+# tolerance. The class below does, both ways:
+#   - by failing when the fallback is reverted
+#     (``.get(user_id=subscriber)`` re-introduced)
+#   - by failing when the fallback is replaced with a bare ``None`` skip
+#     (no Notification for the no-pref subscriber).
+
+
+@pytest.fixture
+def no_preference_cooperator(db):
+    """A human subscriber with no ``UserNotificationPreference`` row.
+
+    ``User.objects.create`` fires the ``create_user_notification`` signal
+    that would otherwise auto-create one
+    (``plane/db/models/user.py:298-312``); we mint the user and then delete
+    the auto-created row to reach the no-row state the tolerance must
+    cover. Mirrors the "raw SQL造行" path noted in the mission: any
+    ``User`` row not produced by ``User.objects.create`` (or with the
+    preference deleted out of band) is in this state."""
+    user = User.objects.create(
+        email="nopref-cooperator@plane.so",
+        username="no_pref_cooperator",
+        first_name="No",
+        last_name="Pref",
+    )
+    UserNotificationPreference.objects.filter(user=user).delete()
+    return user
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestSpNotifyPreferenceTolerance:
+    def test_sp_create_tolerates_missing_notification_preference(
+        self,
+        ws_owned,
+        project_in_ws,
+        bot,
+        no_preference_cooperator,
+        cooperator_user,
+        celery_eager,
+    ):
+        """A subscriber who has no ``UserNotificationPreference`` row must
+        (i) not crash the recipient loop, (ii) still receive a
+        Notification for the SP write, and (iii) not affect other
+        recipients' notifications.
+
+        Pre-M53 tolerance absent: the loop's
+        ``UserNotificationPreference.objects.get(user_id=subscriber)``
+        raises ``DoesNotExist`` for ``no_preference_cooperator``, the
+        task's catch-all at ``notification_task.py:667-669`` swallows it
+        silently, and ``Notification.objects.bulk_create`` is never
+        called for *any* recipient — including ``cooperator_user`` and
+        ``ws_owner``. The task's silent failure hides this: it returns
+        successfully, but with zero notifications produced for the write.
+
+        Post-M53 tolerance: ``.filter(...).first()`` followed by an
+        unsaved fallback ``UserNotificationPreference`` instance
+        (``notification_task.py:436-447``) means the loop completes and
+        every recipient — including the no-pref subscriber — gets one
+        Notification row. The fallback is intentionally **unsaved**;
+        subsequent writes still hit the fallback path for the same
+        subscriber.
+
+        Discrimination: reverting just the tolerance (keeping
+        ``subscriber__is_bot=False`` intact) flips this test to red
+        while leaving the other seven tests green — so this is the only
+        test that pins the load-bearing role of the fallback.
+        """
+        issue = _make_issue(project_in_ws, ws_owned, bot)
+        # The user whose preference row was deleted above — the
+        # tolerance target.
+        IssueSubscriber.objects.create(
+            project=project_in_ws,
+            issue=issue,
+            subscriber=no_preference_cooperator,
+        )
+        # A second subscriber to prove the tolerance is per-subscriber
+        # (other recipients' notifications are not collateral damage).
+        IssueSubscriber.objects.create(
+            project=project_in_ws,
+            issue=issue,
+            subscriber=cooperator_user,
+        )
+
+        nopref_pref_count_before = UserNotificationPreference.objects.filter(
+            user=no_preference_cooperator
+        ).count()
+        assert nopref_pref_count_before == 0, (
+            "Fixture pre-condition: no_preference_cooperator must have "
+            "zero UserNotificationPreference rows. The fixture deletes "
+            "the auto-created row immediately after User.objects.create; "
+            "if that delete did not run this assertion guards against a "
+            "silent regression."
+        )
+
+        activities = _issue_activity_dicts(issue, project_in_ws, ws_owned, bot.pk)
+
+        _drive_notifications(
+            type="issue.activity.created",
+            issue_id=issue.id,
+            project_id=project_in_ws.id,
+            actor_id=bot.pk,
+            subscriber=True,
+            issue_activities_created=activities,
+        )
+
+        receivers = _notification_receivers(issue.id)
+
+        # (i) the task did not abort: ``cooperator_user`` is in the
+        # recipient set, proving the loop ran to completion past the
+        # no-pref subscriber.
+        assert cooperator_user.pk in receivers, (
+            "Control: cooperator_user (who has a valid preference) must "
+            "still receive a Notification. If this assertion fails the "
+            "task's catch-all aborted the whole write on the no-pref "
+            "subscriber's DoesNotExist — a silent drop the loop's "
+            "tolerance is supposed to prevent. Reverting just the "
+            "tolerance re-introduces this regression."
+        )
+
+        # (ii) the no-pref subscriber still receives a Notification.
+        assert no_preference_cooperator.pk in receivers, (
+            "A subscriber with no UserNotificationPreference row must "
+            "still receive a Notification — the loop builds an unsaved "
+            "fallback instance with the same defaults as the post_save "
+            "signal (``notification_task.py:436-447``). Reverting the "
+            "tolerance to ``.get(user_id=subscriber)`` flips this to "
+            "red with DoesNotExist in the log and *zero* notifications "
+            "produced overall."
+        )
+
+        # (iii) the fallback is unsaved — the row is not persisted for
+        # the subscriber. If a future change accidentally persists it,
+        # the next assertion guards the documented intent.
+        assert UserNotificationPreference.objects.filter(
+            user=no_preference_cooperator
+        ).count() == nopref_pref_count_before, (
+            "The tolerance's fallback UserNotificationPreference must "
+            "remain unsaved. Persisting it silently would mask data "
+            "integrity drift that the post_save signal was supposed to "
+            "own; the row is recreated by the signal on the next save."
         )
