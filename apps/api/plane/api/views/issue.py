@@ -106,6 +106,7 @@ from plane.core.authz import Action
 from plane.service_principals.attribution import (
     actor_for_request,
     actor_id_for_request,
+    sp_from_request,
 )
 from plane.utils.openapi import (
     work_item_docs,
@@ -190,6 +191,34 @@ def user_has_issue_permission(user_id, project_id, issue=None, allowed_roles=Non
         qs = qs.filter(role__in=allowed_roles)
 
     return qs.exists()
+
+
+def request_has_issue_permission(request, project_id, issue=None, allowed_roles=None, allow_creator=True):
+    """:func:`user_has_issue_permission` for the acting principal of ``request``.
+
+    A human resolves to ``request.user`` and keeps the membership model
+    byte-for-byte. A service principal does **not** consult the owner's
+    membership: the authz chain already ran in ``check_permissions``, and for
+    these endpoints it evaluates ``authorize()`` against the concrete row — at
+    member tier it requires the SP's own bot user to have created the row, and
+    for a ``create`` it requires the project grant. Re-applying the membership
+    model here would gate the request on the SP **owner's** project
+    membership, the wrong principal for a ``plane_svc_`` token, and would deny
+    an SP its own attachment whenever the owner is not a project member.
+
+    The chain is the stricter gate for an SP, and it has already run (and
+    denied, if it denied) before any handler reaches this helper, so the SP
+    branch is a pass-through and never a widening.
+    """
+    if sp_from_request(request) is not None:
+        return True
+    return user_has_issue_permission(
+        request.user.id,
+        project_id=project_id,
+        issue=issue,
+        allowed_roles=allowed_roles,
+        allow_creator=allow_creator,
+    )
 
 
 class WorkspaceIssueAPIEndpoint(BaseAPIView):
@@ -2052,8 +2081,8 @@ class IssueAttachmentListCreateAPIEndpoint(BaseAPIView):
         """
         issue = Issue.objects.get(pk=issue_id, workspace__slug=slug, project_id=project_id)
         # if the user is creator or admin,member then allow the upload
-        if not user_has_issue_permission(
-            request.user.id,
+        if not request_has_issue_permission(
+            request,
             project_id=project_id,
             issue=issue,
             allowed_roles=[ROLE.ADMIN.value, ROLE.MEMBER.value, ROLE.GUEST.value],
@@ -2217,8 +2246,8 @@ class IssueAttachmentDetailAPIEndpoint(BaseAPIView):
         """
         issue = Issue.objects.get(pk=issue_id, workspace__slug=slug, project_id=project_id)
         # if the request user is creator or admin then delete the attachment
-        if not user_has_issue_permission(
-            request.user.id,
+        if not request_has_issue_permission(
+            request,
             project_id=project_id,
             issue=issue,
             allowed_roles=[ROLE.ADMIN.value, ROLE.MEMBER.value, ROLE.GUEST.value],
@@ -2290,8 +2319,8 @@ class IssueAttachmentDetailAPIEndpoint(BaseAPIView):
         Retrieve details of a specific attachment.
         """
         # if the user is part of the project then allow the download
-        if not user_has_issue_permission(
-            request.user.id,
+        if not request_has_issue_permission(
+            request,
             project_id=project_id,
             issue=None,
             allowed_roles=None,
@@ -2355,8 +2384,8 @@ class IssueAttachmentDetailAPIEndpoint(BaseAPIView):
 
         issue = Issue.objects.get(pk=issue_id, workspace__slug=slug, project_id=project_id)
         # if the user is creator or admin then allow the upload
-        if not user_has_issue_permission(
-            request.user.id,
+        if not request_has_issue_permission(
+            request,
             project_id=project_id,
             issue=issue,
             allowed_roles=[ROLE.ADMIN.value, ROLE.MEMBER.value, ROLE.GUEST.value],

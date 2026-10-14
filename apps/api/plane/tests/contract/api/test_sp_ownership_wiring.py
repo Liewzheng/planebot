@@ -25,11 +25,13 @@ never the human-facing ``owned_by``. The page round trip lives in
 ``test_sp_v1_wiring.py``; this file covers the work-item and comment chains.
 """
 
+import uuid
+
 import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from plane.db.models import Issue, IssueComment, Project, ProjectMember
+from plane.db.models import FileAsset, Issue, IssueComment, Project, ProjectMember
 from plane.db.models.api import APIToken
 from plane.service_principals.constants import PrincipalType
 from plane.service_principals.models import (
@@ -62,6 +64,13 @@ def _comments_url(workspace_slug, project_id, issue_id):
 
 def _comment_url(workspace_slug, project_id, issue_id, comment_id):
     return _comments_url(workspace_slug, project_id, issue_id) + f"{comment_id}/"
+
+
+def _attachment_url(workspace_slug, project_id, issue_id, asset_id):
+    return (
+        f"/api/v1/workspaces/{workspace_slug}/projects/{project_id}"
+        f"/work-items/{issue_id}/attachments/{asset_id}/"
+    )
 
 
 def _make_sp(workspace, owner, name, project):
@@ -312,3 +321,128 @@ class TestOtherSPReadsAndCommentsButCannotWrite:
             format="json",
         )
         assert response.status_code == status.HTTP_200_OK, response.data
+
+
+@pytest.fixture
+def ownerless_project(db, workspace, create_user):
+    """A project the SP's human owner is deliberately NOT a member of.
+
+    The SP is still granted into it, so the authz chain authorizes its writes;
+    the legacy attachment guard — which keyed off ``request.user``, the SP's
+    *owner* — did not.
+    """
+    return Project.objects.create(
+        name="Ownerless Project",
+        identifier="OWNP",
+        workspace=workspace,
+        network=2,
+    )
+
+
+def _attachment(project, workspace, issue, created_by):
+    """An unconfirmed attachment row owned by ``created_by``.
+
+    ``storage_metadata`` is pre-populated so the view skips the
+    ``get_asset_object_metadata`` S3 task. ``created_by`` is written with
+    ``disable_auto_set_user`` because ``BaseModel.save`` would otherwise null
+    it outside a request — and it is the column the ownership step reads.
+    """
+    asset = FileAsset(
+        attributes={"name": "note.pdf", "type": "application/pdf", "size": 12},
+        asset=f"{uuid.uuid4().hex}-note.pdf",
+        size=12,
+        workspace_id=workspace.id,
+        project_id=project.id,
+        issue_id=issue.id,
+        entity_type=FileAsset.EntityTypeContext.ISSUE_ATTACHMENT,
+        is_uploaded=False,
+        storage_metadata={"ContentLength": 12},
+        created_by=created_by,
+    )
+    asset.save(disable_auto_set_user=True)
+    asset.refresh_from_db()
+    return asset
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestSPAttachmentWritesDoNotConsultTheOwnersMembership:
+    """The attachment guards used to call
+    ``user_has_issue_permission(request.user.id, ...)`` — the SP's human
+    **owner**. For a ``plane_svc_`` token that is the wrong principal: the
+    authz chain has already run in ``check_permissions`` and, at member tier,
+    requires the SP's own bot user to have created the row, so the membership
+    model must not be re-applied to the owner. Before the fix an SP whose owner
+    was not a project member got a 403 from the body guard on an attachment the
+    chain had allowed.
+
+    The first two tests fail against the old guard and pass against the new
+    one; the third proves the change is not fail-open.
+    """
+
+    def _scenario(self, workspace, create_user, ownerless_project, name="att-sp"):
+        sp = _make_sp(workspace, create_user, name, ownerless_project)
+        bot = sp.ensure_bot_user()
+        issue = Issue.objects.create(
+            name="Ownerless Issue",
+            project=ownerless_project,
+            workspace=workspace,
+        )
+        asset = _attachment(ownerless_project, workspace, issue, bot)
+        return sp, issue, asset
+
+    def test_sp_confirms_its_own_attachment_upload(
+        self, workspace, create_user, ownerless_project
+    ):
+        sp, issue, asset = self._scenario(workspace, create_user, ownerless_project)
+
+        response = _client(sp).patch(
+            _attachment_url(
+                workspace.slug, ownerless_project.id, issue.id, asset.id
+            ),
+            data={"is_uploaded": True},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT, response.data
+        asset.refresh_from_db()
+        assert asset.is_uploaded is True
+        # The confirm stays credited to the bot, so the SP keeps owning the row.
+        assert asset.created_by_id == sp.bot_user_id
+
+    def test_sp_deletes_its_own_attachment(
+        self, workspace, create_user, ownerless_project
+    ):
+        sp, issue, asset = self._scenario(workspace, create_user, ownerless_project)
+
+        response = _client(sp).delete(
+            _attachment_url(
+                workspace.slug, ownerless_project.id, issue.id, asset.id
+            )
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT, response.data
+        asset.refresh_from_db()
+        assert asset.is_deleted is True
+
+    def test_other_sp_still_cannot_touch_the_attachment(
+        self, workspace, create_user, ownerless_project
+    ):
+        """Not fail-open: the chain still denies a second SP the attachment row
+        it did not create, before the handler ever runs."""
+        _sp_a, issue, asset = self._scenario(
+            workspace, create_user, ownerless_project, name="att-sp-a"
+        )
+        sp_b = _make_sp(workspace, create_user, "att-sp-b", ownerless_project)
+        sp_b.ensure_bot_user()
+
+        response = _client(sp_b).patch(
+            _attachment_url(
+                workspace.slug, ownerless_project.id, issue.id, asset.id
+            ),
+            data={"is_uploaded": True},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "may only update a work_item it created" in response.json()["detail"]
