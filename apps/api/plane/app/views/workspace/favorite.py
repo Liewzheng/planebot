@@ -15,6 +15,7 @@ from plane.app.views.base import BaseAPIView
 from plane.db.models import UserFavorite, Workspace
 from plane.app.serializers import UserFavoriteSerializer
 from plane.app.permissions import allow_permission, ROLE
+from plane.service_principals.attribution import actor_id_for_request
 
 
 class WorkspaceFavoriteEndpoint(BaseAPIView):
@@ -57,7 +58,12 @@ class WorkspaceFavoriteEndpoint(BaseAPIView):
             serializer = UserFavoriteSerializer(data=request.data)
             if serializer.is_valid():
                 serializer.save(
-                    user_id=request.user.id,
+                    # ``user_id=request.user.id`` for an SP proxy is
+                    # ``None`` (AnonymousUser.id) — resolved via the
+                    # attname path so this one is *not* a 500; resolve to
+                    # the bot anyway so the bot's own workspace favorites
+                    # are written on SP writes.
+                    user_id=actor_id_for_request(request),
                     workspace=workspace,
                     project_id=request.data.get("project_id", None),
                 )

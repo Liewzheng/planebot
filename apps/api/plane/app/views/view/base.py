@@ -45,6 +45,7 @@ from plane.utils.order_queryset import VIEW_ORDER_BY_ALLOWLIST, order_issue_quer
 from plane.bgtasks.recent_visited_task import recent_visited_task
 from .. import BaseViewSet
 from plane.db.models import UserFavorite
+from plane.service_principals.attribution import actor_for_request
 from plane.utils.filters import ComplexFilterBackend
 from plane.utils.filters import IssueFilterSet
 
@@ -412,14 +413,16 @@ class IssueViewFavoriteViewSet(BaseViewSet):
             super()
             .get_queryset()
             .filter(workspace__slug=self.kwargs.get("slug"))
-            .filter(user=self.request.user)
+            .filter(user=actor_for_request(self.request))
             .select_related("view")
         )
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
     def create(self, request, slug, project_id):
+        # Resolve the SP proxy to the bot — same object-form FK shape
+        # as the rest of the r2/r3 sweep.
         _ = UserFavorite.objects.create(
-            user=request.user,
+            user=actor_for_request(request),
             entity_identifier=request.data.get("view"),
             entity_type="view",
             project_id=project_id,

@@ -516,8 +516,12 @@ class ProjectFavoritesViewSet(BaseViewSet):
         serializer.save(user=actor_for_request(self.request))
 
     def create(self, request, slug):
+        # ``create`` overrides ``perform_create``, so the sibling fix
+        # at ``perform_create`` above is dead code — the live write is
+        # here. Resolve the SP proxy to the bot so an SP write credits
+        # the bot's own project favorites.
         _ = UserFavorite.objects.create(
-            user=request.user,
+            user=actor_for_request(request),
             entity_type="project",
             entity_identifier=request.data.get("project"),
             project_id=request.data.get("project"),

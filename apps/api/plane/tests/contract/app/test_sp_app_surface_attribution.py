@@ -32,7 +32,11 @@ independently by the reviewer): every change here is future-proofing
 correctness for the day one of these views opts into SP authz, not a
 live fix today.
 
-The 16 tests in this file discriminate in two ways:
+The 16 tests in this file discriminate in two ways (corrected from
+the r3 header's stale "16 tests" count — there are 16; r3 had 15
+because the duplicate-detection edit had removed
+``test_sp_app_file_asset_create_credits_the_bot``, which the r4
+reviewer re-added verbatim):
 * View-driven tests (cycle, estimate, label, theme, asset-create,
   asset-filter, app issue reaction, all three space ``actor=`` writes)
   invoke the production view body — reverting the matching file's fix
@@ -585,22 +589,16 @@ class TestAppIssueCommentActorAttribution:
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestAppIssueReactionActorAttribution:
-    """Helper-level pin, NOT endpoint coverage. Same shape as
-    ``TestAppIssueCommentActorAttribution`` — the view body has a
-    pre-existing ``ProjectMember`` pre-check that blocks SP before
-    reaching the ``actor=`` write site.
+    """Endpoint pin — drives ``IssueReactionViewSet.create`` end-to-end.
 
-    Pins the write-path correctness: ``IssueReaction.actor`` is NOT
-    nullable, so pre-M47 the SP proxy crashes the bulk insert with
-    ``IntegrityError`` (``null value in column "actor_id"``); post-M47
-    the bot user is accepted.
+    ``IssueReactionViewSet.create`` has **no** ``ProjectMember``
+    pre-check (its only ``member=request.user`` filter lives in
+    ``get_queryset``, which ``create`` never calls — measured r3/r4).
+    Reverting ``reaction.py:53`` (``actor=actor_for_request(request)``
+    → ``actor=request.user``) flips the test to red with
+    ``ValueError: Cannot assign "_ServicePrincipalProxy(sp_id=...)":
+    "IssueReaction.actor" must be a "User" instance.``
     """
-
-    def _sp_request(self, sp, sp_token):
-        request = type("_R", (), {})()
-        request.user = _ServicePrincipalProxy(sp=sp)
-        request.auth = sp_token
-        return request
 
     def test_sp_app_issue_reaction_create_credits_the_bot(
         self, sp, sp_token, workspace, project, issue, create_user
@@ -857,6 +855,74 @@ class TestSpaceIssueActorAttribution:
         asset = FileAsset.objects.filter(created_by=bot).latest("created_at")
         assert asset.created_by_id == bot.pk
         assert asset.created_by.is_bot is True
+        assert asset.created_by_id != create_user.pk
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestFileAssetAttribution:
+    """Endpoint pins for the app + space ``FileAsset.objects.create``
+    writers.
+
+    ``UserAssetsV2Endpoint.post`` (``asset/v2.py:112-167``) creates a
+    ``FileAsset`` with both ``user=actor_for_request(request)`` and
+    ``created_by=actor_for_request(request)`` — the r1 fix for the
+    missed ``user=`` column. ``ProjectBulkAssetEndpoint.post`` has the
+    ``created_by=request.user`` *filter* at ``asset/v2.py:757``. The
+    space ``EntityAssetEndpoint.post`` mirrors the same shape.
+
+    Reverting the corresponding ``actor_for_request`` / ``user=`` lines
+    flips each test red with ``ValueError: Cannot assign
+    "_ServicePrincipalProxy(sp_id=...)": "FileAsset.<field>" must be a
+    "User" instance.``
+    """
+
+    def test_sp_app_file_asset_create_credits_the_bot(
+        self, sp, sp_token, workspace, create_user
+    ):
+        """Endpoint pin — drives ``UserAssetsV2Endpoint.post``
+        end-to-end. This is the **only** test that covers the
+        ``user=actor_for_request(request)`` fix at ``asset/v2.py:156``
+        (the ``user=`` column on ``FileAsset``).
+
+        ``UserAssetsV2Endpoint.post`` has no ``ProjectMember`` pre-check
+        (its only ``member=request.user`` filter lives in
+        ``get_queryset``, which ``post`` never calls). Reverting either
+        ``user=actor_for_request(request)`` or
+        ``created_by=actor_for_request(request)`` in this view flips
+        the test to red with the same
+        ``ValueError: must be a "User" instance.``
+        """
+        from plane.app.views.asset.v2 import UserAssetsV2Endpoint
+
+        bot = ensure_bot_user(sp)
+
+        url = "/api/assets/v2/user-assets/"
+        payload = {
+            "name": "sp-cover.png",
+            "type": "image/png",
+            "size": 1024,
+            "entity_type": FileAsset.EntityTypeContext.USER_COVER,
+        }
+        # ``UserAssetsV2Endpoint.post(self, request)`` takes no URL
+        # kwargs — only ``self`` and ``request``. The view also does not
+        # check the caller's identity before the ``FileAsset.objects
+        # .create`` call, so the SP proxy reaches the ``user=`` /
+        # ``created_by=`` write sites.
+        response = _drive_view_post(
+            UserAssetsV2Endpoint, sp, sp_token, url, payload,
+            action_name="post",
+        )
+
+        assert response.status_code == status.HTTP_200_OK, (
+            f"Got {response.status_code}; body={response.data!r}. Pre-fix "
+            "the SP-proxy as ``user=`` / ``created_by=`` value raises "
+            "``ValueError: must be a User instance`` and the view 500s."
+        )
+        asset = FileAsset.objects.filter(created_by=bot).latest("created_at")
+        assert asset.created_by_id == bot.pk
+        assert asset.created_by.is_bot is True
+        assert asset.user_id == bot.pk  # the SP proxy's user= was fixed too
         assert asset.created_by_id != create_user.pk
 
 

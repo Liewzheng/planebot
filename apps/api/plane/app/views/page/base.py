@@ -546,11 +546,13 @@ class PageFavoriteViewSet(BaseViewSet):
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
     def create(self, request, slug, project_id, page_id):
+        # Resolve the SP proxy to the bot — same object-form FK shape
+        # as the rest of the r2/r3 sweep.
         _ = UserFavorite.objects.create(
             project_id=project_id,
             entity_identifier=page_id,
             entity_type="page",
-            user=request.user,
+            user=actor_for_request(request),
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
