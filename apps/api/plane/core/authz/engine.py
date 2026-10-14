@@ -27,7 +27,12 @@ Implements the chain from ``sp-design.md`` §5.2:
    (``role_cap >= 20``) are exempt. The resource row must be supplied by
    the caller: a missing row, a missing bot user, a missing recorded
    creator, or a creator that is someone else all deny (fail-closed — an
-   unknown owner never matches an unknown owner).
+   unknown owner never matches an unknown owner). The row's owner column is
+   per resource type (``_OWNER_ATTNAME``): a page is owned by
+   ``Page.owned_by``, everything else by ``created_by``. This step is the
+   only one a **capability probe** may skip — ``effective_actions`` passes
+   ``enforce_ownership=False`` because it carries no row by construction;
+   every enforcement caller leaves it on.
 4. **owner intersection** — the SP's owner user must currently be an
    active workspace member whose role covers the effective floor. This
    step is non-cached: every call re-queries WorkspaceMember so a
@@ -51,11 +56,11 @@ single authorization point for every SP request regardless of which surface
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 from django.db.models import Q
 
-from plane.db.models import WorkspaceMember
+from plane.db.models import Project, WorkspaceMember
 
 from . import actions, resources
 from .decision import (
@@ -75,9 +80,6 @@ from .decision import (
 )
 from .principal import Principal, ServicePrincipal_
 
-if TYPE_CHECKING:
-    from plane.db.models import Project
-
 
 # Reject caller-side wildcards. ``Action.ALL`` / ``ResourceType.ALL`` are
 # scope-row-side only; accepting them at the call site would let a future
@@ -89,6 +91,24 @@ _CALLER_WILDCARDS = frozenset({actions.Action.ALL})
 # decision (M40). ``read``/``list``/``create`` have no existing row to own; a
 # ``create`` produces a row the creator owns by construction.
 _OWNERSHIP_ACTIONS = frozenset({actions.Action.UPDATE, actions.Action.DELETE})
+
+
+# The column that carries a row's *product* notion of "who owns it", by
+# resource type. Plane is not uniform: a Page's owner is ``Page.owned_by``
+# (every v1 and app page gate compares ``page.owned_by_id`` with the caller —
+# ``api/views/page.py``, ``app/views/page/*``), and the v1 create serializer
+# stamps ``owned_by_id`` from the acting user, whereas ``Page.created_by`` is
+# not reliably populated. Every other resource type attributes authorship to
+# ``created_by`` (``BaseModel.save``). Keep this map empty for a type whose
+# ``created_by`` is authoritative.
+_OWNER_ATTNAME = {
+    resources.ResourceType.PAGE: "owned_by_id",
+}
+
+# Fallback consulted only when the primary column is *absent* from a model —
+# never to rescue a NULL primary, which means "unknown creator" (fail-closed).
+_DEFAULT_OWNER_ATTNAME = "created_by_id"
+_OWNER_ATTNAME_FALLBACK = "actor_id"
 
 
 # Remedy appended to every ownership denial, mirroring the grant-missing /
@@ -140,6 +160,8 @@ def authorize(
     resource_type: str,
     resource: object | None = None,
     ctx: AuthzContext | None = None,
+    *,
+    enforce_ownership: bool = True,
 ) -> Decision:
     """Run the four-step decision chain.
 
@@ -161,6 +183,13 @@ def authorize(
             check". ``None`` is correct for ``read``/``list``/``create``
             and for collection endpoints, where no single row is owned yet.
         ctx: Per-request context (workspace slug, project id).
+        enforce_ownership: Keyword-only. ``True`` (the default) is what
+            every **enforcement** caller must pass: a real request carries
+            a row, and a request with no row is fail-closed. ``False``
+            runs the chain without step 3.5 and exists for **capability
+            probes only** — :func:`effective_actions`, which has no row by
+            construction and reports scope → grant → role_cap. It must
+            never be used to decide whether a concrete write is allowed.
 
     Returns:
         A :class:`Decision`. Callers that want to raise can use
@@ -358,11 +387,16 @@ def authorize(
 
     # Step 3.5 — per-resource ownership (M40). A member-tier grant
     # (role_cap < ADMIN) may only ``update``/``delete`` rows its own bot
-    # user created; Admin-tier grants are unrestricted. A ``None``
+    # user owns; Admin-tier grants are unrestricted. A ``None``
     # effective_role (no ProjectGrant, i.e. the workspace-level scope path)
     # is below ADMIN and therefore ownership-scoped too. Fail closed: an
     # unknown owner, a missing bot user and a missing resource all deny.
-    if action in _OWNERSHIP_ACTIONS and (effective_role or 0) < actions.ROLE_ADMIN:
+    # ``enforce_ownership=False`` is the capability-probe exemption only.
+    if (
+        enforce_ownership
+        and action in _OWNERSHIP_ACTIONS
+        and (effective_role or 0) < actions.ROLE_ADMIN
+    ):
         ownership_denial = _ownership_denial(sp, action, resource_type, resource)
         if ownership_denial is not None:
             return ownership_denial
@@ -426,25 +460,20 @@ def authorize(
 def _is_project_instance(resource: object) -> bool:
     """True when ``resource`` is a Project row itself.
 
-    A Project carries a ``workspace`` FK and has *no* ``project`` FK of its
-    own. Every project-anchored model (work item, comment, cycle, module, …)
-    carries a ``project`` FK, and ``Label`` carries the *nullable* one that a
-    workspace-wide label leaves empty. Testing for the presence of the
-    ``project_id`` attname — rather than its value — therefore separates
-    "this row is a Project" from "this row belongs to a project, possibly
-    none", without importing the model or trusting the caller's
-    ``resource_type``. Guarding on the value (``not project_id``) is what let
-    a workspace-wide label masquerade as a Project and deny
-    ``DENY_GRANT_MISS`` instead of ``DENY_WORKSPACE_LEVEL_WRITE``.
+    Type-based, not shape-based. The old shape test ("carries a
+    ``workspace_id`` and no ``project_id``") also matched every other
+    workspace-scoped row that has no project FK — notably ``Page`` — and
+    returned the row's own id as the project id, which sent M41-bound page
+    writes into the grant step for a "project" that does not exist
+    (``DENY_GRANT_MISS``). ``Page`` resolves its project from the request
+    context instead; a workspace-wide ``Label`` resolves to no project at all
+    (see :func:`_resolve_project_id`).
 
-    Rows that are neither (``WorkspaceMember``, …) also match the shape; they
-    are only ever handed in as ``resource`` for workspace-level resource
-    types, whose project resolution is moot — the Q4 guard decides them.
+    ``Project`` is imported at module level; the engine already imports
+    ``WorkspaceMember`` from the same module, so this adds no new dependency
+    edge.
     """
-    return (
-        getattr(resource, "workspace_id", None) is not None
-        and not hasattr(resource, "project_id")
-    )
+    return isinstance(resource, Project)
 
 
 def _resolve_project_id(
@@ -453,17 +482,18 @@ def _resolve_project_id(
 ) -> Optional[str]:
     """Pick the project id for the current request, in priority order:
 
-    1. The resource is itself a Project — use ``resource.id`` as the project
-       id. A resource with a ``project_id`` column (even when that column is
-       NULL — a workspace-wide label) is *not* a Project.
+    1. The resource *is* a Project (by type — see
+       :func:`_is_project_instance`) — use ``resource.id`` as the project id.
     2. ``resource.project_id`` (per-row instance has the answer). A row that
        carries the column but resolves it to NULL is a *workspace-level* row:
        a workspace-wide ``Label`` sits at the workspace scope, not in
        "whatever project the URL named". ``None`` is returned so the
        workspace-level write guard fires, rather than falling back to ``ctx``
        and mis-classifying the row as project-scoped.
-    3. ``ctx.project_id`` (per-request from URL routing) — only when the
-       caller supplied no holding resource to anchor on.
+    3. ``ctx.project_id`` (per-request from URL routing) — for rows with no
+       project column of their own (``Page``, whose project link lives on the
+       ``ProjectPage`` through-row) and when the caller supplied no resource
+       to anchor on.
     """
     if resource is not None:
         if _is_project_instance(resource):
@@ -476,25 +506,40 @@ def _resolve_project_id(
     return None
 
 
-def _resource_owner_id(resource: object | None) -> Optional[str]:
-    """The user id a resource is attributed to, or ``None`` when unknown.
+def _resource_owner_id(
+    resource: object | None,
+    resource_type: str | None = None,
+) -> Optional[str]:
+    """The user id that *owns* a row, or ``None`` when unknown.
 
-    Plane credits a row's author to ``created_by`` (``BaseModel.save`` sets
-    it on every write). A ``None`` answer means the row carries no recorded
-    creator — historical data predating the column, or a row authored by the
-    system — and is treated as *unknown* by the caller (fail-closed). The
-    ``actor`` column is consulted only for rows that have no ``created_by``
-    at all; a NULL ``created_by`` is never rescued by a second column.
+    The owner column is per resource type (:data:`_OWNER_ATTNAME`). A
+    ``Page`` is owned by ``Page.owned_by`` — the column every v1 and app page
+    gate compares against the caller, and the one the v1 create serializer
+    stamps from the acting user; ``Page.created_by`` is not reliably
+    populated, so reading it would deny a page to the principal that
+    created it. Every other resource type is owned by ``created_by``
+    (``BaseModel.save`` sets it on every write).
+
+    ``None`` means the row carries no recorded owner — historical data
+    predating the column, a row authored by the system, or a page with no
+    ``owned_by`` — and is treated as *unknown* by the caller (fail-closed).
+    The ``actor`` column is consulted only for models that have no
+    ``created_by`` column at all; a NULL owner column is never rescued by a
+    second column, so ``None`` can never match another ``None``.
     """
     if resource is None:
         return None
-    created_by_id = getattr(resource, "created_by_id", None)
-    if created_by_id:
-        return str(created_by_id)
-    if not hasattr(resource, "created_by_id"):
-        actor_id = getattr(resource, "actor_id", None)
-        if actor_id:
-            return str(actor_id)
+
+    attname = _OWNER_ATTNAME.get(resource_type, _DEFAULT_OWNER_ATTNAME)
+    if hasattr(resource, attname):
+        owner_id = getattr(resource, attname, None)
+        return str(owner_id) if owner_id else None
+
+    # The owning column is absent from the model entirely (neither the
+    # per-type one nor ``created_by``): fall back to ``actor``.
+    actor_id = getattr(resource, _OWNER_ATTNAME_FALLBACK, None)
+    if actor_id:
+        return str(actor_id)
     return None
 
 
@@ -513,11 +558,12 @@ def _ownership_denial(
     * the caller supplied no resource row (ownership cannot be verified);
     * the SP has no bot user (``bot_user`` is NULL) — it has no identity to
       compare against, so nothing matches;
-    * the row has no recorded creator (unknown attribution); or
-    * the row was created by someone other than this SP's bot user.
+    * the row has no recorded owner (unknown attribution); or
+    * the row is owned by someone other than this SP's bot user.
 
     ``None`` never matches ``None``: an unknown owner on either side is a
-    deny, not a match.
+    deny, not a match. The owner column is per resource type — see
+    :func:`_resource_owner_id`.
     """
     if resource is None:
         return Decision.deny(
@@ -543,13 +589,13 @@ def _ownership_denial(
             ),
         )
 
-    owner_id = _resource_owner_id(resource)
+    owner_id = _resource_owner_id(resource, resource_type)
     if owner_id is None:
         return Decision.deny(
             DENY_OWNER_MISMATCH,
             (
                 f"Cannot verify ownership for {action} {resource_type}: the "
-                "row has no recorded creator, so it cannot be attributed to "
+                "row has no recorded owner, so it cannot be attributed to "
                 "this service principal."
                 + _OWNERSHIP_REMEDY
             ),
@@ -560,8 +606,8 @@ def _ownership_denial(
             DENY_OWNER_MISMATCH,
             (
                 f"Service principal '{sp.name}' may only {action} a "
-                f"{resource_type} it created; this row was created by "
-                "another actor."
+                f"{resource_type} it created; this row is owned by another "
+                "actor."
                 + _OWNERSHIP_REMEDY
             ),
         )

@@ -24,9 +24,14 @@ What this file pins:
 * unknown ownership — no creator, no bot user, or no resource row at all →
   DENY (``None`` never matches ``None``);
 * ``read``/``list``/``create`` are untouched by the ownership step;
+* ownership follows the *product's* owner column per resource type: a
+  ``Page`` is owned by ``Page.owned_by`` (not ``created_by``);
 * the ``_resolve_project_id`` fix: a resource whose *own* ``project`` is NULL
-  (a workspace-wide ``Label``/``Estimate``) must deny with
-  ``DENY_WORKSPACE_LEVEL_WRITE``, not ``DENY_GRANT_MISS``.
+  (a workspace-wide ``Label``) must deny with
+  ``DENY_WORKSPACE_LEVEL_WRITE``, not ``DENY_GRANT_MISS``;
+* the capability probe (``effective_actions``) reports scope → grant →
+  role_cap and skips the ownership step, while a real write by the same
+  principal is still denied on a foreign row.
 """
 
 from __future__ import annotations
@@ -43,11 +48,13 @@ from plane.core.authz import (
     ResourceType,
     ServicePrincipal_,
     authorize,
+    effective_actions,
 )
 from plane.db.models import (
     Issue,
     IssueComment,
     Label,
+    Page,
     Project,
     ProjectMember,
     User,
@@ -176,6 +183,18 @@ def _label(project, workspace, created_by, name="Ownership Label"):
         project=project,
         workspace=workspace,
         created_by=created_by,
+    )
+
+
+def _page(workspace, owned_by, created_by=None, name="Ownership Page"):
+    """A page's product owner is ``owned_by``; ``created_by`` is independent."""
+    return _create(
+        Page,
+        name=name,
+        workspace=workspace,
+        owned_by=owned_by,
+        created_by=created_by,
+        description_html="<p>ownership page</p>",
     )
 
 
@@ -355,7 +374,7 @@ class TestUnknownOwnershipFailsClosed:
     def test_member_update_row_without_creator_denied(
         self, sp, bot_user, project, workspace
     ):
-        """Historical row with no recorded creator — must not be treated as
+        """Historical row with no recorded owner — must not be treated as
         owned by anyone (least of all "matches another NULL")."""
         issue = _issue(project, workspace, None)
         assert issue.created_by_id is None
@@ -364,7 +383,7 @@ class TestUnknownOwnershipFailsClosed:
         )
         assert not d.allowed
         assert d.reason == DENY_OWNER_MISMATCH
-        assert "no recorded creator" in d.detail, d.detail
+        assert "no recorded owner" in d.detail, d.detail
 
     def test_member_delete_row_without_creator_denied(
         self, sp, bot_user, project, workspace
@@ -624,3 +643,145 @@ class TestWorkspaceWideResourceProjectResolution:
         )
         assert not d2.allowed
         assert d2.reason == DENY_OWNER_MISMATCH
+
+
+# --------------------------------------------------------------------------- #
+# Page ownership — the product owner column is owned_by, not created_by         #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestPageOwnership:
+    """A page's owner is ``Page.owned_by``: every v1/app page gate compares
+    ``page.owned_by_id`` with the caller, and the v1 create serializer stamps
+    ``owned_by_id`` from the acting user. ``Page.created_by`` is not reliably
+    populated (M41's wiring fixture builds a page with ``owned_by=create_user,
+    created_by=None``), so reading it would deny a page to the principal that
+    created it."""
+
+    def test_member_updates_page_owned_by_bot_allowed(
+        self, sp, bot_user, project, workspace
+    ):
+        # created_by deliberately None: owned_by alone must carry the answer.
+        page = _page(workspace, bot_user, created_by=None)
+        assert page.created_by_id is None
+        d = _decide(
+            sp, Action.UPDATE, ResourceType.PAGE, page, project, workspace
+        )
+        assert d.allowed, f"page owned by the bot should allow; got {d}"
+
+    def test_member_deletes_page_owned_by_bot_allowed(
+        self, sp, bot_user, project, workspace
+    ):
+        page = _page(workspace, bot_user)
+        d = _decide(
+            sp, Action.DELETE, ResourceType.PAGE, page, project, workspace
+        )
+        assert d.allowed, f"page owned by the bot should allow; got {d}"
+
+    def test_member_updates_page_owned_by_someone_else_denied(
+        self, sp, bot_user, project, workspace, other_user
+    ):
+        page = _page(workspace, other_user)
+        d = _decide(
+            sp, Action.UPDATE, ResourceType.PAGE, page, project, workspace
+        )
+        assert not d.allowed
+        assert d.reason == DENY_OWNER_MISMATCH
+
+    def test_page_owned_by_other_denied_even_when_created_by_bot(
+        self, sp, bot_user, project, workspace, other_user
+    ):
+        """``owned_by`` wins over ``created_by``: a page the bot created but
+        handed to someone else is not the bot's to write."""
+        page = _page(workspace, other_user, created_by=bot_user)
+        assert page.created_by_id == bot_user.id
+        d = _decide(
+            sp, Action.UPDATE, ResourceType.PAGE, page, project, workspace
+        )
+        assert not d.allowed
+        assert d.reason == DENY_OWNER_MISMATCH
+
+    def test_page_owned_by_bot_allowed_even_when_created_by_other(
+        self, sp, bot_user, project, workspace, other_user
+    ):
+        """The mirror: ``owned_by`` is the bot, so the write is allowed even
+        though ``created_by`` is a different actor."""
+        page = _page(workspace, bot_user, created_by=other_user)
+        assert page.created_by_id == other_user.id
+        d = _decide(
+            sp, Action.UPDATE, ResourceType.PAGE, page, project, workspace
+        )
+        assert d.allowed, f"owned_by is authoritative; got {d}"
+
+    def test_page_owned_by_other_denied_for_delete(
+        self, sp, bot_user, project, workspace, other_user
+    ):
+        page = _page(workspace, other_user)
+        d = _decide(
+            sp, Action.DELETE, ResourceType.PAGE, page, project, workspace
+        )
+        assert not d.allowed
+        assert d.reason == DENY_OWNER_MISMATCH
+
+
+# --------------------------------------------------------------------------- #
+# Capability probe vs enforcement (effective_actions)                          #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestEffectiveActionsIsACapabilityProbe:
+    """``effective_actions`` has no row to judge, so it reports scope →
+    grant → role_cap and skips the ownership step; the *same* principal is
+    still denied when it writes a foreign row for real."""
+
+    def test_probe_reports_update_delete_capability_for_member_tier(
+        self, sp, bot_user, project, workspace
+    ):
+        _scope(sp, ResourceType.WORK_ITEM, Action.UPDATE, project=project)
+        _scope(sp, ResourceType.WORK_ITEM, Action.DELETE, project=project)
+        _grant(sp, project, role_cap=15)
+
+        perms = effective_actions(
+            ServicePrincipal_(service_principal=sp),
+            ResourceType.WORK_ITEM,
+            project=project,
+            workspace=workspace,
+        )
+        by_action = {p.action: p for p in perms}
+        assert by_action[Action.UPDATE].allowed is True, by_action[Action.UPDATE]
+        assert by_action[Action.UPDATE].reason == ALLOWED
+        assert by_action[Action.DELETE].allowed is True, by_action[Action.DELETE]
+        assert by_action[Action.DELETE].reason == ALLOWED
+
+    def test_probe_is_permissive_but_real_write_on_foreign_row_denies(
+        self, sp, bot_user, project, workspace, other_user
+    ):
+        _scope(sp, ResourceType.WORK_ITEM, Action.UPDATE, project=project)
+        _grant(sp, project, role_cap=15)
+
+        perms = effective_actions(
+            ServicePrincipal_(service_principal=sp),
+            ResourceType.WORK_ITEM,
+            project=project,
+            workspace=workspace,
+        )
+        update = {p.action: p for p in perms}[Action.UPDATE]
+        assert update.allowed is True
+
+        foreign = _issue(project, workspace, other_user)
+        d = authorize(
+            ServicePrincipal_(service_principal=sp),
+            Action.UPDATE,
+            ResourceType.WORK_ITEM,
+            resource=foreign,
+            ctx=AuthzContext(
+                workspace_slug=workspace.slug,
+                project_id=str(project.id),
+            ),
+        )
+        assert not d.allowed
+        assert d.reason == DENY_OWNER_MISMATCH
