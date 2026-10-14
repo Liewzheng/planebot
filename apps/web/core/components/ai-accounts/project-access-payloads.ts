@@ -82,3 +82,45 @@ export const buildProjectScopeRows = (
   ...current.filter((scope) => scope.project !== projectId).map(toScopeInput),
   ...buildScopeRowsForRole(roleCap, projectId),
 ];
+
+/**
+ * Projects whose active grant has no scope row covering it — the half-filled
+ * pair the grant-only switch produced before M43, which renders "Granted" while
+ * the engine denies every call with `DENY_SCOPE_MISS`.
+ *
+ * "Covered" mirrors the engine's own scope lookup: `authorize()` step 1
+ * (`engine.py:252-257`) accepts a row scoped to the project **or** a
+ * workspace-wide row (`project is None`) via
+ * `Q(project_id=project_id) | Q(project__isnull=True)`, so a workspace-wide row
+ * covers every project and must not be reported as a gap.
+ *
+ * Deliberately row-existence, not cell-by-cell: a project that carries a
+ * narrower, hand-tuned row is *covered* and is left alone. Healing it would
+ * widen rows an operator tuned on purpose — the behaviour the role grid is
+ * documented to apply only when a role is picked, never as a side effect of a
+ * warning. So a project is flagged only when nothing covers it at all, which is
+ * exactly the state the "fill in the scopes" action can repair unambiguously.
+ *
+ * Inactive grants are skipped: the engine denies those at step 2 with
+ * `DENY_GRANT_MISS` whatever the scopes say, so "add scopes" would be the wrong
+ * advice. The grid already marks them "disabled".
+ */
+export const findScopeUncoveredProjectIds = (grants: TGrantRow[], scopes: TScopeRow[]): string[] => {
+  const projectCovered = new Set<string>();
+  let workspaceWideCovered = false;
+  scopes.forEach((scope) => {
+    if (scope.project === null) workspaceWideCovered = true;
+    else projectCovered.add(scope.project);
+  });
+  if (workspaceWideCovered) return [];
+
+  const seen = new Set<string>();
+  const uncovered: string[] = [];
+  grants.forEach((grant) => {
+    if (!grant.project || !grant.is_active) return;
+    if (projectCovered.has(grant.project) || seen.has(grant.project)) return;
+    seen.add(grant.project);
+    uncovered.push(grant.project);
+  });
+  return uncovered;
+};
