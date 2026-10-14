@@ -107,6 +107,47 @@ def visible_projects(request, slug):
     )
 
 
+def add_creator_as_admin_if_human(request, project):
+    """Add the caller as ``role=20`` admin of ``project`` — humans only.
+
+    The v1 project-create handler used to do::
+
+        ProjectMember.objects.create(
+            project_id=serializer.instance.id, member=request.user, role=20
+        )
+
+    unconditionally. For a human request ``request.user`` is the caller,
+    which is the right call. For a service-principal request
+    ``request.user`` is the SP's **owner** (the human admin the service
+    token is filed under — see
+    ``APIKeyAuthentication._authenticate_service_token``), so adding that
+    user would silently expand a human's privileges because the bot did
+    work. The alternative (``member=actor_for_request(request)``) is also
+    wrong: that returns the SP's shadow bot user, which M39 forbids from
+    holding any :class:`ProjectMember` row.
+
+    Permission-model reality. ``PROJECT`` is in ``WORKSPACE_LEVEL_RESOURCES``
+    and ``ALLOWED_WORKSPACE_LEVEL_ACTIONS`` is only ``{"read"}``, so the
+    engine's Q4 guard denies SP project writes at
+    ``AIScopeEnforcementMixin._enforce_sp_permission`` before the view
+    body runs. This helper is therefore unreachable for an SP today.
+    The set has moved before — M31 removed ``label`` and ``estimate``
+    from ``WORKSPACE_LEVEL_RESOURCES`` when their v1 surfaces turned
+    out to be project-scoped. If ``PROJECT`` ever follows, the
+    unguarded ``request.user`` line would silently expand a human's
+    privileges; this guard keeps the membership row unchanged for
+    humans and skips it entirely for service principals. See mission
+    M49 / PLANE-110.
+    """
+    if sp_from_request(request) is not None:
+        return
+    ProjectMember.objects.create(
+        project_id=project.id,
+        member=request.user,
+        role=20,
+    )
+
+
 class ProjectListCreateAPIEndpoint(BaseAPIView):
     """Project List and Create Endpoint"""
 
@@ -264,7 +305,15 @@ class ProjectListCreateAPIEndpoint(BaseAPIView):
                     serializer.save()
 
                     # Add the creator as Administrator of the project.
-                    _ = ProjectMember.objects.create(project_id=serializer.instance.id, member=request.user, role=20)
+                    # Lives in a helper so the subject-aware guard is
+                    # unit-testable without dragging the rest of the
+                    # create view into scope (``visible_projects`` filters
+                    # SP-not-granted projects out, so an SP-driven POST
+                    # through the real view path crashes on the
+                    # post-create re-fetch even with the engine gate
+                    # monkey-patched). The helper's docstring spells out
+                    # why the guard exists; see mission M49 / PLANE-110.
+                    add_creator_as_admin_if_human(request, serializer.instance)
 
                     # If a different project_lead was provided, add them as
                     # Administrator too. Use project_lead_id (the FK column)
