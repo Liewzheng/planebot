@@ -48,10 +48,14 @@ from rest_framework.test import APIClient, APIRequestFactory
 from plane.ai_accounts.models import AIAccount
 from plane.db.models import (
     APIToken,
+    Intake,
+    IntakeIssue,
     Issue,
     Label,
     Project,
     ProjectMember,
+    State,
+    StateGroup,
     User,
     WorkspaceMember,
 )
@@ -667,7 +671,9 @@ class TestClientSuppliedCreatedByIgnored:
       overwrite after ``serializer.save()``; on update
       ``BaseModel.save`` does nothing to ``created_by``. The serializer
       entry is the only gate. Tests 6 and 7 are PATCH-only and
-      discriminate by reverting the serializer entry (view fix kept).
+      discriminate by reverting the serializer entry (view fix kept);
+      test 8 covers the third reachable update path, the v1 intake
+      accept/update at ``api/views/intake.py:449`` (also serializer-only).
 
     Pre-fix (the create override was active), every POST assertion below
     read the spoofed uuid the client sent. Pre-r1 (no serializer entry
@@ -981,3 +987,144 @@ class TestClientSuppliedCreatedByIgnored:
         )
         assert issue.created_by_id != sp_b_bot.pk
         assert issue.name == "sp-a-renamed"
+
+    # ------------------------------------------------------------------ #
+    # v1 intake accept/update (api/views/intake.py:449)                   #
+    # ------------------------------------------------------------------ #
+    #
+    # The intake accept/update path is the third shape the r2 re-framed
+    # comment names. ``IntakeIssueUpdateSerializer`` declares ``issue`` as a
+    # field (so ``{"issue": {...}}`` is a supported body), the view pops
+    # the raw client dict (``api/views/intake.py:413``) and feeds it to
+    # ``IssueSerializer(issue, data=issue_data, partial=True)`` at
+    # ``:449``, then ``issue_serializer.save()`` at ``:483`` with no later
+    # ``created_by`` overwrite. The nested ``IssueForIntakeSerializer``
+    # already declares ``created_by`` read-only, but that declaration is
+    # inert here — the view pops the *raw* dict, so the inner serializer's
+    # validation never runs over the payload that reaches
+    # ``IssueSerializer``. The M48 ``IssueSerializer`` entry is the only
+    # effective guard, and this test discriminates it.
+    #
+    # The fixtures are a local copy of the
+    # ``TestSPIntakePatchOwnerNotAMember`` shape in
+    # ``tests/contract/api/test_sp_ownership_wiring.py`` (~30 lines), kept
+    # here so the M48 test file stays self-contained.
+
+    @staticmethod
+    def _intake_url(workspace_slug, project_id):
+        return (
+            f"/api/v1/workspaces/{workspace_slug}/projects/{project_id}"
+            f"/intake-issues/"
+        )
+
+    @staticmethod
+    def _intake_detail_url(workspace_slug, project_id, issue_id):
+        return (
+            f"/api/v1/workspaces/{workspace_slug}/projects/{project_id}"
+            f"/intake-issues/{issue_id}/"
+        )
+
+    @staticmethod
+    def _ensure_intake_view(project, workspace):
+        Intake.objects.get_or_create(
+            project=project,
+            is_default=True,
+            defaults={"name": f"{project.name} Intake", "workspace": workspace},
+        )
+
+    @staticmethod
+    def _ensure_triage_state(project, workspace):
+        triage = State.objects.filter(
+            project=project, group=StateGroup.TRIAGE.value
+        ).first()
+        if triage:
+            return triage
+        return State.objects.create(
+            name="Triage",
+            group=StateGroup.TRIAGE.value,
+            project=project,
+            workspace=workspace,
+            color="#4E5355",
+            sequence=65000,
+            default=False,
+        )
+
+    def _build_intake_scenario(self, project, workspace):
+        """An ``Intake`` with a triage ``State``, an ``Issue`` owned by
+        ``create_user``, and the ``IntakeIssue`` row that ties them.
+        Created with ``disable_auto_set_user=True`` so the ``Issue``'s
+        ``created_by`` survives outside a request — that is the column
+        the serializer guard protects."""
+        create_user = User.objects.create(
+            username="intake-author",
+            email="intake-author@plane.so",
+            first_name="Intake",
+            last_name="Author",
+        )
+        self._ensure_intake_view(project, workspace)
+        triage_state = self._ensure_triage_state(project, workspace)
+        intake = Intake.objects.get(project=project, is_default=True)
+        issue = Issue(
+            name="intake-row original",
+            project=project,
+            workspace=workspace,
+            state=triage_state,
+            created_by=create_user,
+        )
+        issue.save(disable_auto_set_user=True)
+        intake_issue = IntakeIssue(
+            intake=intake,
+            project=project,
+            workspace=workspace,
+            issue=issue,
+            source="in_app",
+            created_by=create_user,
+        )
+        intake_issue.save(disable_auto_set_user=True)
+        return intake, intake_issue, issue, create_user
+
+    def test_intake_patch_keeps_issue_owner_with_client_supplied_created_by(
+        self, workspace, project, other_human, session_client
+    ):
+        """Intake accept/update path: PATCH ``intake-issues/{issue_id}/``
+        with ``{"status": ..., "issue": {"name": ..., "created_by":
+        "<foreign uuid>"}}`` must not reassign the underlying ``Issue``'s
+        owner — the view pops the raw client dict at
+        ``api/views/intake.py:413`` and feeds it to ``IssueSerializer``
+        at ``:449`` with no later overwrite.
+
+        With the read-only entry removed (serializer reverted, view kept)
+        the foreign ``created_by`` flows through ``IssueSerializer``'s
+        ``validated_data`` and the row is reassigned.
+        """
+        _, intake_issue, issue, author = self._build_intake_scenario(
+            project, workspace
+        )
+
+        response = session_client.patch(
+            self._intake_detail_url(
+                workspace.slug, project.id, intake_issue.issue_id
+            ),
+            data={
+                "status": -1,  # rejected
+                "issue": {
+                    "name": "intake-row renamed",
+                    "created_by": str(other_human.pk),
+                },
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK, response.data
+
+        issue.refresh_from_db()
+        assert issue.created_by_id == author.pk, (
+            "Intake PATCH reassigned the Issue's owner to the spoof uuid. "
+            "The raw client payload bypasses the inner serializer's "
+            "read_only_fields declaration, so the only effective guard "
+            "is the M48 ``IssueSerializer`` entry — its removal reopens "
+            "owner reassignment on the intake accept/update path."
+        )
+        assert issue.created_by_id != other_human.pk
+        # Sanity: the legitimate field still updates through the same
+        # path that the spoof was surviving as.
+        assert issue.name == "intake-row renamed"
