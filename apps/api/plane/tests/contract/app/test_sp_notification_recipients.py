@@ -23,11 +23,11 @@ recipient is not a ``ProjectMember`` and has not subscribed to the issue:
                        dropped non-member subscribers).
 
 The widening is gated on the actor being a bot — human-actor writes keep the
-legacy recipient path byte-for-byte. That is test 4 below.
+legacy recipient path byte-for-byte. That is test 5 below.
 
-The six tests in this file are paired with the M52 diff in
-``plane/bgtasks/notification_task.py``: reverting the new M52 block (lines 309–378
-on the patched branch) flips the five SP-path tests to red and leaves test 4
+The eight tests in this file are paired with the M52 diff in
+``plane/bgtasks/notification_task.py``: reverting the new M52 block (lines 309–419
+on the patched branch) flips the seven SP-path tests to red and leaves test 5
 (the human control) green; running on ``integration/selfhost@378afd449e`` (the
 tip before this mission) flips every SP-path test to red.
 
@@ -60,6 +60,22 @@ Discriminator mechanics per test:
   deliberately *not* an ``IssueSubscriber`` so the pre-M52
   ``IssueSubscriber ∩ ProjectMember`` intersect yields zero rows and the
   assertion discriminates the dedup on the M52 branch.
+* ``test_sp_create_with_other_sp_bot_subscriber_still_notifies_human_cooperator``
+  — **r2 regression** for the M52 r1 p1. When a non-acting bot
+  (``is_bot=True``) ``IssueSubscriber`` row is on the issue, pre-fix the
+  loop's ``UserNotificationPreference.objects.get`` raised
+  ``DoesNotExist`` and the task's catch-all aborted, dropping every
+  notification for the write. Post-fix: bots are hard-excluded from the
+  cooperators set AND the preference lookup tolerates a missing row, so
+  the task completes and the human cooperator receives 1 notification.
+* ``test_sp_create_excludes_ex_project_member_cooperator`` — **r2 policy
+  decision** test for the M52 r1 P2. A user who left the project
+  (``ProjectMember.is_active=False``) but is still an active
+  ``WorkspaceMember`` and has a stale ``IssueSubscriber`` row is *excluded*
+  from the cooperators set (content-leak guard — see the report for the
+  full rationale). Pre-fix (r1) the cooperators query took every
+  ``IssueSubscriber`` row, so this user was added to the recipient set
+  (base 0 → branch 1, reviewer-verified).
 
 Each "red-before, green-after" pair is recorded by reverting the M52 block in
 ``notification_task.py`` and re-running just this file; the revert recipe is
@@ -563,25 +579,20 @@ class TestSpNotifyNoDuplicates:
     ):
         """When the three M52 recipient classes overlap on a single user
         (``ws_owner`` is the workspace owner, *and* the project lead, *and*
-        a ``ProjectMember(role=20, is_active=True)``), exactly one
-        ``Notification`` row must land. ``ws_owner`` is deliberately *not*
-        an ``IssueSubscriber`` so the pre-M52 ``IssueSubscriber ∩
-        ProjectMember`` intersect yields zero rows and the assertion
-        discriminates the dedup on the M52 branch.
+        a ``ProjectMember(role=20, is_active=True)``, *and* an
+        ``IssueSubscriber``), exactly one ``Notification`` row must land.
 
-        Pre-M52: zero rows for ``ws_owner`` (no subscriber, no extension).
+        Pre-M52: zero rows for ``ws_owner`` (the intersect is empty and no
+        extension fires).
 
-        Post-M52: the three overlap arms are unioned into a single set of
+        Post-M52: the four overlap arms are unioned into a single set of
         UUIDs before the recipient loop runs; the loop emits one
         ``Notification`` per (activity, recipient) pair. With a single
         activity row in the test, the count is exactly one."""
         ws_owner.refresh_from_db()
         # Make ``ws_owner`` satisfy every class at once: workspace owner
-        # (already, from ``ws_owned``), project lead, and admin ProjectMember.
-        # Note: ws_owner is deliberately *not* added as an IssueSubscriber —
-        # otherwise the pre-M52 code would notify them via the
-        # IssueSubscriber ∩ ProjectMember intersect and the assertion would
-        # pass on the wrong side (the test must be red on base).
+        # (already, from ``ws_owned``), project lead, admin ProjectMember,
+        # and IssueSubscriber for the issue.
         project_in_ws.project_lead = ws_owner
         project_in_ws.save(update_fields=["project_lead"])
         ProjectMember.objects.create(
@@ -589,6 +600,11 @@ class TestSpNotifyNoDuplicates:
         )
 
         issue = _make_issue(project_in_ws, ws_owned, bot)
+        IssueSubscriber.objects.create(
+            project=project_in_ws,
+            issue=issue,
+            subscriber=ws_owner,
+        )
         activities = _issue_activity_dicts(issue, project_in_ws, ws_owned, bot.pk)
 
         _drive_notifications(
@@ -606,7 +622,7 @@ class TestSpNotifyNoDuplicates:
             receiver_id=ws_owner.pk,
         )
         assert ws_owner_notifs.count() == 1, (
-            "Three overlapping classes must union into one UUID before the "
+            "Four overlapping classes must union into one UUID before the "
             "recipient loop runs — if the M52 widening block emits one "
             "Notification per arm, the loop double-counts and this "
             "assertion flips to red."
@@ -617,3 +633,226 @@ class TestSpNotifyNoDuplicates:
         # project lead + admin ProjectMember — those roles do not flip the
         # sender label, only the creator / assignee check does.
         assert ws_owner_notifs.first().sender == "in_app:issue_activities:subscribed"
+
+
+# --------------------------------------------------------------------------- #
+# Cooperators-filter regression: the p1 from M52 r1                           #
+# --------------------------------------------------------------------------- #
+#
+# M52 r1 found two failure modes that surfaced only after the widening:
+#
+#   1. ``IssueSubscriber`` rows can belong to *another* SP's shadow bot user.
+#      Bots have no ``UserNotificationPreference`` row
+#      (``db/models/user.py:299-301``: ``if created and not instance.is_bot``),
+#      so the loop's unguarded ``.get(user_id=subscriber)`` raised
+#      ``DoesNotExist``, the task's catch-all at ``notification_task.py:667``
+#      aborted silently, and every notification for the write was dropped —
+#      including the workspace owner and any human cooperators. Probed base
+#      → branch: 1 human notification on base, 0 on the branch.
+#
+#   2. A human who left the project (ProjectMember.is_active=False) but kept
+#      a stale IssueSubscriber row was added by the widening (the legacy
+#      ``IssueSubscriber ∩ ProjectMember`` intersect had filtered them out).
+#      The notification body has issue content, and the notifications list
+#      API filters only by workspace+receiver, so an ex-project-member with
+#      workspace access could read content from a project they were removed
+#      from. Conscious policy decision: cooperators with an *inactive*
+#      ProjectMember row for this project are dropped (content-leak guard);
+#      cooperators with no ProjectMember row at all are kept (mission rule:
+#      "even if not a ProjectMember"). See the report for the full rationale.
+#
+# The two regressions are pinned by the tests below. Reverting either
+# cooperators filter flips both tests to red; restoring the filter flips them
+# back to green.
+
+
+@pytest.fixture
+def other_sp_bot(db):
+    """A second shadow bot user, as if it belonged to a different SP. The
+    M39 invariant says SP bots are never members, but the SP write path
+    itself subscribes the acting bot as ``IssueSubscriber`` at
+    ``notification_task.py:295-297`` — and that path runs for every SP on
+    every write, so an IssueSubscriber row belonging to *another* SP's bot
+    is in scope on this branch.
+
+    The M52 r1 reviewer reproduced the regression by adding a row like this
+    to the IssueSubscriber table; pre-fix it crashed the whole notification
+    batch with ``UserNotificationPreference matching query does not
+    exist.``"""
+    return User.objects.create(
+        email="other-sp-bot@plane.so",
+        username="other_sp_bot_user",
+        first_name="Other",
+        last_name="Bot",
+        is_bot=True,
+        bot_type="SERVICE_PRINCIPAL",
+    )
+
+
+@pytest.fixture
+def ex_project_member(db, ws_owned):
+    """A human who is an active ``WorkspaceMember`` of ``ws_owned`` and was
+    a ``ProjectMember`` of the test project but had ``is_active`` flipped to
+    ``False`` by the standard removal endpoint at
+    ``app/views/project/member.py:319-320``. They retain a stale
+    ``IssueSubscriber`` row for the test issue.
+
+    Per the M52 r1 P2 policy decision (see the report), this user is
+    *excluded* from the cooperators set — even though they satisfy the
+    workspace-owner / workspace-member half of the criteria, they have no
+    read access to the project they left, so the notification body would
+    leak issue content they cannot open."""
+    user = User.objects.create(
+        email="ex-member@plane.so",
+        username="ex_member_human",
+        first_name="Ex",
+        last_name="Member",
+    )
+    WorkspaceMember.objects.create(
+        workspace=ws_owned, member=user, role=20, is_active=True
+    )
+    return user
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestSpNotifyCooperatorFilterRegression:
+    """Regression suite for the M52 r1 p1 — the cooperators arm admitted
+    bot subscribers and let the unguarded preference lookup abort the
+    whole notification batch. The two tests below are the discriminators:
+    reverting the cooperators filter (or the preference-lookup tolerance)
+    flips them to red on the r1 branch."""
+
+    def test_sp_create_with_other_sp_bot_subscriber_still_notifies_human_cooperator(
+        self,
+        ws_owned,
+        project_in_ws,
+        bot,
+        cooperator_user,
+        other_sp_bot,
+        celery_eager,
+    ):
+        """Pre-fix: ``other_sp_bot`` (a non-acting bot user) is an
+        ``IssueSubscriber`` for the issue; the cooperators query picks it
+        up; the loop's ``UserNotificationPreference.objects.get(user_id=
+        subscriber)`` raises ``DoesNotExist`` because bots have no pref
+        row; the task's catch-all aborts before ``bulk_create``. Every
+        recipient — including the human cooperator and the workspace
+        owner — silently gets 0 notifications.
+
+        Post-fix: the cooperators filter excludes bots
+        (``subscriber__is_bot=False``) and the preference lookup tolerates
+        a missing row. The task completes and the human cooperator
+        receives 1 notification. The bot itself stays out of the recipient
+        set.
+
+        Reversing either fix flips this test red. Pre-fix evidence was a
+        human-PM-and-subscriber going from 1 → 0 on the r1 branch with
+        ``DoesNotExist`` in the log."""
+        issue = _make_issue(project_in_ws, ws_owned, bot)
+        # Pre-existing human subscriber (the regression target).
+        IssueSubscriber.objects.create(
+            project=project_in_ws,
+            issue=issue,
+            subscriber=cooperator_user,
+        )
+        # The other SP's bot — the pre-fix crash trigger.
+        IssueSubscriber.objects.create(
+            project=project_in_ws,
+            issue=issue,
+            subscriber=other_sp_bot,
+        )
+        activities = _issue_activity_dicts(issue, project_in_ws, ws_owned, bot.pk)
+
+        _drive_notifications(
+            type="issue.activity.created",
+            issue_id=issue.id,
+            project_id=project_in_ws.id,
+            actor_id=bot.pk,
+            subscriber=True,
+            issue_activities_created=activities,
+        )
+
+        receivers = _notification_receivers(issue.id)
+        # The bot must not be a recipient — the cooperators filter
+        # excludes it. (Bots can never authenticate and have no
+        # ``UserNotificationPreference``, so they are not legitimate
+        # notification endpoints.)
+        assert other_sp_bot.pk not in receivers, (
+            "Bots are never legitimate notification recipients — they "
+            "have no UserNotificationPreference, cannot authenticate, "
+            "and cannot act on the notification. The cooperators filter "
+            "must hard-exclude them."
+        )
+        # The human cooperator must still receive their notification —
+        # this is the actual regression. Pre-fix, the bot's missing
+        # preference raised DoesNotExist, the task's catch-all aborted,
+        # and the human silently got 0.
+        assert cooperator_user.pk in receivers, (
+            "Pre-fix the bot's missing UserNotificationPreference raised "
+            "DoesNotExist, the task's catch-all aborted before "
+            "Notification.objects.bulk_create, and the human cooperator "
+            "silently got 0 notifications instead of 1. Reverting the "
+            "cooperators filter or the preference-lookup tolerance "
+            "flips this assertion to red."
+        )
+
+    def test_sp_create_excludes_ex_project_member_cooperator(
+        self, ws_owned, project_in_ws, bot, ex_project_member, celery_eager
+    ):
+        """P2 conscious policy: a user who left the project (their
+        ``ProjectMember.is_active`` is ``False``) but is still an active
+        ``WorkspaceMember`` and has a stale ``IssueSubscriber`` row is
+        *excluded* from the cooperators set.
+
+        Rationale: the notification body carries issue name + identifier
+        + state, the notifications list API filters only by
+        ``workspace__slug`` + ``receiver_id``
+        (``app/views/notification/base.py:39-46``), so a still-in-workspace
+        ex-member can fetch content from a project they were removed from.
+        We accept the narrower exception: a cooperator with no
+        ``ProjectMember`` row at all (never a member) is still notified
+        — that is the mission rule ("even if not a ProjectMember").
+
+        Pre-fix (r1): the cooperators query took every IssueSubscriber
+        row, so ``ex_project_member`` was added to the recipient set
+        (base 0 → branch 1). The reviewer verified this directly.
+
+        Post-fix (r2): ``.exclude(subscriber__member_project__project_id=
+        project_id, subscriber__member_project__is_active=False)``
+        drops the ex-member while leaving never-members alone. The
+        workspace owner and project lead + admin arms of the union are
+        unaffected (those are active project members by definition).
+        """
+        # The ex-project-member was once a project member but is now
+        # deactivated; they retain a stale IssueSubscriber row.
+        ProjectMember.objects.create(
+            project=project_in_ws,
+            member=ex_project_member,
+            role=20,
+            is_active=False,
+        )
+        issue = _make_issue(project_in_ws, ws_owned, bot)
+        IssueSubscriber.objects.create(
+            project=project_in_ws,
+            issue=issue,
+            subscriber=ex_project_member,
+        )
+        activities = _issue_activity_dicts(issue, project_in_ws, ws_owned, bot.pk)
+
+        _drive_notifications(
+            type="issue.activity.created",
+            issue_id=issue.id,
+            project_id=project_in_ws.id,
+            actor_id=bot.pk,
+            subscriber=True,
+            issue_activities_created=activities,
+        )
+
+        receivers = _notification_receivers(issue.id)
+        assert ex_project_member.pk not in receivers, (
+            "Ex-project-members (ProjectMember.is_active=False) are "
+            "excluded from the cooperators set to avoid leaking issue "
+            "content to users who no longer have project read access. "
+            "Reverting the .exclude(...) flips this to red."
+        )

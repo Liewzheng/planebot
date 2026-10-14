@@ -320,6 +320,39 @@ def notifications(
             # name "the project owner", and silently taking only one would drop half
             # the cases. Workspace owner is ``Workspace.owner`` (single FK).
             #
+            # Cooperators (IssueSubscriber rows) are *not* the entire table — see
+            # M52 r1. Two exclusions are required:
+            #
+            #  1. ``subscriber__is_bot=False`` — bots have no
+            #     ``UserNotificationPreference`` row (``db/models/user.py:299-301``
+            #     skips ``is_bot=True`` at the post_save signal), so the loop's
+            #     preference lookup below would raise ``DoesNotExist`` and the
+            #     task's catch-all at :667-669 would silently abort before
+            #     ``Notification.objects.bulk_create`` — every recipient on the
+            #     write would get 0 notifications instead of their 1. The M39
+            #     invariant already says bots are never ``WorkspaceMember`` /
+            #     ``ProjectMember``, but the SP write path itself subscribes
+            #     *every* SP's bot as ``IssueSubscriber`` (the legacy :295-297
+            #     ``get_or_create(subscriber_id=actor_id)`` runs on every write),
+            #     so an IssueSubscriber row whose subscriber is *another* SP's
+            #     bot is in scope here. Hard exclude.
+            #
+            #  2. ``exclude(..., subscriber__member_project__is_active=False)``
+            #     — content-leak guard for the *cooperator* arm. Removing a
+            #     project member only flips ``is_active=False``
+            #     (``app/views/project/member.py:319-320``) and never deletes the
+            #     ``IssueSubscriber`` row, so an ex-member retains a stale
+            #     subscription. The notifications list API filters only by
+            #     ``workspace__slug`` + ``receiver_id``
+            #     (``app/views/notification/base.py:39-46``), so a still-in-workspace
+            #     ex-member can fetch issue content from a project they left.
+            #     We accept the narrower exception: a cooperator with no
+            #     ``ProjectMember`` row at all is still notified (mission rule:
+            #     "even if not a ProjectMember"); a cooperator with an *inactive*
+            #     ``ProjectMember`` for this project is dropped. The narrowing
+            #     preserves the original intersect's intent (active project
+            #     membership) without re-imposing it on never-members.
+            #
             # The notification *content* is unchanged: ``triggered_by_id`` stays the
             # bot (M39/M41/M47 wired that on the write side), and the activity data
             # flows through unchanged. We only widen the recipient set.
@@ -354,7 +387,17 @@ def notifications(
 
                 _spnotify_cooperator_ids = set(
                     IssueSubscriber.objects.filter(
-                        project_id=project_id, issue_id=issue_id
+                        project_id=project_id, issue_id=issue_id,
+                        # See the block comment above for the two-fold rationale.
+                        subscriber__is_bot=False,
+                    ).exclude(
+                        # Exclude ex-project-members (had a ProjectMember row,
+                        # is_active flipped to False by the removal endpoint).
+                        # A user with NO ProjectMember row at all is unaffected
+                        # by this exclude — that is intentional and matches the
+                        # mission rule "even if not a ProjectMember".
+                        subscriber__member_project__project_id=project_id,
+                        subscriber__member_project__is_active=False,
                     ).values_list("subscriber_id", flat=True)
                 )
 
@@ -365,8 +408,7 @@ def notifications(
                 ) - _spnotify_exclude
 
                 issue_subscribers = list(
-                    set(issue_subscribers)
-                    | _spnotify_extension_uuids
+                    (set(issue_subscribers) | _spnotify_extension_uuids)
                     - ({_spnotify_actor_uuid} if _spnotify_actor_uuid else set())
                 )
             else:
@@ -384,7 +426,25 @@ def notifications(
                 else:
                     sender = "in_app:issue_activities:subscribed"
 
-                preference = UserNotificationPreference.objects.get(user_id=subscriber)
+                # Tolerate a missing preference row: a bot *should* have been
+                # excluded above by the cooperators filter, but defensively we
+                # still fall back to the post_save signal's defaults
+                # (``db/models/user.py:298-311``: ``property_change=True,
+                # state_change=True, comment=True, mention=True,
+                # issue_completed=True``). The fallback instance is unsaved —
+                # the loop below only reads attribute values, never persists.
+                preference = UserNotificationPreference.objects.filter(
+                    user_id=subscriber
+                ).first()
+                if preference is None:
+                    preference = UserNotificationPreference(
+                        user_id=subscriber,
+                        property_change=True,
+                        state_change=True,
+                        comment=True,
+                        mention=True,
+                        issue_completed=True,
+                    )
 
                 for issue_activity in issue_activities_created:
                     # If activity done in blocking then blocked by email should not go
