@@ -25,7 +25,13 @@ import { useUserPermissions } from "@/hooks/store/user";
 // services
 import { servicePrincipalService } from "@/services/ai-account.service";
 // local imports
-import { SERVICE_PRINCIPALS_LIST, SERVICE_PRINCIPAL_GRANTS, SERVICE_PRINCIPAL_GRANT_ROLE_CAPS } from "./constants";
+import {
+  SERVICE_PRINCIPALS_LIST,
+  SERVICE_PRINCIPAL_GRANTS,
+  SERVICE_PRINCIPAL_GRANT_ROLE_CAPS,
+  SERVICE_PRINCIPAL_SCOPES,
+} from "./constants";
+import { buildProjectGrantRows, buildProjectScopeRows, DEFAULT_PROJECT_ROLE_CAP } from "./project-access-payloads";
 
 type Props = {
   workspaceSlug: string;
@@ -38,10 +44,21 @@ type Props = {
  * and shows whether the current project is granted.
  *
  * Service principals are NOT members of the project — there is no
- * `ProjectMember` row — so the toggle below only manages the *grant* on
- * `/api/workspaces/<slug>/service-principals/<pk>/grants/`. PUT replaces
- * the entire grant set, so all grant-state mutations go through
- * `applyServicePrincipalGrantMutation` which reads the full set first.
+ * `ProjectMember` row — so the toggle below drives the project's *grant* on
+ * `/api/workspaces/<slug>/service-principals/<pk>/grants/` **and** the scope
+ * rows on `/api/workspaces/<slug>/service-principals/<pk>/scopes/`. The engine
+ * needs both halves: a grant without a scope denies with `DENY_SCOPE_MISS`, a
+ * scope without a grant denies with `DENY_GRANT_MISS`. Toggling on therefore
+ * writes both (the scope rows come from the same role -> scope mapping the
+ * access modal uses — see `project-access-payloads.ts`), and toggling off
+ * removes only the grant, leaving the scope rows so the deny is attributed to
+ * the missing grant rather than a misleading scope miss.
+ *
+ * Both PUTs replace their whole set, so every mutation reads the full set
+ * first: grants through `applyServicePrincipalGrantMutation` (the toggle
+ * unwraps it because the scope half needs the role cap the grant write just
+ * resolved), scopes through an explicit read-modify-write — the scope half is
+ * only ever written on the grant path.
  *
  * **Permission gate**: the endpoints behind this section require
  * `level="WORKSPACE"` admin (`@allow_permission([ROLE.ADMIN], level="WORKSPACE")`
@@ -94,29 +111,36 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
   const handleToggleGrant = async (principal: TServicePrincipal, nextIsGranted: boolean) => {
     if (isAnyMutationPending) return;
     setPendingPrincipalId(principal.id);
+    // Names the failing half in the toast: a grants-only failure leaves the
+    // principal untouched, a scopes-only failure leaves it denied (the engine
+    // needs both halves).
+    let step: "grants" | "scopes" = "grants";
     try {
-      await servicePrincipalService.applyServicePrincipalGrantMutation(workspaceSlug, principal.id, (current) => {
-        const existingForThisProject = current.find((grant) => grant.project === projectId);
-        const preserved: TProjectGrantInput[] = current
-          .filter((grant) => grant.project !== projectId)
-          .map(({ project, role_cap, is_active }) => ({ project, role_cap, is_active }));
-        if (nextIsGranted) {
-          // First-time grant for this project: preserve any prior
-          // role_cap / is_active from a previous grant, otherwise
-          // default to the Member role cap (15) so we never grant Admin
-          // implicitly. Revoke simply drops the row — the filter above
-          // already excludes it.
-          preserved.push({
-            project: projectId,
-            role_cap: existingForThisProject?.role_cap ?? 15,
-            is_active: existingForThisProject?.is_active ?? true,
-          });
-        }
-        return preserved;
-      });
-      // Refresh the per-SP grants cache so coverage panels elsewhere see
-      // the change, plus the principal list (which embeds `grants`).
+      // `PUT .../grants/` replaces the whole set, so read it first — the same
+      // read-modify-write contract `applyServicePrincipalGrantMutation`
+      // enforces. It is unwrapped here only because the scope half below needs
+      // the role cap the grant write just resolved.
+      const currentGrants = await servicePrincipalService.fetchServicePrincipalGrants(workspaceSlug, principal.id);
+      const nextGrants = buildProjectGrantRows(currentGrants, projectId, nextIsGranted);
+      const roleCap = nextGrants.find((grant) => grant.project === projectId)?.role_cap ?? DEFAULT_PROJECT_ROLE_CAP;
+      await servicePrincipalService.updateServicePrincipalGrants(workspaceSlug, principal.id, nextGrants);
+      if (nextIsGranted) {
+        // Writing the grant alone is the M28 bug: the switch read "Granted"
+        // while the engine denied every call with DENY_SCOPE_MISS. Rebuild this
+        // project's scope rows from the role cap through the same mapping the
+        // access modal uses, so both halves of the engine's gate are filled.
+        step = "scopes";
+        const currentScopes = await servicePrincipalService.fetchServicePrincipalScopes(workspaceSlug, principal.id);
+        await servicePrincipalService.updateServicePrincipalScopes(
+          workspaceSlug,
+          principal.id,
+          buildProjectScopeRows(currentScopes, projectId, roleCap)
+        );
+      }
+      // Refresh the per-SP caches so coverage panels elsewhere see the change,
+      // plus the principal list (which embeds `grants`).
       mutate(SERVICE_PRINCIPAL_GRANTS(workspaceSlug, principal.id));
+      if (nextIsGranted) mutate(SERVICE_PRINCIPAL_SCOPES(workspaceSlug, principal.id));
       mutate(SERVICE_PRINCIPALS_LIST(workspaceSlug));
     } catch (err) {
       setToast({
@@ -125,7 +149,11 @@ export const ProjectServicePrincipalAccessSection = observer(function ProjectSer
         message:
           (err as { message?: string })?.message ??
           (err as { detail?: string })?.detail ??
-          t("workspace_settings.settings.service_principals.project_access.errors.update_grant_failed"),
+          t(
+            step === "grants"
+              ? "workspace_settings.settings.service_principals.access.error.step_grants"
+              : "workspace_settings.settings.service_principals.access.error.step_scopes"
+          ),
       });
     } finally {
       setPendingPrincipalId(null);
