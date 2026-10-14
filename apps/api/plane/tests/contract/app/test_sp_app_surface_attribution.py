@@ -32,11 +32,10 @@ independently by the reviewer): every change here is future-proofing
 correctness for the day one of these views opts into SP authz, not a
 live fix today.
 
-The 16 tests in this file discriminate in two ways (corrected from
-the r3 header's stale "16 tests" count — there are 16; r3 had 15
-because the duplicate-detection edit had removed
-``test_sp_app_file_asset_create_credits_the_bot``, which the r4
-reviewer re-added verbatim):
+The 18 tests in this file discriminate in two ways (corrected
+from the r3 header's stale "16 tests" count — r3 had 15; r4 added
+the restored ``test_sp_app_file_asset_create_credits_the_bot`` (16);
+r5 added the two new ``TestUserFavoriteAttribution`` tests (18)):
 * View-driven tests (cycle, estimate, label, theme, asset-create,
   asset-filter, app issue reaction, all three space ``actor=`` writes)
   invoke the production view body — reverting the matching file's fix
