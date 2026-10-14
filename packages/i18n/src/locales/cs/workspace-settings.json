@@ -720,7 +720,7 @@
         "project_access": {
           "section": {
             "title": "Service principal access",
-            "description": "Service principals (machine accounts for integrations and automation) are intentionally NOT members of this project. A workspace admin can grant any principal access to this project below — toggling on adds a grant, which the principal needs in addition to its scopes. Only workspace admins can perform this action."
+            "description": "Service principals (machine accounts for integrations and automation) are intentionally NOT members of this project. A workspace admin can grant any principal access to this project below — toggling on writes both the grant and the scope rows the engine requires, and toggling off removes the grant. Only workspace admins can perform this action."
           },
           "list": {
             "granted": "Granted",
