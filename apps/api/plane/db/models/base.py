@@ -11,6 +11,8 @@ from django.db import models
 from crum import get_current_user
 
 # Module imports
+from plane.service_principals.attribution import current_sp_actor
+
 from ..mixins import AuditModel
 
 
@@ -32,6 +34,14 @@ class BaseModel(AuditModel):
                     self.created_by = None
                     self.updated_by = None
                 else:
+                    # A service-principal request is credited to the SP's
+                    # shadow bot user, never to the owner the service token is
+                    # filed under — "the bot wrote this", not "the admin who
+                    # owns the bot wrote this". ``current_sp_actor`` returns
+                    # None for every human request, where it costs a
+                    # thread-local read and a couple of attribute checks.
+                    user = current_sp_actor() or user
+
                     # Check if the model is being created or updated
                     if self._state.adding:
                         # If creating, set created_by and leave updated_by as None

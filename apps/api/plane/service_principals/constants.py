@@ -15,6 +15,18 @@ principal type and authenticate through service tokens (APIToken rows with
 # programmatically distinguishable at the credential layer.
 SERVICE_TOKEN_PREFIX = "plane_svc_"
 
+# ``bot_type`` written on the shadow bot User row backing a service principal
+# (``ServicePrincipal.bot_user`` — see ``attribution.py``). Deliberately NOT
+# added to ``plane.db.BotTypeEnum``: ``User.bot_type`` carries no DB-level
+# choice constraint, and keeping ``plane/db`` untouched avoids migration
+# conflicts when following upstream. Same rationale as
+# ``ai_accounts.constants.BOT_TYPE_AI_AGENT``.
+#
+# The value is also load-bearing: ``core.authz.visibility`` hides every bot
+# from member pickers unless its ``bot_type`` is explicitly allow-listed, so an
+# SP bot stays out of member lists by construction.
+BOT_TYPE_SERVICE_PRINCIPAL = "SERVICE_PRINCIPAL"
+
 
 class PrincipalType:
     USER = 0

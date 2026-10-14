@@ -36,7 +36,13 @@ Conversion rules — these match the migration contract in M12:
   (``is_active=False``).
 * Existing ``is_service=True`` legacy tokens are reassigned to point at
   the new ``ServicePrincipal`` (``principal_type=1``, ``service_principal``
-  FK set). ``user`` stays pointing at the bot so migration is reversible.
+  FK set) and re-filed under the account **owner**, so ``request.user`` is
+  the owner once the dual-read shim routes the token through the SP branch.
+* The account's bot user is carried over as
+  ``ServicePrincipal.bot_user``: the rows that bot wrote *before* the
+  conversion are already attributed to it, so linking the same user keeps
+  "this SP created that" true across the migration instead of orphaning its
+  history behind a freshly minted bot.
 
 Idempotency: a row in :class:`AIAccountMigrationRecord` per converted AI
 account is the marker. Re-running the command on top of an already-
@@ -317,6 +323,13 @@ class Command(BaseCommand):
                 description=account.description or "",
                 avatar=_avatar_for_bot(bot_user),
                 is_active=account.is_active,
+                # Carry the bot over instead of letting the attribution layer
+                # mint a fresh one on first use: the rows this bot wrote
+                # before the conversion are already attributed to it, and
+                # migration 0005's inherited-bot branch preserves exactly that
+                # continuity for accounts converted before it ran. A converted
+                # SP must not be the one hole in it.
+                bot_user=bot_user,
             )
 
             scopes_created = 0

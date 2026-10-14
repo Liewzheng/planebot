@@ -9,6 +9,11 @@ It is NOT a User — it has no WorkspaceMember / ProjectMember rows and never
 appears in member pickers, mention search, or seat counts. Authentication is
 through service tokens (``plane_svc_`` prefixed APIToken rows) and
 authorization goes through the SP scope / grant tables defined here.
+
+An SP does own one *shadow* User row (``bot_user``) — the bot every write it
+makes is credited to. That row is an attribution target only: it is never a
+member, never authenticates, and no permission decision reads it. See
+``attribution.py``.
 """
 
 from django.conf import settings
@@ -60,6 +65,28 @@ class ServicePrincipal(BaseModel):
         on_delete=models.CASCADE,
         related_name="owned_service_principals",
     )
+    # The shadow bot user this SP's writes are credited to (``is_bot=True``,
+    # ``bot_type=SERVICE_PRINCIPAL``, ``display_name`` ``svc-<name> (bot)``).
+    # It is deliberately **not** a workspace member: attribution points at it,
+    # authorization never consults it.
+    #
+    # Provisioned on four paths, all of which end with this column set:
+    # eagerly by the SP management API; inherited from the account's existing
+    # bot by ``migrate_ai_accounts_to_service_principals``; backfilled for
+    # pre-existing rows by migration 0005; and lazily by
+    # ``attribution.ensure_bot_user`` on first write.
+    #
+    # A NULL value means "no attribution target yet". Ownership checks must
+    # therefore fail closed on NULL rather than comparing it to another NULL —
+    # a row whose ``created_by`` is NULL did NOT belong to this SP. The FK is
+    # SET_NULL, so deleting a bot user puts this column back to NULL.
+    bot_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="service_principal",
+    )
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, default="")
     # Optional avatar URL — no FK to FileAsset; SPs do not get the workspace
@@ -75,6 +102,16 @@ class ServicePrincipal(BaseModel):
 
     def __str__(self):
         return f"{self.name} ({self.workspace.slug})"
+
+    def ensure_bot_user(self):
+        """The shadow bot user this SP's writes are credited to.
+
+        See ``attribution.ensure_bot_user`` — the helper lives there so the
+        model stays importable without dragging in the request plumbing.
+        """
+        from .attribution import ensure_bot_user
+
+        return ensure_bot_user(self)
 
 
 class ServiceScope(BaseModel):

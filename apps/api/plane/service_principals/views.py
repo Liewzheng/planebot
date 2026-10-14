@@ -19,9 +19,10 @@ from plane.app.permissions import ROLE, allow_permission
 from plane.app.views.base import BaseAPIView
 from plane.app.views.user.mfa import check_step_up_totp
 from plane.authentication.rate_limit import StepUpThrottle
-from plane.db.models import APIToken, Workspace
+from plane.db.models import APIToken, User, Workspace
 from plane.db.models.api import generate_service_token
 
+from .attribution import bot_display_name, bot_first_name
 from .constants import PrincipalType
 from .models import ProjectGrant, ServicePrincipal, ServiceScope, WorkspaceSPSettings
 from .serializers import (
@@ -125,6 +126,14 @@ class ServicePrincipalListCreateAPIEndpoint(BaseAPIView):
                 description=description,
                 avatar=avatar,
             )
+            # The shadow bot user every one of this SP's writes will be
+            # credited to. Created eagerly (not only on first write) so an SP
+            # made here has an attribution target from the start — an
+            # ownership check can then read ``bot_user`` directly. A NULL is
+            # still possible in principle (the FK is SET_NULL, and rows can be
+            # inserted outside this endpoint), so it must keep meaning "no
+            # attribution target" rather than matching another NULL.
+            sp.ensure_bot_user()
             token = APIToken.objects.create(
                 user=request.user,
                 label=f"svc:{name}",
@@ -170,6 +179,16 @@ class ServicePrincipalDetailAPIEndpoint(BaseAPIView):
                 if field in serializer.validated_data:
                     setattr(sp, field, serializer.validated_data[field])
             sp.save()
+
+            # The shadow bot user signs this SP's writes, so its name has to
+            # follow the SP's — otherwise the activity log keeps showing the
+            # old ``svc-<name> (bot)`` after a rename. Both spellings are kept
+            # in step (the web client renders bots from ``first_name``).
+            if "name" in serializer.validated_data and sp.bot_user_id:
+                User.objects.filter(pk=sp.bot_user_id).update(
+                    display_name=bot_display_name(sp.name),
+                    first_name=bot_first_name(sp.name),
+                )
 
             # Toggling the SP toggles its service tokens with it.
             if "is_active" in serializer.validated_data:
