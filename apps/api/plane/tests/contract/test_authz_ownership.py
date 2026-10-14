@@ -24,8 +24,10 @@ What this file pins:
 * unknown ownership — no creator, no bot user, or no resource row at all →
   DENY (``None`` never matches ``None``);
 * ``read``/``list``/``create`` are untouched by the ownership step;
-* ownership follows the *product's* owner column per resource type: a
-  ``Page`` is owned by ``Page.owned_by`` (not ``created_by``);
+* ownership reads the ``created_by`` *attribution* column for every resource
+  type — including ``Page``, whose ``owned_by`` column is the human-facing
+  page owner, not the attribution (the v1 write path stamps ``owned_by`` from
+  ``request.user``, which stays the SP's human owner);
 * the ``_resolve_project_id`` fix: a resource whose *own* ``project`` is NULL
   (a workspace-wide ``Label``) must deny with
   ``DENY_WORKSPACE_LEVEL_WRITE``, not ``DENY_GRANT_MISS``;
@@ -37,6 +39,8 @@ What this file pins:
 from __future__ import annotations
 
 import pytest
+from rest_framework import status
+from rest_framework.test import APIClient
 
 from plane.core.authz import (
     ALLOWED,
@@ -51,6 +55,7 @@ from plane.core.authz import (
     effective_actions,
 )
 from plane.db.models import (
+    APIToken,
     Issue,
     IssueComment,
     Label,
@@ -59,6 +64,7 @@ from plane.db.models import (
     ProjectMember,
     User,
 )
+from plane.service_principals.constants import PrincipalType
 from plane.service_principals.models import (
     ProjectGrant,
     ServicePrincipal,
@@ -186,8 +192,15 @@ def _label(project, workspace, created_by, name="Ownership Label"):
     )
 
 
-def _page(workspace, owned_by, created_by=None, name="Ownership Page"):
-    """A page's product owner is ``owned_by``; ``created_by`` is independent."""
+def _page(workspace, created_by, owned_by, name="Ownership Page"):
+    """Build a page row.
+
+    ``created_by`` is the attribution column the ownership rule reads.
+    ``owned_by`` is the product's human-facing page owner — the v1 create
+    view stamps it from ``request.user``, which for a ``plane_svc_`` token
+    stays the SP's human owner. Both are set explicitly here so a test can
+    hold either one fixed while varying the other.
+    """
     return _create(
         Page,
         name=name,
@@ -646,84 +659,135 @@ class TestWorkspaceWideResourceProjectResolution:
 
 
 # --------------------------------------------------------------------------- #
-# Page ownership — the product owner column is owned_by, not created_by         #
+# Page ownership — created_by is the attribution column, not owned_by           #
 # --------------------------------------------------------------------------- #
 
 
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestPageOwnership:
-    """A page's owner is ``Page.owned_by``: every v1/app page gate compares
-    ``page.owned_by_id`` with the caller, and the v1 create serializer stamps
-    ``owned_by_id`` from the acting user. ``Page.created_by`` is not reliably
-    populated (M41's wiring fixture builds a page with ``owned_by=create_user,
-    created_by=None``), so reading it would deny a page to the principal that
-    created it."""
+    """Pages resolve ownership from ``created_by``, like every other type.
 
-    def test_member_updates_page_owned_by_bot_allowed(
-        self, sp, bot_user, project, workspace
+    ``Page.owned_by`` is the product's **human-facing** page owner: the v1
+    create view stamps it from ``request.user`` (``api/views/page.py`` ->
+    ``PageCreateSerializer``), and for a ``plane_svc_`` token the v1 auth
+    layer keeps ``request.user`` as the SP's human **owner** on purpose. So a
+    page created by an SP is ``owned_by`` = the human owner and ``created_by``
+    = the SP's bot user (``BaseModel.save`` -> ``current_sp_actor``). Reading
+    ``owned_by`` would deny an SP the very pages it just created — the p1 in
+    M40's review (r1) — which is why ``_OWNER_ATTNAME`` is ``created_by_id``.
+    """
+
+    def test_member_updates_page_created_by_bot_allowed(
+        self, sp, bot_user, project, workspace, create_user
     ):
-        # created_by deliberately None: owned_by alone must carry the answer.
-        page = _page(workspace, bot_user, created_by=None)
-        assert page.created_by_id is None
+        # The exact shape the v1 POST produces: owned_by = the human owner,
+        # created_by = the bot. The write must be allowed.
+        page = _page(workspace, created_by=bot_user, owned_by=create_user)
         d = _decide(
             sp, Action.UPDATE, ResourceType.PAGE, page, project, workspace
         )
-        assert d.allowed, f"page owned by the bot should allow; got {d}"
+        assert d.allowed, f"page created by the bot should allow; got {d}"
 
-    def test_member_deletes_page_owned_by_bot_allowed(
-        self, sp, bot_user, project, workspace
+    def test_member_deletes_page_created_by_bot_allowed(
+        self, sp, bot_user, project, workspace, create_user
     ):
-        page = _page(workspace, bot_user)
+        page = _page(workspace, created_by=bot_user, owned_by=create_user)
         d = _decide(
             sp, Action.DELETE, ResourceType.PAGE, page, project, workspace
         )
-        assert d.allowed, f"page owned by the bot should allow; got {d}"
+        assert d.allowed, f"page created by the bot should allow; got {d}"
 
-    def test_member_updates_page_owned_by_someone_else_denied(
-        self, sp, bot_user, project, workspace, other_user
+    def test_member_updates_page_created_by_someone_else_denied(
+        self, sp, bot_user, project, workspace, create_user, other_user
     ):
-        page = _page(workspace, other_user)
+        page = _page(workspace, created_by=other_user, owned_by=create_user)
         d = _decide(
             sp, Action.UPDATE, ResourceType.PAGE, page, project, workspace
         )
         assert not d.allowed
         assert d.reason == DENY_OWNER_MISMATCH
 
-    def test_page_owned_by_other_denied_even_when_created_by_bot(
+    def test_page_created_by_other_denied_even_when_owned_by_bot(
         self, sp, bot_user, project, workspace, other_user
     ):
-        """``owned_by`` wins over ``created_by``: a page the bot created but
-        handed to someone else is not the bot's to write."""
-        page = _page(workspace, other_user, created_by=bot_user)
+        """``owned_by`` is NOT what decides: a page the bot owns but someone
+        else created is not the bot's to write."""
+        page = _page(workspace, created_by=other_user, owned_by=bot_user)
+        assert page.owned_by_id == bot_user.id
+        d = _decide(
+            sp, Action.UPDATE, ResourceType.PAGE, page, project, workspace
+        )
+        assert not d.allowed
+        assert d.reason == DENY_OWNER_MISMATCH
+
+    def test_page_created_by_bot_allowed_even_when_owned_by_other(
+        self, sp, bot_user, project, workspace, other_user
+    ):
+        """The mirror of the case above: the bot's authorship in
+        ``created_by`` is what allows the write, regardless of ``owned_by``."""
+        page = _page(workspace, created_by=bot_user, owned_by=other_user)
+        assert page.owned_by_id == other_user.id
+        d = _decide(
+            sp, Action.UPDATE, ResourceType.PAGE, page, project, workspace
+        )
+        assert d.allowed, f"created_by is authoritative; got {d}"
+
+    def test_page_created_by_other_denied_for_delete(
+        self, sp, bot_user, project, workspace, create_user, other_user
+    ):
+        page = _page(workspace, created_by=other_user, owned_by=create_user)
+        d = _decide(
+            sp, Action.DELETE, ResourceType.PAGE, page, project, workspace
+        )
+        assert not d.allowed
+        assert d.reason == DENY_OWNER_MISMATCH
+
+    def test_v1_write_path_stamps_the_bot_in_created_by(
+        self, sp, bot_user, project, workspace, create_user
+    ):
+        """Drive the real v1 write path so the asserted columns are the ones
+        the product actually stamps — not a hand-built row."""
+        _scope(sp, ResourceType.PAGE, Action.CREATE, project=project)
+        _scope(sp, ResourceType.PAGE, Action.UPDATE, project=project)
+        _scope(sp, ResourceType.PAGE, Action.DELETE, project=project)
+        _grant(sp, project, role_cap=15)
+        APIToken.objects.create(
+            label="svc:own-page",
+            token="plane_svc_token_own-page",
+            user=create_user,
+            principal_type=PrincipalType.SERVICE,
+            service_principal=sp,
+            workspace=workspace,
+        )
+
+        client = APIClient()
+        client.credentials(HTTP_X_API_KEY="plane_svc_token_own-page")
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.slug}/projects/{project.id}/pages/",
+            data={"name": "SP Page", "description_html": "<p>made by the bot</p>"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+
+        page = Page.objects.get(name="SP Page")
+        # The row the product produces: authorship in created_by (the bot),
+        # human-facing ownership in owned_by (the SP's owner).
         assert page.created_by_id == bot_user.id
-        d = _decide(
-            sp, Action.UPDATE, ResourceType.PAGE, page, project, workspace
-        )
-        assert not d.allowed
-        assert d.reason == DENY_OWNER_MISMATCH
+        assert page.owned_by_id == create_user.id
 
-    def test_page_owned_by_bot_allowed_even_when_created_by_other(
-        self, sp, bot_user, project, workspace, other_user
-    ):
-        """The mirror: ``owned_by`` is the bot, so the write is allowed even
-        though ``created_by`` is a different actor."""
-        page = _page(workspace, bot_user, created_by=other_user)
-        assert page.created_by_id == other_user.id
-        d = _decide(
-            sp, Action.UPDATE, ResourceType.PAGE, page, project, workspace
+        ctx = AuthzContext(
+            workspace_slug=workspace.slug, project_id=str(project.id)
         )
-        assert d.allowed, f"owned_by is authoritative; got {d}"
-
-    def test_page_owned_by_other_denied_for_delete(
-        self, sp, bot_user, project, workspace, other_user
-    ):
-        page = _page(workspace, other_user)
-        d = _decide(
-            sp, Action.DELETE, ResourceType.PAGE, page, project, workspace
-        )
-        assert not d.allowed
-        assert d.reason == DENY_OWNER_MISMATCH
+        principal = ServicePrincipal_(service_principal=sp)
+        for action in (Action.UPDATE, Action.DELETE):
+            d = authorize(
+                principal, action, ResourceType.PAGE, resource=page, ctx=ctx
+            )
+            assert d.allowed, (
+                f"{action} on the page this SP just created must be allowed; "
+                f"got {d}"
+            )
 
 
 # --------------------------------------------------------------------------- #

@@ -27,10 +27,11 @@ Implements the chain from ``sp-design.md`` §5.2:
    (``role_cap >= 20``) are exempt. The resource row must be supplied by
    the caller: a missing row, a missing bot user, a missing recorded
    creator, or a creator that is someone else all deny (fail-closed — an
-   unknown owner never matches an unknown owner). The row's owner column is
-   per resource type (``_OWNER_ATTNAME``): a page is owned by
-   ``Page.owned_by``, everything else by ``created_by``. This step is the
-   only one a **capability probe** may skip — ``effective_actions`` passes
+   unknown owner never matches an unknown owner). Ownership reads the
+   ``created_by`` *attribution* column, which ``BaseModel.save`` credits to
+   the acting SP's bot user; ``Page.owned_by`` is the product's human-facing
+   page owner and is deliberately not consulted (see ``_OWNER_ATTNAME``).
+   This step is the only one a **capability probe** may skip — ``effective_actions`` passes
    ``enforce_ownership=False`` because it carries no row by construction;
    every enforcement caller leaves it on.
 4. **owner intersection** — the SP's owner user must currently be an
@@ -93,21 +94,23 @@ _CALLER_WILDCARDS = frozenset({actions.Action.ALL})
 _OWNERSHIP_ACTIONS = frozenset({actions.Action.UPDATE, actions.Action.DELETE})
 
 
-# The column that carries a row's *product* notion of "who owns it", by
-# resource type. Plane is not uniform: a Page's owner is ``Page.owned_by``
-# (every v1 and app page gate compares ``page.owned_by_id`` with the caller —
-# ``api/views/page.py``, ``app/views/page/*``), and the v1 create serializer
-# stamps ``owned_by_id`` from the acting user, whereas ``Page.created_by`` is
-# not reliably populated. Every other resource type attributes authorship to
-# ``created_by`` (``BaseModel.save``). Keep this map empty for a type whose
-# ``created_by`` is authoritative.
-_OWNER_ATTNAME = {
-    resources.ResourceType.PAGE: "owned_by_id",
-}
+# The column that carries a row's *attribution* — who Plane credits the write
+# to. It is ``created_by`` for every registered resource type: ``BaseModel.save``
+# sets it from ``current_sp_actor()`` (``db/models/base.py``), so a
+# service-principal write lands the SP's shadow bot user there (M39).
+#
+# Deliberately NOT ``Page.owned_by``. That column is the product's human-facing
+# page owner: the v1 create view stamps it from ``request.user``
+# (``api/views/page.py`` -> ``PageCreateSerializer``), and for a ``plane_svc_``
+# token the v1 auth layer keeps ``request.user`` as the SP's human **owner** on
+# purpose, so an SP-created page is ``owned_by`` = the human owner and
+# ``created_by`` = the bot. Reading ``owned_by`` here would deny an SP the very
+# pages it just created — the p1 in M40's review (r1).
+_OWNER_ATTNAME = "created_by_id"
 
-# Fallback consulted only when the primary column is *absent* from a model —
-# never to rescue a NULL primary, which means "unknown creator" (fail-closed).
-_DEFAULT_OWNER_ATTNAME = "created_by_id"
+# Fallback consulted only when the owning column is *absent* from a model —
+# never to rescue a NULL ``created_by``, which means "unknown owner"
+# (fail-closed).
 _OWNER_ATTNAME_FALLBACK = "actor_id"
 
 
@@ -506,37 +509,32 @@ def _resolve_project_id(
     return None
 
 
-def _resource_owner_id(
-    resource: object | None,
-    resource_type: str | None = None,
-) -> Optional[str]:
-    """The user id that *owns* a row, or ``None`` when unknown.
+def _resource_owner_id(resource: object | None) -> Optional[str]:
+    """The user id a row's authorship is credited to, or ``None`` when unknown.
 
-    The owner column is per resource type (:data:`_OWNER_ATTNAME`). A
-    ``Page`` is owned by ``Page.owned_by`` — the column every v1 and app page
-    gate compares against the caller, and the one the v1 create serializer
-    stamps from the acting user; ``Page.created_by`` is not reliably
-    populated, so reading it would deny a page to the principal that
-    created it. Every other resource type is owned by ``created_by``
-    (``BaseModel.save`` sets it on every write).
+    Reads ``created_by`` (:data:`_OWNER_ATTNAME`) for every resource type —
+    the column ``BaseModel.save`` fills from ``current_sp_actor()``, so an
+    SP-created row carries the SP's shadow bot user there. ``Page`` is no
+    exception: its ``owned_by`` column is the human-facing page owner
+    (stamped from ``request.user``, which the v1 auth layer keeps as the SP's
+    human owner), not the attribution column — see :data:`_OWNER_ATTNAME`.
 
     ``None`` means the row carries no recorded owner — historical data
-    predating the column, a row authored by the system, or a page with no
-    ``owned_by`` — and is treated as *unknown* by the caller (fail-closed).
-    The ``actor`` column is consulted only for models that have no
-    ``created_by`` column at all; a NULL owner column is never rescued by a
-    second column, so ``None`` can never match another ``None``.
+    predating the column, or a row authored by the system — and is treated as
+    *unknown* by the caller (fail-closed). The ``actor`` column is consulted
+    only for models that have no ``created_by`` column at all; a NULL
+    ``created_by`` is never rescued by a second column, so ``None`` can never
+    match another ``None``.
     """
     if resource is None:
         return None
 
-    attname = _OWNER_ATTNAME.get(resource_type, _DEFAULT_OWNER_ATTNAME)
-    if hasattr(resource, attname):
-        owner_id = getattr(resource, attname, None)
+    if hasattr(resource, _OWNER_ATTNAME):
+        owner_id = getattr(resource, _OWNER_ATTNAME, None)
         return str(owner_id) if owner_id else None
 
-    # The owning column is absent from the model entirely (neither the
-    # per-type one nor ``created_by``): fall back to ``actor``.
+    # The attribution column is absent from the model entirely: fall back to
+    # ``actor`` (e.g. a future row that only carries an actor FK).
     actor_id = getattr(resource, _OWNER_ATTNAME_FALLBACK, None)
     if actor_id:
         return str(actor_id)
@@ -589,7 +587,7 @@ def _ownership_denial(
             ),
         )
 
-    owner_id = _resource_owner_id(resource, resource_type)
+    owner_id = _resource_owner_id(resource)
     if owner_id is None:
         return Decision.deny(
             DENY_OWNER_MISMATCH,
