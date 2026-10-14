@@ -4,7 +4,13 @@
  * See the LICENSE file for details.
  */
 
-import type { TServicePrincipalRoleCap, TServiceScopeAction, TServiceScopeResourceType } from "@plane/types";
+import type {
+  TProjectGrantInput,
+  TServicePrincipalRoleCap,
+  TServiceScopeAction,
+  TServiceScopeInput,
+  TServiceScopeResourceType,
+} from "@plane/types";
 
 export const SERVICE_PRINCIPALS_LIST = (workspaceSlug: string) => `SERVICE_PRINCIPALS_LIST_${workspaceSlug}`;
 
@@ -36,6 +42,18 @@ export const SERVICE_PRINCIPAL_SCOPE_RESOURCE_TYPES: TServiceScopeResourceType[]
 export const SERVICE_PRINCIPAL_SCOPE_ACTIONS: TServiceScopeAction[] = ["all", "read", "create", "update", "delete"];
 
 export const SERVICE_PRINCIPAL_GRANT_ROLE_CAPS: TServicePrincipalRoleCap[] = [20, 15, 5];
+
+// Row shapes for the editable grant / scope lists. A stable per-row key is what
+// keeps React from reusing a row's DOM (and its open dropdown) for a different
+// row after a removal.
+export type TGrantRow = TProjectGrantInput & { key: string };
+export type TScopeRow = TServiceScopeInput & { key: string };
+
+const getRowKey = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+export const createGrantRow = (data: TProjectGrantInput): TGrantRow => ({ ...data, key: getRowKey("grant-row") });
+
+export const createScopeRow = (data: TServiceScopeInput): TScopeRow => ({ ...data, key: getRowKey("scope-row") });
 
 // Backend step-up error codes (plane.authentication AUTHENTICATION_ERROR_CODES)
 export const MFA_ERROR_CODE_REQUIRED = 5200;

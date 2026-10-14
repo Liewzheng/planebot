@@ -21,10 +21,10 @@ import { servicePrincipalService } from "@/services/ai-account.service";
 import { SERVICE_PRINCIPALS_LIST } from "./constants";
 import { DeleteServicePrincipalModal } from "./delete-service-principal-modal";
 import { EditServicePrincipalModal } from "./edit-service-principal-modal";
+import { RoleCapabilityModal } from "./role-capability-modal";
 import { RotateServicePrincipalTokenModal } from "./rotate-token-modal";
 import { ServicePrincipalGrantsCoverage } from "./service-principal-grants-coverage";
-import { ServicePrincipalGrantsModal } from "./grants-modal";
-import { ServicePrincipalScopesModal } from "./scopes-modal";
+import { ServicePrincipalAccessModal } from "./service-principal-access-modal";
 
 type Props = {
   principal: TServicePrincipal;
@@ -36,8 +36,8 @@ export function ServicePrincipalsListItem(props: Props) {
   // states
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showScopesModal, setShowScopesModal] = useState(false);
-  const [showGrantsModal, setShowGrantsModal] = useState(false);
+  const [showAccessModal, setShowAccessModal] = useState(false);
+  const [showCapabilitiesModal, setShowCapabilitiesModal] = useState(false);
   const [showRotateTokenModal, setShowRotateTokenModal] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
   // hooks
@@ -76,18 +76,13 @@ export function ServicePrincipalsListItem(props: Props) {
         onClose={() => setShowEditModal(false)}
         workspaceSlug={workspaceSlug}
       />
-      <ServicePrincipalScopesModal
+      <ServicePrincipalAccessModal
         principal={principal}
-        isOpen={showScopesModal}
-        onClose={() => setShowScopesModal(false)}
+        isOpen={showAccessModal}
+        onClose={() => setShowAccessModal(false)}
         workspaceSlug={workspaceSlug}
       />
-      <ServicePrincipalGrantsModal
-        principal={principal}
-        isOpen={showGrantsModal}
-        onClose={() => setShowGrantsModal(false)}
-        workspaceSlug={workspaceSlug}
-      />
+      <RoleCapabilityModal isOpen={showCapabilitiesModal} onClose={() => setShowCapabilitiesModal(false)} />
       <RotateServicePrincipalTokenModal
         principal={principal}
         isOpen={showRotateTokenModal}
@@ -119,11 +114,11 @@ export function ServicePrincipalsListItem(props: Props) {
             </div>
           </div>
           <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setShowScopesModal(true)}>
-              {t("workspace_settings.settings.service_principals.list.manage_scopes")}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => setShowGrantsModal(true)}>
+            <Button variant="secondary" size="sm" onClick={() => setShowAccessModal(true)}>
               {t("workspace_settings.settings.service_principals.list.manage_grants")}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowCapabilitiesModal(true)}>
+              {t("workspace_settings.settings.service_principals.list.view_capabilities")}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setShowEditModal(true)}>
               <EditIcon className="size-3" />
@@ -152,7 +147,7 @@ export function ServicePrincipalsListItem(props: Props) {
           <ServicePrincipalGrantsCoverage
             principal={principal}
             workspaceSlug={workspaceSlug}
-            onManageGrants={() => setShowGrantsModal(true)}
+            onManageGrants={() => setShowAccessModal(true)}
           />
         </div>
       </div>

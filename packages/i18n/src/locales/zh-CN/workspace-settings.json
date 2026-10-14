@@ -529,9 +529,9 @@
           "created_on": "创建于",
           "edit": "编辑",
           "delete": "删除",
-          "manage_scopes": "管理范围",
           "manage_grants": "管理授权",
-          "rotate_token": "轮换令牌"
+          "rotate_token": "轮换令牌",
+          "view_capabilities": "角色能力表"
         },
         "avatar": {
           "label": "头像",
@@ -645,6 +645,64 @@
             "title": "错误！",
             "message": "无法更新授权",
             "missing_project": "每个授权必须引用一个项目。"
+          }
+        },
+        "access": {
+          "title": "管理授权与范围",
+          "description": "为每个项目指定该主体承载的角色。选择角色会写入该项目的授权，并按后端执行的同一份授权矩阵重建它的范围行；保存会整体替换全部授权与全部范围。",
+          "role": "角色",
+          "role_none": "无权限",
+          "role_disabled": "已停用",
+          "no_projects": "此工作区还没有项目。",
+          "apply_all_label": "应用到全部项目：",
+          "apply_all_button": "应用",
+          "apply_all_hint": "把所选角色应用到本工作区的全部 {count} 个项目。",
+          "table_hint": "重建某个项目的范围会覆盖你在下方「高级」中为它逐格调整过的行。",
+          "advanced_title": "高级：逐格微调",
+          "expand_cells_button": "按角色展开为逐格范围",
+          "expand_cells_hint": "把每个项目的范围行替换为「所分配角色可执行的每个能力一行」（共 {count} 行）。",
+          "replace_notice": "保存会整体替换授权集合与范围集合——你在此处移除的行会在服务端被删除。",
+          "save": "保存授权",
+          "saving": "正在保存",
+          "success": {
+            "title": "成功！",
+            "message": "授权与范围更新成功"
+          },
+          "error": {
+            "title": "错误！",
+            "message": "无法更新授权",
+            "step_grants": "授权未能保存，范围保持不变，因此该主体维持现有权限。",
+            "step_scopes": "授权已保存，但范围未能保存。在范围保存成功前该主体会被拒绝——引擎需要两者同时满足。"
+          },
+          "replace_confirm": {
+            "title": "替换授权与范围？",
+            "message": "保存会整体替换两个集合：授权 {grants_before} → {grants_after}，范围 {scopes_before} → {scopes_after}。新集合中缺失的行会被删除。",
+            "confirm": "替换并保存"
+          }
+        },
+        "capabilities": {
+          "title": "角色能力对照表",
+          "description": "每个单元格表示服务主体对该资源执行该操作所需的最低角色，也就是它在该项目的授权必须达到的角色档。整张表由后端执行的同一份矩阵（ACTION_REQUIRED_ROLE）生成，因此表格与引擎不会出现分歧。",
+          "group_project_resources": "项目内资源",
+          "group_workspace_resources": "工作区级资源",
+          "group_workspace_note": "仅支持读取——引擎对它们的写操作一律直接拒绝。",
+          "legend_required_role": "单元格 = 所需最低角色（授权角色档必须不低于此值）。",
+          "legend_not_registered": "— 表示该操作不可用：工作区级资源的写操作由引擎直接拒绝，未注册的资源/操作组合一律默认拒绝。",
+          "legend_ownership": "* 标记归属规则生效后会收紧的格子。",
+          "rules_title": "每条规则的含义",
+          "rules": {
+            "scope_grant": "在项目内放行需要三件事同时成立：有范围行覆盖该操作、该项目有启用的授权、且授权角色档不低于表中要求的最低角色。",
+            "owner_floor": "此外，主体的所有者必须是工作区的有效成员，且其自身的工作区角色不低于该操作要求的角色。",
+            "guest": "访客：只能读取，永远不能创建、更新或删除。",
+            "member": "成员：可以读取项目内全部资源，并创建日常工作所需的对象（工作项、评论、页面、周期、模块、状态、Sticky、资产、标签）。",
+            "member_ownership": "成员只能更新或删除自己创建的资源；他人的内容只能阅读和评论。",
+            "admin": "管理员：不受归属限制，可操作任意资源，包括删除不是自己创建的内容。",
+            "unknown_owner": "归属未知（早于创建者记录的历史数据）时默认拒绝。",
+            "coming_soon": "以上三条归属规则尚未生效——它们随「按资源归属校验」一并落地。在此之前成员档仍可更新/删除表中任意资源；带 * 的格子就是生效后会收紧的部分。",
+            "workspace_level": "项目、成员、用户、邀请属于工作区级资源：可以读取但不能写入，且读取范围必须是工作区级（所有项目）。",
+            "read_covers_list": "「读取」范围同时满足列表请求，因此表中没有单独的 list 行。",
+            "default_deny": "表中未覆盖的内容——包括后端从未注册的资源/操作组合——一律默认拒绝。",
+            "invite": "读取邀请需要成员及以上，比其它工作区级资源更严格。"
           }
         },
         "toasts": {
