@@ -433,13 +433,12 @@ class GenericAssetEndpoint(BaseAPIView):
 
     use_read_replica = True
 
-    # Cached project id resolved from the POST body for the create path.
-    # Set by ``get_authz_project_id`` on first call so the engine's
-    # ``AuthzContext.project_id`` engages the ProjectGrant step (M55 — the
-    # create URL has no project_id; without this override the engine would
-    # treat the request as workspace-scoped and skip the grant check, so an
-    # SP holding only a workspace-wide ``asset`` scope could create
-    # FileAsset rows bound to any project in the workspace).
+    # Cached project id resolved by ``get_authz_project_id``. Set on the first
+    # call so the engine's ``AuthzContext.project_id`` engages the
+    # ProjectGrant step (M55 + r1): the URL never carries a project_id, so
+    # the body (POST) or the loaded row (GET) is the only source for it.
+    # Returning ``None`` here is "no project to grant on" — the engine's
+    # workspace-scoped branch covers that case (USER_AVATAR etc.).
     _AUTHZ_PROJECT_ID_UNSET = object()
 
     def _resolve_post_body_project_id(self, request):
@@ -488,30 +487,83 @@ class GenericAssetEndpoint(BaseAPIView):
         project_id = request.data.get("project_id")
         return str(project_id) if project_id else None
 
+    def _resolve_get_url_project_id(self, request):
+        """Project id the targeted FileAsset row belongs to, or ``None``.
+
+        Resolved from the URL's ``asset_id`` so the engine's ProjectGrant
+        step fires on the actual target project — closing the r1 reviewer
+        finding that an SP with a workspace-wide asset scope (and zero
+        ProjectGrants) could fetch any project-bound FileAsset by id and
+        receive a presigned download URL while the confirm PATCH on the
+        same row 403'd.
+
+        Workspace-less assets (``project_id IS NULL``, e.g. ``USER_AVATAR``)
+        return ``None`` deliberately: that is the workspace-scoped branch
+        the legitimate ``asset:read`` scope row covers, and the existing
+        ``test_sp_with_workspace_wide_scope_can_read_a_workspace_level_asset``
+        test pins it. The view body also scopes the lookup to the URL's
+        workspace (``FileAsset.objects.get(..., workspace_id=workspace.id,
+        is_deleted=False)``), so a probe against another workspace's asset
+        id resolves to ``None`` and the engine's cross-workspace check
+        denies the SP first.
+        """
+        asset_id = self.kwargs.get("asset_id")
+        if not asset_id:
+            return None
+        try:
+            uuid.UUID(str(asset_id))
+        except (ValueError, TypeError, AttributeError):
+            return None
+        resolved = (
+            FileAsset.objects.filter(
+                id=asset_id,
+                workspace__slug=self.kwargs.get("slug"),
+                is_deleted=False,
+            )
+            .values_list("project_id", flat=True)
+            .first()
+        )
+        return str(resolved) if resolved else None
+
     def get_authz_project_id(self, request):
         """Project id the engine evaluates the ProjectGrant step against.
 
-        Only the create path encodes the project in the request body. For
-        GET/PATCH the engine reads it from the FileAsset row via
-        :attr:`authz_resource_model`, so we fall through to the inherited
-        URL-kwarg resolution — keeping those verbs byte-identical to the
-        pre-M55 behaviour (the confirm PATCH's DENY_GRANT_MISS / 204 path
-        depends on it).
+        The URL never carries a ``project_id`` on this endpoint, so the
+        hook has to source it from somewhere:
+
+        * **POST** — body (page reference or plain ``project_id``). See
+          :meth:`_resolve_post_body_project_id`.
+        * **GET** — the loaded FileAsset row's ``project_id`` (workspaces
+          the URL slug first). See :meth:`_resolve_get_url_project_id`.
+          Without this the engine skips the grant step and an SP with a
+          workspace-wide asset scope could fetch any project-bound asset
+          by id (M55 r1 finding).
+        * **PATCH / DELETE** — fall through to ``self.project_id``
+          (``None``). The mixin's ``get_authz_resource`` already loads the
+          row for UPDATE/DELETE, and the engine's
+          :func:`_resolve_project_id` reads ``project_id`` straight from
+          that loaded row — pre-M55 behaviour preserved byte-identically
+          so the confirm PATCH's ``DENY_GRANT_MISS`` / 204 path is
+          unchanged.
         """
-        if request.method != "POST":
-            return getattr(self, "project_id", None)
-        # ``request.data`` is parsed lazily by DRF; ``_enforce_sp_permission``
-        # is the first call site that needs the body and it triggers parsing
-        # once. Subsequent lookups during the same request (the view body's
-        # own resolution) share the cached parsed body. The sentinel
-        # distinguishes "not yet resolved" from a legitimate ``None``
-        # (workspace-level page / non-page entity type).
-        sentinel = self._AUTHZ_PROJECT_ID_UNSET
-        cached = getattr(self, "_authz_resolved_project_id", sentinel)
-        if cached is sentinel:
-            cached = self._resolve_post_body_project_id(request)
-            self._authz_resolved_project_id = cached
-        return cached
+        if request.method == "POST":
+            sentinel = self._AUTHZ_PROJECT_ID_UNSET
+            cached = getattr(self, "_authz_resolved_project_id", sentinel)
+            if cached is sentinel:
+                cached = self._resolve_post_body_project_id(request)
+                self._authz_resolved_project_id = cached
+            return cached
+        if request.method == "GET":
+            sentinel = self._AUTHZ_PROJECT_ID_UNSET
+            cached = getattr(self, "_authz_get_project_id", sentinel)
+            if cached is sentinel:
+                cached = self._resolve_get_url_project_id(request)
+                self._authz_get_project_id = cached
+            return cached
+        # PATCH / DELETE — see docstring. The engine reads project_id from
+        # the loaded FileAsset row via ``authz_resource_model``; passing
+        # ``None`` here keeps the pre-M55 chain identical (P2-1).
+        return getattr(self, "project_id", None)
 
     @asset_docs(
         operation_id="get_generic_asset",
