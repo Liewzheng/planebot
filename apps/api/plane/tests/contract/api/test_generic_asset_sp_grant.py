@@ -21,6 +21,23 @@ URL — while the confirm PATCH on the same row still 403'd. The fix
 extends the same hook so GET resolves the project from the URL's
 ``asset_id`` and the existing grant step fires.
 
+M55 r2 reviewer finding — the project-scoped-scope shape was absent
+from this file. The project-access UI toggle actually writes a
+``ServiceScope`` row with ``project=<id>`` (not workspace-wide), so the
+``workspace-wide-only`` shapes covered by r1 were a strict subset of
+the production bot shape. Without this case the suite did not prove
+the branch fixed the live MacDock SP's case: on base that SP got 403
+``DENY_SCOPE_MISS`` (the under-permission the r2 reviewer surfaced);
+on tip it reads 200. Added as the project-scoped-scope shape below.
+
+M55 r2 reviewer finding — the storage-not-called assertion was
+unreachable. The view constructs ``S3Storage(request=request)`` with a
+keyword, so iterating ``storage_cls.call_args_list[i].args`` is always
+empty, and on the fixed tree the deny paths 403 before the handler so
+the loop never iterates at all. Fixed by asserting on
+``storage_cls.return_value`` AFTER the ``with`` block exits — see
+``_assert_no_presign_calls``.
+
 Fix: ``GenericAssetEndpoint.get_authz_project_id`` resolves the target
 project for each verb from the only place it lives — POST from the
 request body (page reference or plain ``project_id``); GET from the
@@ -34,8 +51,10 @@ on the actual target project in every case.
 These tests pin:
 
 * the regressions that motivated M55 (deny on create + no row created +
-  ``generate_presigned_post`` not called) and M55 r1 (deny on read + no
-  presign issued),
+  ``generate_presigned_post`` never called) and M55 r1 (deny on read +
+  no presign issued),
+* the live MacDock SP shape — project-scoped scope row + grant (the
+  r2 reviewer added bonus finding),
 * the still-correct allow cases (granted SP can register, confirm, and
   read),
 * the no-regression on the confirm PATCH (the ungranted SP gets the
@@ -133,6 +152,48 @@ def storage_stub(request=None):
     return storage
 
 
+def _patch_storage_allow():
+    """Patch ``S3Storage`` with a single shared MagicMock so the
+    caller can assert on it after the ``with`` block exits.
+
+    The view constructs ``S3Storage(request=request)`` with a keyword
+    argument, so iterating ``storage_cls.call_args_list[i].args``
+    is always empty — every assertion has to go through
+    ``storage_cls.return_value``.
+
+    The assertion MUST run after the ``with`` block exits: putting
+    ``assert_not_called()`` inside an active mock.patch puts the
+    MagicMock into a failing traceback frame, which sends
+    pytest 9.0.3's traceback renderer into unbounded
+    ``findsource`` / ``inspect.getmodule`` recursion — the r2
+    reviewer OOM'd a container at 42 GB before restructuring.
+    """
+    patcher = mock.patch("plane.api.views.asset.S3Storage")
+    storage_cls = patcher.start()
+    storage_cls.return_value.generate_presigned_post.return_value = {
+        "url": "https://signed.example/upload",
+        "fields": {},
+    }
+    storage_cls.return_value.generate_presigned_url.return_value = (
+        "https://signed.example/get"
+    )
+    return patcher, storage_cls
+
+
+def _assert_no_presign_calls(storage_cls):
+    """Assert no presign was issued against the patched S3Storage.
+
+    The deny paths 403 in ``check_permissions`` before the handler
+    runs, so the call counts are zero. On the unfixed tree the
+    create-path handler would have called ``generate_presigned_post``
+    once and issued the upload URL — this assertion is what makes
+    the regression test "live" (it would fail on the unfixed tree
+    with a non-zero call count).
+    """
+    storage_cls.return_value.generate_presigned_post.assert_not_called()
+    storage_cls.return_value.generate_presigned_url.assert_not_called()
+
+
 def post_asset(client, slug, payload):
     return client.post(
         ASSETS_URL.format(slug=slug), payload, format="json"
@@ -181,6 +242,25 @@ def target_page(db, workspace, target_project, create_user):
     return page
 
 
+@pytest.fixture
+def project_bound_asset(db, workspace, target_project, create_user):
+    """An uploaded FileAsset bound to ``target_project`` — the row
+    the GET probes against. Module-level so multiple test classes
+    (TestSPGenericAssetReadEnforcesGrant,
+    TestSPProjectScopedScopeShape) can share it."""
+    return FileAsset.objects.create(
+        attributes={"name": "doc.pdf", "type": "application/pdf", "size": 2048},
+        asset=f"{workspace.id}/doc.pdf",
+        size=2048,
+        workspace=workspace,
+        project=target_project,
+        created_by=create_user,
+        entity_type=FileAsset.EntityTypeContext.ISSUE_ATTACHMENT,
+        is_uploaded=True,
+        storage_metadata={"size": 2048},
+    )
+
+
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestSPGenericAssetCreateEnforcesGrant:
@@ -221,9 +301,8 @@ class TestSPGenericAssetCreateEnforcesGrant:
 
         spv1_client.credentials(HTTP_X_API_KEY="plane_svc_token_asset-ungranted")
 
-        with mock.patch(
-            "plane.api.views.asset.S3Storage", side_effect=storage_stub
-        ) as storage_cls:
+        patcher, storage_cls = _patch_storage_allow()
+        try:
             response = post_asset(
                 spv1_client,
                 workspace.slug,
@@ -235,15 +314,8 @@ class TestSPGenericAssetCreateEnforcesGrant:
                     "entity_identifier": str(target_page.id),
                 },
             )
-            # M55 r1 reviewer note: also pin "no object written to
-            # storage" — the only call that creates a writable object on
-            # this path is ``generate_presigned_post``, so we assert on
-            # its absence rather than rely on the DB probe alone.
-            for stub in storage_cls.call_args_list:
-                instance = stub[0][0] if stub[0] else None
-                if instance is not None:
-                    instance.generate_presigned_post.assert_not_called()
-                    instance.generate_presigned_url.assert_not_called()
+        finally:
+            patcher.stop()
 
         assert response.status_code == status.HTTP_403_FORBIDDEN, (
             f"Expected 403 from authorize(), got {response.status_code} "
@@ -265,6 +337,10 @@ class TestSPGenericAssetCreateEnforcesGrant:
         )
         # And no row was bound to the target project.
         assert FileAsset.objects.filter(project=target_project).count() == 0
+        # And no presign was issued — assertion runs AFTER the patch
+        # context exits so a failing assert doesn't OOM pytest 9.0.3's
+        # traceback renderer (r2 reviewer warning).
+        _assert_no_presign_calls(storage_cls)
 
     def test_granted_sp_page_image_create_allows(
         self, workspace, create_user, target_project, target_page, spv1_client
@@ -323,9 +399,8 @@ class TestSPGenericAssetCreateEnforcesGrant:
         spv1_client.credentials(HTTP_X_API_KEY="plane_svc_token_attach-ungranted")
 
         before_count = FileAsset.objects.filter(workspace=workspace).count()
-        with mock.patch(
-            "plane.api.views.asset.S3Storage", side_effect=storage_stub
-        ) as storage_cls:
+        patcher, storage_cls = _patch_storage_allow()
+        try:
             response = post_asset(
                 spv1_client,
                 workspace.slug,
@@ -336,11 +411,8 @@ class TestSPGenericAssetCreateEnforcesGrant:
                     "project_id": str(target_project.id),
                 },
             )
-            for stub in storage_cls.call_args_list:
-                instance = stub[0][0] if stub[0] else None
-                if instance is not None:
-                    instance.generate_presigned_post.assert_not_called()
-                    instance.generate_presigned_url.assert_not_called()
+        finally:
+            patcher.stop()
 
         _assert_chain_deny(
             response,
@@ -349,6 +421,7 @@ class TestSPGenericAssetCreateEnforcesGrant:
         assert (
             FileAsset.objects.filter(workspace=workspace).count() == before_count
         ), "Plain-attachment create must not leave a FileAsset row."
+        _assert_no_presign_calls(storage_cls)
 
     def test_granted_sp_plain_attachment_create_allows(
         self, workspace, create_user, target_project, spv1_client
@@ -565,22 +638,6 @@ class TestSPGenericAssetReadEnforcesGrant:
     fires on the actual target project.
     """
 
-    @pytest.fixture
-    def project_bound_asset(self, db, workspace, target_project, create_user):
-        """An uploaded FileAsset bound to ``target_project`` — the row
-        the GET probes against."""
-        return FileAsset.objects.create(
-            attributes={"name": "doc.pdf", "type": "application/pdf", "size": 2048},
-            asset=f"{workspace.id}/doc.pdf",
-            size=2048,
-            workspace=workspace,
-            project=target_project,
-            created_by=create_user,
-            entity_type=FileAsset.EntityTypeContext.ISSUE_ATTACHMENT,
-            is_uploaded=True,
-            storage_metadata={"size": 2048},
-        )
-
     def test_ungranted_sp_get_on_project_bound_asset_denies_with_grant_miss(
         self, workspace, create_user, target_project, project_bound_asset, spv1_client
     ):
@@ -603,19 +660,15 @@ class TestSPGenericAssetReadEnforcesGrant:
 
         spv1_client.credentials(HTTP_X_API_KEY="plane_svc_token_get-ungranted")
 
-        with mock.patch(
-            "plane.api.views.asset.S3Storage", side_effect=storage_stub
-        ) as storage_cls:
+        patcher, storage_cls = _patch_storage_allow()
+        try:
             response = spv1_client.get(
                 ASSET_DETAIL_URL.format(
                     slug=workspace.slug, asset_id=project_bound_asset.id
                 )
             )
-            for stub in storage_cls.call_args_list:
-                instance = stub[0][0] if stub[0] else None
-                if instance is not None:
-                    instance.generate_presigned_url.assert_not_called()
-                    instance.generate_presigned_post.assert_not_called()
+        finally:
+            patcher.stop()
 
         _assert_chain_deny(
             response,
@@ -627,6 +680,7 @@ class TestSPGenericAssetReadEnforcesGrant:
         assert project_bound_asset.is_uploaded is True, (
             "An ungranted SP GET must not mutate the asset row."
         )
+        _assert_no_presign_calls(storage_cls)
 
     def test_ungranted_sp_get_with_asset_read_scope_denies(
         self, workspace, create_user, target_project, project_bound_asset, spv1_client
@@ -645,23 +699,21 @@ class TestSPGenericAssetReadEnforcesGrant:
 
         spv1_client.credentials(HTTP_X_API_KEY="plane_svc_token_get-read-only")
 
-        with mock.patch(
-            "plane.api.views.asset.S3Storage", side_effect=storage_stub
-        ) as storage_cls:
+        patcher, storage_cls = _patch_storage_allow()
+        try:
             response = spv1_client.get(
                 ASSET_DETAIL_URL.format(
                     slug=workspace.slug, asset_id=project_bound_asset.id
                 )
             )
-            for stub in storage_cls.call_args_list:
-                instance = stub[0][0] if stub[0] else None
-                if instance is not None:
-                    instance.generate_presigned_url.assert_not_called()
+        finally:
+            patcher.stop()
 
         _assert_chain_deny(
             response,
             "has no active grant for project",
         )
+        _assert_no_presign_calls(storage_cls)
 
     def test_granted_sp_get_on_project_bound_asset_allows(
         self, workspace, create_user, target_project, project_bound_asset, spv1_client
@@ -792,3 +844,247 @@ class TestSPGenericAssetResourceClassificationUnchanged:
             f"Workspace-wide read on a workspace-level asset must "
             f"succeed; got {response.status_code} body={response.json()!r}"
         )
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestSPProjectScopedScopeShape:
+    """The r2 reviewer surfaced a pre-existing *under*-permission: the
+    project-access UI toggle (and the live MacDock SP) actually writes
+    a ``ServiceScope`` row with ``project=<id>`` set — not
+    workspace-wide. On base that shape got ``403 DENY_SCOPE_MISS``
+    because the engine only matched workspace-wide scope rows when
+    ``ctx.project_id`` was ``None``; on tip the hook resolves the
+    target project from the body / row, so the project-scoped scope
+    row matches and the request is allowed. None of the r1 tests
+    covered this shape, so the branch's green suite did not prove the
+    case the whole mission exists for. This class pins it.
+    """
+
+    @pytest.fixture
+    def other_project(self, db, workspace, create_user):
+        """A second project in the same workspace the SP has neither
+        scope nor grant for. Used to assert the "scope-on-another-project"
+        shape, which the r2 reviewer verified returns 403
+        ``DENY_SCOPE_MISS`` (the scope step, not a spurious grant step).
+        """
+        proj = Project.objects.create(
+            name="Other Project",
+            identifier="OP",
+            workspace=workspace,
+            created_by=create_user,
+            network=2,
+        )
+        ProjectMember.objects.create(
+            project=proj, member=create_user, role=20, is_active=True
+        )
+        return proj
+
+    def test_project_scoped_scope_sp_with_grant_can_create(
+        self,
+        workspace,
+        create_user,
+        target_project,
+        target_page,
+        spv1_client,
+    ):
+        """The live MacDock SP shape: project-scoped ``asset:create``
+        scope row + active ProjectGrant at the matrix floor. The
+        request must succeed (200) and the row must land in the
+        project the scope row was bound to. This is the case the
+        whole mission exists for and was absent from the r1 test
+        file.
+
+        On base this shape returned 403 DENY_SCOPE_MISS: the engine
+        saw ``ctx.project_id=None``, so a project-scoped scope row
+        ``project=A, resource_type=asset, action=create`` did not
+        match (only workspace-wide scope rows were considered). On
+        tip the hook resolves the target project from the page
+        reference, the project-scoped scope row matches, and the
+        request passes the scope + grant + role_cap steps.
+        """
+        sp = _make_sp(workspace, create_user, name="proj-shape-granted")
+        ServiceScope.objects.create(
+            service_principal=sp,
+            project=target_project,
+            resource_type="asset",
+            action="create",
+        )
+        _grant(sp, target_project, role_cap=15)
+
+        spv1_client.credentials(
+            HTTP_X_API_KEY="plane_svc_token_proj-shape-granted"
+        )
+
+        patcher, storage_cls = _patch_storage_allow()
+        try:
+            response = post_asset(
+                spv1_client,
+                workspace.slug,
+                {
+                    "name": "diagram.png",
+                    "type": "image/png",
+                    "size": 2048,
+                    "entity_type": "PAGE_DESCRIPTION",
+                    "entity_identifier": str(target_page.id),
+                },
+            )
+        finally:
+            patcher.stop()
+
+        assert response.status_code == status.HTTP_200_OK, (
+            f"Project-scoped scope + grant SP must succeed; got "
+            f"{response.status_code} body={response.json()!r}"
+        )
+        asset = FileAsset.objects.get(id=response.data["asset_id"])
+        assert asset.project_id == target_project.id
+        assert asset.page_id == target_page.id
+        # The presign was actually issued — the patch is live and the
+        # allow case issued a working upload URL.
+        assert (
+            storage_cls.return_value.generate_presigned_post.call_count == 1
+        ), "Allow case must issue exactly one presigned upload URL."
+
+    def test_project_scoped_scope_sp_with_no_grant_denies_create(
+        self,
+        workspace,
+        create_user,
+        target_project,
+        target_page,
+        spv1_client,
+    ):
+        """The project-scoped-scope SP without a grant must be denied
+        at the grant step. Mirrors the r1 workspace-wide regression
+        test but for the production bot shape: same fix surfaces
+        the same engine branch.
+        """
+        sp = _make_sp(workspace, create_user, name="proj-shape-ungranted")
+        ServiceScope.objects.create(
+            service_principal=sp,
+            project=target_project,
+            resource_type="asset",
+            action="create",
+        )
+        # No ProjectGrant.
+
+        spv1_client.credentials(
+            HTTP_X_API_KEY="plane_svc_token_proj-shape-ungranted"
+        )
+
+        before_count = FileAsset.objects.filter(workspace=workspace).count()
+        patcher, storage_cls = _patch_storage_allow()
+        try:
+            response = post_asset(
+                spv1_client,
+                workspace.slug,
+                {
+                    "name": "diagram.png",
+                    "type": "image/png",
+                    "size": 2048,
+                    "entity_type": "PAGE_DESCRIPTION",
+                    "entity_identifier": str(target_page.id),
+                },
+            )
+        finally:
+            patcher.stop()
+
+        _assert_chain_deny(
+            response,
+            "has no active grant for project",
+        )
+        assert (
+            FileAsset.objects.filter(workspace=workspace).count() == before_count
+        )
+        _assert_no_presign_calls(storage_cls)
+
+    def test_project_scoped_scope_sp_with_grant_can_read(
+        self,
+        workspace,
+        create_user,
+        target_project,
+        project_bound_asset,
+        spv1_client,
+    ):
+        """Read path: same project-scoped scope + grant shape must
+        read a project-bound asset (200 + presigned URL). The r1
+        workspace-wide GET test did not cover this; the r2 reviewer
+        verified the live shape here.
+        """
+        sp = _make_sp(workspace, create_user, name="proj-shape-grant-read")
+        ServiceScope.objects.create(
+            service_principal=sp,
+            project=target_project,
+            resource_type="asset",
+            action="read",
+        )
+        _grant(sp, target_project, role_cap=5)
+
+        spv1_client.credentials(
+            HTTP_X_API_KEY="plane_svc_token_proj-shape-grant-read"
+        )
+
+        patcher, storage_cls = _patch_storage_allow()
+        try:
+            response = spv1_client.get(
+                ASSET_DETAIL_URL.format(
+                    slug=workspace.slug, asset_id=project_bound_asset.id
+                )
+            )
+        finally:
+            patcher.stop()
+
+        assert response.status_code == status.HTTP_200_OK, (
+            f"Project-scoped scope + grant SP GET must 200; got "
+            f"{response.status_code} body={response.json()!r}"
+        )
+        assert (
+            storage_cls.return_value.generate_presigned_url.call_count == 1
+        )
+
+    def test_project_scoped_scope_sp_against_unrelated_project_denies(
+        self,
+        workspace,
+        create_user,
+        target_project,
+        other_project,
+        project_bound_asset,
+        spv1_client,
+    ):
+        """Scope pinned to ``other_project``, asset bound to
+        ``target_project`` — the SP must not be able to read across
+        the scope. The r2 reviewer verified this is 403
+        ``DENY_SCOPE_MISS`` (the scope step, not a spurious grant
+        step): the hook resolves the row to ``target_project``, the
+        scope row is on ``other_project``, the scope step trips.
+        """
+        sp = _make_sp(workspace, create_user, name="proj-shape-foreign")
+        # Scope pinned to a different project.
+        ServiceScope.objects.create(
+            service_principal=sp,
+            project=other_project,
+            resource_type="asset",
+            action="read",
+        )
+        # And a grant on the other project — does not help, the
+        # scope step denies before the grant step runs.
+        _grant(sp, other_project, role_cap=15)
+
+        spv1_client.credentials(
+            HTTP_X_API_KEY="plane_svc_token_proj-shape-foreign"
+        )
+
+        patcher, storage_cls = _patch_storage_allow()
+        try:
+            response = spv1_client.get(
+                ASSET_DETAIL_URL.format(
+                    slug=workspace.slug, asset_id=project_bound_asset.id
+                )
+            )
+        finally:
+            patcher.stop()
+
+        _assert_chain_deny(
+            response,
+            "lacks scope for read asset",
+        )
+        _assert_no_presign_calls(storage_cls)
