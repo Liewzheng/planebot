@@ -779,55 +779,24 @@ class TestAppSideWriteSideStaysDenied:
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestIssuesDetailEndpointSmoke:
-    """P1 pin added in r3 — the r2 round shipped a ``NameError`` on
-    ``/issues-detail/`` because ``WorkspaceMember`` was referenced
-    without being imported (the r3 review reproduced this by removing
-    the import line and observing ``500`` for human callers). The fix
-    is the one-line import at ``apps/api/plane/app/views/issue/base.py:63``;
-    these tests catch that regression and nothing else.
+    """Smoke checks against ``GET /api/workspaces/<slug>/projects/<pid>/issues-detail/``.
 
-    What this class actually covers, per caller x network x expand
-    (each row is exactly one of the ``probe_*`` tests):
+    The r2 round shipped a ``NameError`` here (``WorkspaceMember``
+    referenced at ``app/views/issue/base.py:1053`` without an import)
+    that turned every human call into a 500. No test in the file
+    touched this endpoint, so the regression reached the merge gate
+    green. The r3 commit landed the import; these probes exercise the
+    route so a future missing-import regression cannot.
 
-    | caller                       | SECRET (0) | PUBLIC (2) | deny reason (when not 200)               |
-    |------------------------------|------------|------------|-------------------------------------------|
-    | workspace ADMIN (no PM)      | 200        | 200        | --                                        |
-    | workspace MEMBER (PM, r=15)  | 200        | 200        | --                                        |
-    | workspace GUEST (PM, r=5)    | 200        | 200        | --                                        |
-    | SP (via X-Api-Key)           | 403        | 403        | ``IsAuthenticatedNoSP`` (base.py:167)     |
-    | non-member MEMBER (r=15)     | 403        | 403        | ``@allow_permission`` (no ProjectMember)   |
-    | non-member GUEST (r=5)       | 403        | 403        | ``@allow_permission`` (no ProjectMember)   |
-
-    Plus one ``?expand=issue_relation`` probe (admin x both networks)
-    pinning the real frontend call (the GANTT layout via
-    ``issue.service.ts:47`` and
-    ``issue-filter-helper.store.ts:123``).
-
-    The three ``probe_*`` test methods are deliberately minimal — they
-    assert ``status_code == 200`` (or the documented deny reason)
-    only, no row-count, no permission-class semantics. The goal is to
-    catch a missing import (or any other ``NameError`` /
-    ``ImportError``) regression on the route, not to pin visibility.
-    Visibility for admins is pinned by ``TestAppSideIssueDetailEndpoint``
-    and ``TestAppSurfaceProjectRetrieve``; SP semantics are covered by
-    the SP targeted suite (``test_authz_core.py`` +
-    ``test_authz_ownership.py`` + ``test_sp_v1_wiring.py``,
-    161 passed).
-
-    What this class does **not** cover (deliberately):
-      * the SP path never reaches the ``WorkspaceMember`` line — SP is
-        denied at ``BaseAPIView.permission_classes = [IsAuthenticatedNoSP]``
-        (``apps/api/plane/app/views/base.py:167``) *before* the
-        ``@allow_permission`` decorator and before the body, because
-        ``IssueDetailEndpoint`` does not set
-        ``allow_service_principal = True``. So the r2 ``NameError``
-        could not have reached SP, and the r3 import does not
-        change anything for SP. The ``test_probe_sp_gets_403`` case
-        below pins that contract — it would catch a future change
-        that silently opens the endpoint to SP.
-      * visibility for non-admin workspace members is not a target
-        here (they are pinned as contrast cases in the
-        ``TestAppSideIssueDetailEndpoint`` class above).
+    The SP probe asserts the deny body (``{"detail": "Authentication
+    required."}``) rather than only the status code — that is the
+    signal that the request was rejected by
+    ``BaseAPIView.permission_classes = [IsAuthenticatedNoSP]``
+    (``apps/api/plane/app/views/base.py:167``) before the decorator
+    and the body ran. An SP request that reached ``_authorize_sp``
+    would produce a different body (``{"error": "Endpoint does not
+    declare resource_type for SP authz."}``), so the body assertion
+    distinguishes the two.
     """
 
     @pytest.mark.parametrize("network", [0, 2], ids=["SECRET", "PUBLIC"])
@@ -856,17 +825,12 @@ class TestIssuesDetailEndpointSmoke:
 
         # The MEMBER has workspace role=15 but no ProjectMember row;
         # for this probe we want them to be a ProjectMember (any role)
-        # so they reach the endpoint body — the goal is to verify
-        # /issues-detail/ answers for a *ProjectMember* caller, not
-        # the visibility semantics (those are pinned elsewhere).
+        # so they reach the endpoint body.
         project = _make_project(
             workspace, create_user,
             name=f"Member {network}", identifier=f"M{network}", network=network,
             members=[ws_member],
         )
-        # ``_make_project`` adds the member as ``role=20``; drop the
-        # row to ``role=15`` so we mirror a typical workspace MEMBER
-        # who has been added to the project at member tier.
         ProjectMember.objects.filter(
             project=project, member=ws_member
         ).update(role=15)
@@ -884,14 +848,6 @@ class TestIssuesDetailEndpointSmoke:
     def test_probe_guest_project_member_gets_200_on_issues_detail(
         self, workspace, create_user, ws_guest, network
     ):
-        """GUEST-as-ProjectMember case the r3 review flagged as missing.
-        Without the r3 import the same call returns 500
-        (``WorkspaceMember`` NameError); with it, 200 — the GUEST
-        permission check (``guest_view_all_features`` /
-        ``created_by=``) runs after the import resolves, so a missing
-        import would still 500 here. This is the row in the reviewer's
-        table that distinguished ``NameError` on this caller class.
-        """
         from plane.db.models import ProjectMember
 
         project = _make_project(
@@ -899,9 +855,6 @@ class TestIssuesDetailEndpointSmoke:
             name=f"Guest {network}", identifier=f"G{network}", network=network,
             members=[ws_guest],
         )
-        # ``_make_project`` adds the member as ``role=20``; drop to
-        # GUEST (role=5) to mirror a workspace guest added at guest
-        # tier.
         ProjectMember.objects.filter(
             project=project, member=ws_guest
         ).update(role=5)
@@ -919,18 +872,6 @@ class TestIssuesDetailEndpointSmoke:
     def test_probe_sp_gets_403_on_issues_detail(
         self, workspace, create_user, network
     ):
-        """The r3 review measured that an SP caller returns **403**
-        both with and without the r3 import — SP is denied at
-        ``BaseAPIView.permission_classes = [IsAuthenticatedNoSP]``
-        (``apps/api/plane/app/views/base.py:167``) because
-        ``IssueDetailEndpoint`` does not set
-        ``allow_service_principal = True``. So the r2 ``NameError``
-        never reached SP, and the r3 import changes nothing for SP.
-
-        This test would flip to ``200`` (or to some other code path
-        reaching the body) if a future refactor silently opens this
-        endpoint to SP — that is the regression to catch.
-        """
         from plane.db.models import APIToken
         from plane.service_principals.constants import PrincipalType
         from plane.service_principals.models import ServicePrincipal
@@ -959,23 +900,20 @@ class TestIssuesDetailEndpointSmoke:
         client.credentials(HTTP_X_API_KEY=f"plane_svc_token_{sp_name}")
         response = client.get(_app_issue_detail_url(workspace.slug, project.id))
 
-        # Pin both the status and (best-effort) the reason. The
-        # endpoint is NOT SP-exposed, so the auth class produces
-        # the 403 — never the body — and the import fix is irrelevant
-        # to this caller. If a future change makes this endpoint
-        # SP-exposed, the assertion fails and the regression is loud.
         assert response.status_code == status.HTTP_403_FORBIDDEN, (
             f"SP /issues-detail/ on network={network} returned "
-            f"{response.status_code} (expected 403 — endpoint is not "
-            f"SP-exposed; a future change that opens it to SP would "
-            f"have surfaced here): {response.data!r}"
+            f"{response.status_code} (expected 403): {response.data!r}"
+        )
+        assert response.data == {"detail": "Authentication required."}, (
+            f"SP /issues-detail/ on network={network} returned an "
+            f"unexpected deny body {response.data!r}; the body "
+            f"``{{'detail': 'Authentication required.'}}`` is what "
+            f"``IsAuthenticatedNoSP`` returns when the request is "
+            f"rejected before the decorator and the body run."
         )
 
     @pytest.mark.parametrize("network", [0, 2], ids=["SECRET", "PUBLIC"])
     def test_probe_expand_issue_relation_does_not_500(self, workspace, ws_admin, network):
-        """Real frontend path (``issue.service.ts:47`` selects the
-        ``*-detail/`` variant when ``expand`` contains ``issue_relation``
-        — the GANTT layout)."""
         project = _make_project(
             workspace, ws_admin,
             name=f"Expand {network}", identifier=f"E{network}", network=network,
