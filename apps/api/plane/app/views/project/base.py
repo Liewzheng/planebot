@@ -230,9 +230,22 @@ class ProjectViewSet(BaseViewSet):
         if project is None:
             return Response({"error": "Project does not exist"}, status=status.HTTP_404_NOT_FOUND)
 
+        # Workspace admins own the workspace and everything under it (M51):
+        # they must be able to open any project — including SECRET — even
+        # when they are not a ProjectMember of the project itself. The
+        # ``@allow_permission`` decorator above already admitted the user
+        # as a workspace member; this branch extends the inline
+        # ProjectMember gate to workspace ``role=20``.
+        is_workspace_admin = WorkspaceMember.objects.filter(
+            member=request.user,
+            workspace__slug=slug,
+            role=ROLE.ADMIN.value,
+            is_active=True,
+        ).exists()
+
         member_ids = [str(project_member.member_id) for project_member in project.members_list]
 
-        if str(request.user.id) not in member_ids:
+        if str(request.user.id) not in member_ids and not is_workspace_admin:
             if project.network == ProjectNetwork.SECRET.value:
                 return Response(
                     {"error": "You do not have permission"},

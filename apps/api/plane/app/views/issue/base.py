@@ -60,6 +60,7 @@ from plane.db.models import (
     Project,
     ProjectMember,
     UserRecentVisit,
+    WorkspaceMember,
 )
 from plane.utils.filters import ComplexFilterBackend, IssueFilterSet
 from plane.utils.global_paginator import paginate
@@ -1040,32 +1041,53 @@ class IssueDetailEndpoint(BaseAPIView):
     def get(self, request, slug, project_id):
         filters = issue_filters(request.query_params, "GET")
 
-        # check for the project member role, if the role is 5 then check for the guest_view_all_features
-        #  if it is true then show all the issues else show only the issues created by the user
-        permission_subquery = (
-            Issue.issue_objects.filter(workspace__slug=slug, project_id=project_id, id=OuterRef("id"))
-            .filter(
-                Q(
-                    project__project_projectmember__member=self.request.user,
-                    project__project_projectmember__is_active=True,
-                    project__project_projectmember__role__gt=ROLE.GUEST.value,
+        # M51: a workspace admin (role=20) must be able to list every
+        # issue in the workspace's projects, including SECRET ones
+        # where they hold no ``ProjectMember`` row. Mirror the role
+        # the user ruling gave the admin on ``ProjectViewSet.retrieve``
+        # at the app level — the admin can open the project, and
+        # therefore must be able to see what's inside. For an admin
+        # the ``permission_subquery`` becomes a no-op ``Exists`` and
+        # every issue in the project surfaces. Non-admin callers
+        # keep the existing ProjectMember / guest_view_all_features
+        # / creator predicate unchanged.
+        is_workspace_admin = WorkspaceMember.objects.filter(
+            member=self.request.user,
+            workspace__slug=slug,
+            role=ROLE.ADMIN.value,
+            is_active=True,
+        ).exists()
+        if is_workspace_admin:
+            permission_subquery = Issue.issue_objects.filter(
+                workspace__slug=slug, project_id=project_id, id=OuterRef("id")
+            ).values("id")
+        else:
+            # check for the project member role, if the role is 5 then check for the guest_view_all_features
+            #  if it is true then show all the issues else show only the issues created by the user
+            permission_subquery = (
+                Issue.issue_objects.filter(workspace__slug=slug, project_id=project_id, id=OuterRef("id"))
+                .filter(
+                    Q(
+                        project__project_projectmember__member=self.request.user,
+                        project__project_projectmember__is_active=True,
+                        project__project_projectmember__role__gt=ROLE.GUEST.value,
+                    )
+                    | Q(
+                        project__project_projectmember__member=self.request.user,
+                        project__project_projectmember__is_active=True,
+                        project__project_projectmember__role=ROLE.GUEST.value,
+                        project__guest_view_all_features=True,
+                    )
+                    | Q(
+                        project__project_projectmember__member=self.request.user,
+                        project__project_projectmember__is_active=True,
+                        project__project_projectmember__role=ROLE.GUEST.value,
+                        project__guest_view_all_features=False,
+                        created_by=self.request.user,
+                    )
                 )
-                | Q(
-                    project__project_projectmember__member=self.request.user,
-                    project__project_projectmember__is_active=True,
-                    project__project_projectmember__role=ROLE.GUEST.value,
-                    project__guest_view_all_features=True,
-                )
-                | Q(
-                    project__project_projectmember__member=self.request.user,
-                    project__project_projectmember__is_active=True,
-                    project__project_projectmember__role=ROLE.GUEST.value,
-                    project__guest_view_all_features=False,
-                    created_by=self.request.user,
-                )
+                .values("id")
             )
-            .values("id")
-        )
         # Main issue query
         issue = Issue.issue_objects.filter(workspace__slug=slug, project_id=project_id).filter(
             Exists(permission_subquery)

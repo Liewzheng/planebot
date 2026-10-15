@@ -29,7 +29,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 
-from plane.app.permissions import WorkspaceEntityPermission, WorkspaceViewerPermission
+from plane.app.permissions import WorkspaceEntityPermission, WorkspaceViewerPermission, ROLE
 
 # Module imports
 from plane.app.serializers import (
@@ -379,11 +379,29 @@ class WorkspaceUserActivityEndpoint(BaseAPIView):
     def get(self, request, slug, user_id):
         projects = request.query_params.getlist("project", [])
 
+        # M51: workspace admins own the workspace and must read the
+        # activity stream of every user — including activity rows in
+        # ``ProjectNetwork.SECRET`` projects they hold no ``ProjectMember``
+        # row for. Non-admin callers stay on the original ProjectMember
+        # predicate.
+        is_workspace_admin = WorkspaceMember.objects.filter(
+            member=request.user,
+            workspace__slug=slug,
+            role=ROLE.ADMIN.value,
+            is_active=True,
+        ).exists()
+        if is_workspace_admin:
+            project_reader_q = Q()
+        else:
+            project_reader_q = Q(
+                project__project_projectmember__member=request.user,
+                project__project_projectmember__is_active=True,
+            )
+
         queryset = IssueActivity.objects.filter(
             ~Q(field__in=["comment", "vote", "reaction", "draft"]),
+            project_reader_q,
             workspace__slug=slug,
-            project__project_projectmember__member=request.user,
-            project__project_projectmember__is_active=True,
             project__archived_at__isnull=True,
             actor=user_id,
         ).select_related("actor", "workspace", "issue", "project")

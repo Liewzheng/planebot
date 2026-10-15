@@ -1943,12 +1943,29 @@ class IssueActivityListAPIEndpoint(BaseAPIView):
         Retrieve chronological activity logs for an issue.
         Excludes comment, vote, reaction, and draft activities.
         """
+        # M51: workspace admins own the workspace and must read the
+        # activity log in any project, including ``ProjectNetwork.SECRET``
+        # ones where they hold no ``ProjectMember`` row. Non-admin
+        # callers stay on the original ProjectMember-only filter.
+        is_workspace_admin = WorkspaceMember.objects.filter(
+            member=self.request.user,
+            workspace__slug=slug,
+            role=20,
+            is_active=True,
+        ).exists()
+        if is_workspace_admin:
+            project_reader_q = Q()
+        else:
+            project_reader_q = Q(
+                project__project_projectmember__member=self.request.user,
+                project__project_projectmember__is_active=True,
+            )
+
         issue_activities = (
             IssueActivity.objects.filter(issue_id=issue_id, workspace__slug=slug, project_id=project_id)
             .filter(
                 ~Q(field__in=["comment", "vote", "reaction", "draft"]),
-                project__project_projectmember__member=self.request.user,
-                project__project_projectmember__is_active=True,
+                project_reader_q,
             )
             .filter(project__archived_at__isnull=True)
             .select_related("actor", "workspace", "issue", "project")
@@ -2002,13 +2019,31 @@ class IssueActivityDetailAPIEndpoint(BaseAPIView):
         Retrieve details of a specific activity.
         Excludes comment, vote, reaction, and draft activities.
         """
+        # M51: workspace admins own the workspace and must read the
+        # activity log in any project — same widening as the list
+        # endpoint immediately above. Detail is a "list of one" and
+        # keeps the exact same reader predicate; the ProjectMember
+        # filter otherwise zeroes the row set for an admin caller.
+        is_workspace_admin = WorkspaceMember.objects.filter(
+            member=self.request.user,
+            workspace__slug=slug,
+            role=20,
+            is_active=True,
+        ).exists()
+        if is_workspace_admin:
+            project_reader_q = Q()
+        else:
+            project_reader_q = Q(
+                project__project_projectmember__member=self.request.user,
+                project__project_projectmember__is_active=True,
+            )
+
         issue_activity = (
             (
                 IssueActivity.objects.filter(issue_id=issue_id, workspace__slug=slug, project_id=project_id, id=pk)
                 .filter(
                     ~Q(field__in=["comment", "vote", "reaction", "draft"]),
-                    project__project_projectmember__member=self.request.user,
-                    project__project_projectmember__is_active=True,
+                    project_reader_q,
                 )
                 .filter(project__archived_at__isnull=True)
                 .select_related("actor", "workspace", "issue", "project")

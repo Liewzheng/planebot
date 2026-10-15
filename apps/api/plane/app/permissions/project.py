@@ -140,6 +140,24 @@ class ProjectEntityPermission(BasePermission):
         if getattr(request.user, "_is_service_principal_proxy", False):
             return _sp_has_permission(request, view)
 
+        # Workspace admins own the workspace (M51) — admit them on
+        # SAFE_METHODS regardless of ProjectMember. The view body still
+        # has to filter its own row set, otherwise the admin would see a
+        # flat empty list (every ProjectMember predicate the body uses
+        # is widened in lockstep — see the four activity-surface changes
+        # in mission M51). The branch is intentionally narrow: only
+        # SAFE_METHODS, only ``WorkspaceMember.role=20``, only the
+        # human path (the SP path is resolved by ``_sp_has_permission``
+        # above and reaches the engine instead).
+        is_workspace_admin = WorkspaceMember.objects.filter(
+            workspace__slug=view.workspace_slug,
+            member=request.user,
+            role=ROLE.ADMIN.value,
+            is_active=True,
+        ).exists()
+        if request.method in SAFE_METHODS and is_workspace_admin:
+            return True
+
         # Handle requests based on project__identifier
         if hasattr(view, "project_identifier") and view.project_identifier:
             if request.method in SAFE_METHODS:

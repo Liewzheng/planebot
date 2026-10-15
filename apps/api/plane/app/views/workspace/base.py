@@ -358,12 +358,29 @@ class ExportWorkspaceUserActivityEndpoint(BaseAPIView):
         if not request.data.get("date"):
             return Response({"error": "Date is required"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # M51: workspace admins own the workspace and must export activity
+        # for any user — including activity in ``ProjectNetwork.SECRET``
+        # projects they hold no ``ProjectMember`` row for. Non-admin
+        # callers stay on the original ProjectMember predicate.
+        is_workspace_admin = WorkspaceMember.objects.filter(
+            member=request.user,
+            workspace__slug=slug,
+            role=ROLE.ADMIN.value,
+            is_active=True,
+        ).exists()
+        if is_workspace_admin:
+            project_reader_q = Q()
+        else:
+            project_reader_q = Q(
+                project__project_projectmember__member=request.user,
+                project__project_projectmember__is_active=True,
+            )
+
         user_activities = IssueActivity.objects.filter(
             ~Q(field__in=["comment", "vote", "reaction", "draft"]),
+            project_reader_q,
             workspace__slug=slug,
             created_at__date=request.data.get("date"),
-            project__project_projectmember__member=request.user,
-            project__project_projectmember__is_active=True,
             actor_id=user_id,
         ).select_related("actor", "workspace", "issue", "project")[:10000]
 
