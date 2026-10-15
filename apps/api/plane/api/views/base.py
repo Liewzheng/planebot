@@ -143,6 +143,24 @@ class AIScopeEnforcementMixin:
         """
         return action
 
+    def get_authz_project_id(self, request):
+        """The project id the engine should evaluate against for this request.
+
+        The default reads ``self.project_id``, which :class:`BaseAPIView`
+        resolves from URL kwargs (``project_id`` / ``project_identifier``).
+        Views whose target project is encoded in the request body — the v1
+        asset create path (``POST /workspaces/<slug>/assets/``) carries the
+        project via a posted ``project_id`` or via a ``ProjectPage`` row
+        pinned to a page reference — override this and resolve from the
+        body instead.
+
+        Returning ``None`` for a project-scoped resource makes the engine
+        treat the request as workspace-scoped and skip the ProjectGrant
+        step (M55 regression). Overrides must therefore actually resolve
+        the project, not just defer to ``None``.
+        """
+        return getattr(self, "project_id", None)
+
     def get_permissions(self):
         # SP requests bypass the view's membership-based permission classes
         # (ProjectMemberPermission, WorkspaceUserPermission, …) — those
@@ -167,7 +185,10 @@ class AIScopeEnforcementMixin:
 
         Unannotated endpoints raise PermissionDenied (default-deny). The
         matrix entry drives role_cap; workspace-level writes are blocked
-        inside the engine (Q4 guard).
+        inside the engine (Q4 guard). The project id the engine evaluates
+        the grant against comes from :meth:`get_authz_project_id` so views
+        whose target project is encoded in the request body can engage the
+        ProjectGrant step (M55 — the v1 asset create path).
         """
         resource_type = getattr(self, "resource_type", None)
         if not resource_type:
@@ -184,7 +205,7 @@ class AIScopeEnforcementMixin:
 
         ctx = AuthzContext(
             workspace_slug=getattr(self, "workspace_slug", None),
-            project_id=getattr(self, "project_id", None),
+            project_id=self.get_authz_project_id(request),
         )
         # Only an update/delete has an existing row to own; read/list/create
         # pass ``None`` (a create produces a row the creator owns by
