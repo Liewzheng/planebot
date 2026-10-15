@@ -772,7 +772,7 @@ class TestAppSideWriteSideStaysDenied:
 
 
 # --------------------------------------------------------------------------- #
-# P1 probe: ``/issues-detail/`` returns 200 for every caller, not 500          #
+# P1 probe: ``/issues-detail/`` smoke                                                #
 # --------------------------------------------------------------------------- #
 
 
@@ -782,11 +782,11 @@ class TestIssuesDetailEndpointSmoke:
     """Smoke checks against ``GET /api/workspaces/<slug>/projects/<pid>/issues-detail/``.
 
     The r2 round shipped a ``NameError`` here (``WorkspaceMember``
-    referenced at ``app/views/issue/base.py:1053`` without an import)
-    that turned every human call into a 500. No test in the file
-    touched this endpoint, so the regression reached the merge gate
-    green. The r3 commit landed the import; these probes exercise the
-    route so a future missing-import regression cannot.
+    referenced without an import) that surfaced as an HTTP 500 on
+    this route. No test in the file touched the endpoint at the time,
+    so the regression reached the merge gate green. The r3 commit
+    landed the import; these probes exercise the route so a future
+    missing-import regression cannot.
 
     The SP probe asserts the deny body (``{"detail": "Authentication
     required."}``) rather than only the status code — that is the
