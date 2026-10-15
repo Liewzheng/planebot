@@ -433,6 +433,86 @@ class GenericAssetEndpoint(BaseAPIView):
 
     use_read_replica = True
 
+    # Cached project id resolved from the POST body for the create path.
+    # Set by ``get_authz_project_id`` on first call so the engine's
+    # ``AuthzContext.project_id`` engages the ProjectGrant step (M55 — the
+    # create URL has no project_id; without this override the engine would
+    # treat the request as workspace-scoped and skip the grant check, so an
+    # SP holding only a workspace-wide ``asset`` scope could create
+    # FileAsset rows bound to any project in the workspace).
+    _AUTHZ_PROJECT_ID_UNSET = object()
+
+    def _resolve_post_body_project_id(self, request):
+        """Project id the posted asset should be bound to, or ``None``.
+
+        Mirrors the resolution the view body performs: when
+        ``entity_type=PAGE_DESCRIPTION`` is set, the page reference wins
+        and the project is derived from the page's ``ProjectPage`` row
+        scoped to the URL's workspace (the body's ``project_id`` is only
+        checked for consistency in the view body). For the plain
+        attachment path (no entity_type) the body's ``project_id`` is
+        the only source. Anything else — workspace-level pages, unknown
+        entity types, missing or malformed identifiers — leaves the asset
+        project-less, so the engine treats the request as workspace-scoped.
+
+        Returns ``None`` (not a string) when nothing resolves so the
+        caller can tell "no project" from "project id could not be
+        parsed". The authz hook returns ``None`` in that case so the
+        engine's existing workspace-scoped branch fires.
+        """
+        entity_type = request.data.get("entity_type")
+        if entity_type == FileAsset.EntityTypeContext.PAGE_DESCRIPTION:
+            entity_identifier = request.data.get("entity_identifier")
+            if not entity_identifier:
+                return None
+            try:
+                page_id = uuid.UUID(str(entity_identifier))
+            except (ValueError, TypeError, AttributeError):
+                return None
+            # Workspace filter keeps the cross-workspace IDOR closed even
+            # if the engine's cross-workspace consistency check later
+            # loosens (defense in depth). The view body's page lookup
+            # also filters by workspace, so the two resolve identically.
+            resolved = (
+                ProjectPage.objects.filter(
+                    page_id=page_id,
+                    workspace__slug=self.kwargs.get("slug"),
+                    deleted_at__isnull=True,
+                )
+                .values_list("project_id", flat=True)
+                .first()
+            )
+            return str(resolved) if resolved else None
+
+        # Plain attachment path — no entity binding, only a body project_id.
+        project_id = request.data.get("project_id")
+        return str(project_id) if project_id else None
+
+    def get_authz_project_id(self, request):
+        """Project id the engine evaluates the ProjectGrant step against.
+
+        Only the create path encodes the project in the request body. For
+        GET/PATCH the engine reads it from the FileAsset row via
+        :attr:`authz_resource_model`, so we fall through to the inherited
+        URL-kwarg resolution — keeping those verbs byte-identical to the
+        pre-M55 behaviour (the confirm PATCH's DENY_GRANT_MISS / 204 path
+        depends on it).
+        """
+        if request.method != "POST":
+            return getattr(self, "project_id", None)
+        # ``request.data`` is parsed lazily by DRF; ``_enforce_sp_permission``
+        # is the first call site that needs the body and it triggers parsing
+        # once. Subsequent lookups during the same request (the view body's
+        # own resolution) share the cached parsed body. The sentinel
+        # distinguishes "not yet resolved" from a legitimate ``None``
+        # (workspace-level page / non-page entity type).
+        sentinel = self._AUTHZ_PROJECT_ID_UNSET
+        cached = getattr(self, "_authz_resolved_project_id", sentinel)
+        if cached is sentinel:
+            cached = self._resolve_post_body_project_id(request)
+            self._authz_resolved_project_id = cached
+        return cached
+
     @asset_docs(
         operation_id="get_generic_asset",
         summary="Get presigned URL for asset download",
