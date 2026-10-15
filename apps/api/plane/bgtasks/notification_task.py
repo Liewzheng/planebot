@@ -187,6 +187,75 @@ def create_mention_notification(project, notification_comment, issue, actor_id, 
     )
 
 
+def _spnotify_cooperator_ids_qs(project_id, issue_id):
+    """The M52 cooperators-arm queryset, lifted out of the task so the
+    contract is testable at the ORM level (the M53 discriminant
+    ``TestSpNotifyCooperatorScopeIsProjectLocal`` drives this in
+    isolation, not through the full notification path).
+
+    Returns the unevaluated ``IssueSubscriber`` queryset carrying both
+    exclusions. The caller wraps it in ``set(...values_list(...))`` to
+    materialize. Tests can inspect ``str(qs.query)`` to verify the SQL
+    shape — the production correctness contract.
+
+    See the block comment at :309-419 for the full rationale; the two
+    exclusions here are:
+
+      1. ``subscriber__is_bot=False`` joins ``users`` (NOT
+         ``workspace_members`` — see the caller-side NOTE), so it
+         excludes bot subscribers from the recipient set (bots have no
+         ``UserNotificationPreference``).
+
+      2. The exclude below is *project-scoped*: a subscriber is dropped
+         only if they have a ``ProjectMember(project_id=THIS,
+         is_active=False, member_id IS NOT NULL, deleted_at IS NULL)``
+         row. A subscriber active in this project with stale inactive
+         rows in some *other* project is NOT dropped. A subscriber with
+         no ``ProjectMember`` row at all is also unaffected — by
+         mission rule "even if not a ProjectMember" they remain a
+         valid cooperator. The ``member__isnull=False`` predicate is
+         the M53 r2 fix: ``ProjectMember.member`` is ``null=True`` and
+         SQL ``NOT IN (…, NULL)`` evaluates to NULL (not TRUE), so a
+         single NULL-member row in the subquery would otherwise null
+         out the entire cooperators arm. The r2 ``EXISTS`` form was
+         immune to this because NULL never equals.
+
+    Implemented as a positive ``NOT IN`` subquery rather than the r2
+    form ``.exclude(member_project__project_id=...,
+    member_project__is_active=False)``. The r2 form would compile to
+    ``NOT (EXISTS(inactive-anywhere) AND EXISTS(row-in-this-project))``
+    — the ``is_active=False`` arm is not project-scoped on its own, so a
+    user with an inactive history elsewhere but an active row here is
+    wrongly dropped (M53 discriminant). The reviewer observed this and
+    marked it "harmless in effect" because the legacy recipient path
+    catches the user in practice; this helper makes the project-scoping
+    explicit so a future regression or migration cannot silently leak
+    the cross-project exclusion into notification delivery.
+    """
+    return (
+        IssueSubscriber.objects.filter(
+            project_id=project_id,
+            issue_id=issue_id,
+            subscriber__is_bot=False,
+        ).exclude(
+            subscriber__in=ProjectMember.objects.filter(
+                project_id=project_id,
+                is_active=False,
+                # SQL NULL guard — see the docstring above.
+                member__isnull=False,
+            ).values("member_id")
+        )
+    )
+
+
+def _spnotify_cooperator_ids_for(project_id, issue_id):
+    """Set form of ``_spnotify_cooperator_ids_qs`` — the production
+    cooperators-arm recipient set. Materialises the queryset and
+    returns the distinct subscriber UUIDs."""
+    qs = _spnotify_cooperator_ids_qs(project_id, issue_id)
+    return set(qs.values_list("subscriber_id", flat=True))
+
+
 @shared_task
 def notifications(
     type,
@@ -324,7 +393,7 @@ def notifications(
             # M52 r1. Two exclusions are required:
             #
             #  1. ``subscriber__is_bot=False`` — bots have no
-            #     ``UserNotificationPreference`` row (``db/models/user.py:299-301``
+            #     ``UserNotificationPreference`` row (``db/models/user.py:298-301``
             #     skips ``is_bot=True`` at the post_save signal), so the loop's
             #     preference lookup below would raise ``DoesNotExist`` and the
             #     task's catch-all at :667-669 would silently abort before
@@ -337,7 +406,16 @@ def notifications(
             #     so an IssueSubscriber row whose subscriber is *another* SP's
             #     bot is in scope here. Hard exclude.
             #
-            #  2. ``exclude(..., subscriber__member_project__is_active=False)``
+            #     What this *does not* do: it does not exclude users who lack a
+            #     ``WorkspaceMember`` row. ``is_bot`` is a column on ``users``,
+            #     so the filter joins ``users`` (``INNER JOIN "users" ON
+            #     ("issue_subscribers"."subscriber_id" = "users"."id")``), not
+            #     ``workspace_members``. A subscriber who is a human with no
+            #     ``WorkspaceMember`` row stays in scope — that is intended, per
+            #     the mission rule "even if not a ProjectMember / WorkspaceMember".
+            #
+            #  2. ``exclude(subscriber__in=ProjectMember.objects.filter(
+            #     project_id=project_id, is_active=False).values("member_id"))``
             #     — content-leak guard for the *cooperator* arm. Removing a
             #     project member only flips ``is_active=False``
             #     (``app/views/project/member.py:319-320``) and never deletes the
@@ -351,7 +429,11 @@ def notifications(
             #     "even if not a ProjectMember"); a cooperator with an *inactive*
             #     ``ProjectMember`` for this project is dropped. The narrowing
             #     preserves the original intersect's intent (active project
-            #     membership) without re-imposing it on never-members.
+            #     membership in *this* project) without re-imposing it on
+            #     never-members. The membership check is project-scoped — a user
+            #     with an inactive ``ProjectMember`` row in some *other* project
+            #     but an active row here is a valid recipient and is NOT
+            #     dropped.
             #
             # The notification *content* is unchanged: ``triggered_by_id`` stays the
             # bot (M39/M41/M47 wired that on the write side), and the activity data
@@ -385,20 +467,8 @@ def notifications(
                     ).values_list("member_id", flat=True)
                 )
 
-                _spnotify_cooperator_ids = set(
-                    IssueSubscriber.objects.filter(
-                        project_id=project_id, issue_id=issue_id,
-                        # See the block comment above for the two-fold rationale.
-                        subscriber__is_bot=False,
-                    ).exclude(
-                        # Exclude ex-project-members (had a ProjectMember row,
-                        # is_active flipped to False by the removal endpoint).
-                        # A user with NO ProjectMember row at all is unaffected
-                        # by this exclude — that is intentional and matches the
-                        # mission rule "even if not a ProjectMember".
-                        subscriber__member_project__project_id=project_id,
-                        subscriber__member_project__is_active=False,
-                    ).values_list("subscriber_id", flat=True)
+                _spnotify_cooperator_ids = _spnotify_cooperator_ids_for(
+                    project_id, issue_id
                 )
 
                 _spnotify_extension_uuids = (
