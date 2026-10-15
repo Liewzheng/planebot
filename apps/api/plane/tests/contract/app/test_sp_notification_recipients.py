@@ -26,44 +26,17 @@ recipient is not a ``ProjectMember`` and has not subscribed to the issue:
 The widening is gated on the actor being a bot — human-actor writes keep the
 legacy recipient path byte-for-byte. That is the human-path control test below.
 
-The thirteen tests in this file are paired with the M52/M53 diff in
-``plane/bgtasks/notification_task.py``. Each clause is pinned by one or
-two tests (counted below); the M53 additions cover the bug-classes the
-original test set missed, **plus** the M53 r2 row-counted second
-delta (soft-delete propagation, P3-2) and the SQL NULL trap fix
-(P2-1). The revert recipe is captured in the report (all numbers
-measured at M53 r2):
-
-  - reverting *both* M52 cooperators-filter exclusions (the bot guard
-    and the project-membership guard together) flips **three** tests
-    red (the two ``TestSpNotifyCooperatorFilterRegression`` tests and
-    ``test_cooperators_queryset_excludes_only_project_local_inactive``).
-    "Six" — the count in the prior version of this header — is the
-    number of reds when *the whole M52 block* is disabled (``_spnotify_
-    extend=False``), which is a different revert.
-  - reverting *just* the project-membership guard flips **two** tests
-    red: ``test_sp_create_excludes_ex_project_member_cooperator`` AND
-    ``test_cooperators_queryset_excludes_only_project_local_inactive``
-    (both pin the same ORM-level clause).
-  - reverting *just* the bot guard flips **one** test red:
-    ``test_sp_create_with_other_sp_bot_subscriber_still_notifies_human_
-    cooperator`` (the ``DoesNotExist`` cascade hits its single
-    discriminator subscriber).
-  - reverting *just* the missing-preference tolerance flips **one**
-    test red:
-    ``test_sp_create_tolerates_missing_notification_preference``
-    (every recipient silently loses its notification).
-  - reverting the M53 helper back to the r2 ``.exclude(...)`` shape
-    (or any other ``NOT (EXISTS(a) AND EXISTS(b))`` form that is not
-    project-scoped on the ``is_active=False`` arm) flips **one** test
-    red: ``test_cooperators_queryset_excludes_only_project_local_
-    inactive``; the user-facing test
-    ``test_sp_create_with_inactive_membership_in_other_project_still_
-    notifies_cooperator`` stays green through legacy, which is the
-    reviewer's "harmless in effect" finding.
-  - reverting the M53 r2 ``member__isnull=False`` NULL guard flips
-    **one** test red:
-    ``test_cooperators_queryset_survives_null_member_row``.
+The tests in this file are paired with the M52/M53 diff in
+``plane/bgtasks/notification_task.py``. Each clause is pinned by one
+or more tests; the per-test docstrings below say *what* each test
+pins and *which* revert flips it red, without claim to any specific
+red/green count — re-running the file after a code change is the only
+way to know how many tests fail, because every addition changes both
+sides. The M53 additions cover the bug-classes the original test set
+missed (cross-project inactive history, missing preference rows),
+plus the M53 r2 row-counted second delta (soft-delete propagation,
+P3-2) and the SQL NULL trap fix (P2-1). The revert recipes are kept
+below as commands, not as counts.
 
 Discriminator mechanics per test:
 
@@ -123,9 +96,14 @@ Discriminator mechanics per test:
   project with an inactive row in *another* project gets wrongly dropped
   from the cooperators queryset. Post-M53 the exclude is rewritten as
   ``.exclude(subscriber__in=ProjectMember.objects.filter(
-  project_id=THIS, is_active=False).values("member_id"))``, a single
-  project-scoped subquery. The test asserts both the helper output and
-  the compiled SQL shape; the user-facing discrimination path is
+  project_id=THIS, is_active=False, member__isnull=False
+  ).values("member_id"))``, a single project-scoped subquery (the
+  ``member__isnull=False`` predicate is the M53 r2 SQL NULL guard
+  added so a single ``member=NULL`` row does not collapse the helper
+  output to the empty set — see the
+  ``TestSpNotifyCooperatorNullGuard`` class for the regression test).
+  The test asserts both the helper output and the compiled SQL shape;
+  the user-facing discrimination path is
   ``test_sp_create_with_inactive_membership_in_other_project_still_
   notifies_cooperator``.
 * ``test_sp_create_with_inactive_membership_in_other_project_still_
@@ -137,8 +115,7 @@ Discriminator mechanics per test:
 * ``test_sp_create_tolerates_missing_notification_preference`` — **M53
   regression guard** for the missing-preference tolerance. Reverting
   *just* the tolerance (keeping the bot guard intact) flips this test
-  red while leaving the other ten tests green — so this is the only
-  test that pins the load-bearing role of the unsaved fallback
+  to red. It pins the load-bearing role of the unsaved fallback
   ``UserNotificationPreference`` instance.
 
 Each red-before/green-after pair is recorded by reverting only the named
@@ -749,36 +726,39 @@ class TestSpNotifyNoDuplicates:
 #
 # The two regressions are pinned by the tests below, *separately*: each
 # clause of the cooperators exclude is its own discriminator. The M53
-# ORM-level tests (in ``TestSpNotifyCooperatorScopeIsProjectLocal`` and
-# ``TestSpNotifyCooperatorNullGuard``) also touch the project-
-# membership guard, so that clause is now pinned by *two* tests, not
-# one — corrected at M53 r2.
+# ORM-level tests (``TestSpNotifyCooperatorScopeIsProjectLocal`` and
+# ``TestSpNotifyCooperatorNullGuard``) also exercise the project-
+# membership clause, so that clause ends up pinned at more than one
+# observability level (the M52 ex-member end-to-end regression and the
+# M53 r1 ORM discriminator cover the same predicate at different
+# layers; the M53 r2 NULL guard is a separate clause).
 #
 #   * ``test_sp_create_with_other_sp_bot_subscriber_still_notifies_human_
 #     cooperator`` pins the bot guard (``subscriber__is_bot=False``).
-#     Reverting *only* the bot guard flips this test red with
-#     ``DoesNotExist`` in the log; reverting *only* the
-#     project-membership guard does not flip it.
+#     Reverting *only* the bot guard flips this test red; the failing
+#     assertion is ``other_sp_bot.pk not in receivers`` — the bot is
+#     now admitted to the cooperators set, the loop builds a fallback
+#     preference for it (no ``UserNotificationPreference`` row for
+#     bots), a ``Notification`` is created, and the assertion that
+#     expects the bot to be absent fires. Reverting *only* the
+#     project-membership guard does not flip this test.
 #
 #   * ``test_sp_create_excludes_ex_project_member_cooperator`` AND
 #     ``test_cooperators_queryset_excludes_only_project_local_inactive``
 #     both pin the project-membership guard
 #     (``.exclude(member_project__project_id=...,
 #     member_project__is_active=False)``/M53 helper). Reverting *only*
-#     that exclusion flips **both** tests red; reverting *only* the
-#     bot guard does not.
+#     that exclusion flips those tests red; reverting *only* the bot
+#     guard does not.
 #
 #   * ``test_cooperators_queryset_survives_null_member_row`` pins the
 #     M53 r2 ``member__isnull=False`` NULL guard. Reverting *only* that
-#     predicate flips this test red and leaves the others green.
+#     predicate flips this test red.
 #
 # The M53 r2 reviewer's note 3 corrected the earlier claim that
 # "Reverting either cooperators filter flips both tests to red" — that
-# was wrong. Each test pins one clause; the project-membership guard
-# happens to be pinned twice now because the M53 ORM discriminator and
-# the M52 ex-member regression cover the same clause at different
-# observability levels. The M53 tolerance test pins the missing-
-# preference fallback in a separate class.
+# was wrong. The missing-preference fallback is pinned separately by
+# ``TestSpNotifyPreferenceTolerance``.
 
 
 @pytest.fixture
@@ -1608,9 +1588,8 @@ class TestSpNotifyPreferenceTolerance:
         subscriber.
 
         Discrimination: reverting just the tolerance (keeping
-        ``subscriber__is_bot=False`` intact) flips this test to red
-        while leaving the other seven tests green — so this is the only
-        test that pins the load-bearing role of the fallback.
+        ``subscriber__is_bot=False`` intact) flips this test to red.
+        It pins the load-bearing role of the fallback.
         """
         issue = _make_issue(project_in_ws, ws_owned, bot)
         # The user whose preference row was deleted above — the
