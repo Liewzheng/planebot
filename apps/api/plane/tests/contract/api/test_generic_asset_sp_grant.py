@@ -317,6 +317,14 @@ class TestSPGenericAssetCreateEnforcesGrant:
         finally:
             patcher.stop()
 
+        # Storage assertion runs FIRST so it is the line that fails on
+        # the unfixed tree (where the handler does call
+        # generate_presigned_post once before the engine denies later
+        # in a different code path). On the fixed tree this is 0 and
+        # the test proceeds; on the unfixed tree the assertion is the
+        # one that catches the live defect.
+        _assert_no_presign_calls(storage_cls)
+
         assert response.status_code == status.HTTP_403_FORBIDDEN, (
             f"Expected 403 from authorize(), got {response.status_code} "
             f"body={response.json()!r}"
@@ -337,10 +345,6 @@ class TestSPGenericAssetCreateEnforcesGrant:
         )
         # And no row was bound to the target project.
         assert FileAsset.objects.filter(project=target_project).count() == 0
-        # And no presign was issued — assertion runs AFTER the patch
-        # context exits so a failing assert doesn't OOM pytest 9.0.3's
-        # traceback renderer (r2 reviewer warning).
-        _assert_no_presign_calls(storage_cls)
 
     def test_granted_sp_page_image_create_allows(
         self, workspace, create_user, target_project, target_page, spv1_client
@@ -414,6 +418,11 @@ class TestSPGenericAssetCreateEnforcesGrant:
         finally:
             patcher.stop()
 
+        # See note on the page-image test above — storage assertion
+        # runs first so it catches the unfixed tree on the presign call
+        # (1) rather than the 200 status.
+        _assert_no_presign_calls(storage_cls)
+
         _assert_chain_deny(
             response,
             "has no active grant for project",
@@ -421,7 +430,6 @@ class TestSPGenericAssetCreateEnforcesGrant:
         assert (
             FileAsset.objects.filter(workspace=workspace).count() == before_count
         ), "Plain-attachment create must not leave a FileAsset row."
-        _assert_no_presign_calls(storage_cls)
 
     def test_granted_sp_plain_attachment_create_allows(
         self, workspace, create_user, target_project, spv1_client
@@ -670,6 +678,10 @@ class TestSPGenericAssetReadEnforcesGrant:
         finally:
             patcher.stop()
 
+        # See note on the create test above — storage assertion runs
+        # first so it catches the unfixed tree on the presign call.
+        _assert_no_presign_calls(storage_cls)
+
         _assert_chain_deny(
             response,
             "has no active grant for project",
@@ -680,7 +692,6 @@ class TestSPGenericAssetReadEnforcesGrant:
         assert project_bound_asset.is_uploaded is True, (
             "An ungranted SP GET must not mutate the asset row."
         )
-        _assert_no_presign_calls(storage_cls)
 
     def test_ungranted_sp_get_with_asset_read_scope_denies(
         self, workspace, create_user, target_project, project_bound_asset, spv1_client
@@ -709,11 +720,12 @@ class TestSPGenericAssetReadEnforcesGrant:
         finally:
             patcher.stop()
 
+        _assert_no_presign_calls(storage_cls)
+
         _assert_chain_deny(
             response,
             "has no active grant for project",
         )
-        _assert_no_presign_calls(storage_cls)
 
     def test_granted_sp_get_on_project_bound_asset_allows(
         self, workspace, create_user, target_project, project_bound_asset, spv1_client
@@ -988,6 +1000,10 @@ class TestSPProjectScopedScopeShape:
         finally:
             patcher.stop()
 
+        # See note on the r1 create test above — storage assertion
+        # runs first so it catches the unfixed tree on the presign call.
+        _assert_no_presign_calls(storage_cls)
+
         _assert_chain_deny(
             response,
             "has no active grant for project",
@@ -995,7 +1011,6 @@ class TestSPProjectScopedScopeShape:
         assert (
             FileAsset.objects.filter(workspace=workspace).count() == before_count
         )
-        _assert_no_presign_calls(storage_cls)
 
     def test_project_scoped_scope_sp_with_grant_can_read(
         self,
@@ -1083,8 +1098,9 @@ class TestSPProjectScopedScopeShape:
         finally:
             patcher.stop()
 
+        _assert_no_presign_calls(storage_cls)
+
         _assert_chain_deny(
             response,
             "lacks scope for read asset",
         )
-        _assert_no_presign_calls(storage_cls)
