@@ -60,9 +60,15 @@ Implementation notes
 * Uses ``apps.get_model`` for historical-model access, so makemigrations
   does not need a current model import (the prior breakage mode).
 * Runs as a single ``UPDATE ... FROM workspace`` subquery rather than a
-  per-page ``save()``: the production footprint is 73 rows, the test
-  fixture can be larger, and a per-row save would fire the model's
-  ``save()`` and recompute ``description_stripped``.
+  per-page ``save()``: the production footprint is **142 rows (73 live
+  + 69 soft-deleted)**, the test fixture can be larger, and a per-row
+  save would fire the model's ``save()`` and recompute
+  ``description_stripped``.
+* The historical model drops ``SoftDeletionManager`` from the migration
+  state (``SoftDeletionManager.use_in_migrations is False``), so
+  ``Page.objects.filter(...)`` is unfiltered and reaches soft-deleted
+  rows too — which is the right call: a restored page must not come
+  back bot-owned. Production numbers above already split the two cases.
 """
 
 from django.db import migrations
