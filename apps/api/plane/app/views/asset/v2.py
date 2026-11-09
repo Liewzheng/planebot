@@ -20,6 +20,8 @@ from rest_framework.permissions import AllowAny
 # Module imports
 from ..base import BaseAPIView
 from plane.db.models import FileAsset, Workspace, Project, User, WorkspaceMember, ProjectMember
+from plane.db.models.test_case import TestRunCase, TestRunStepRecord
+from plane.db.testcase_validity import RUN_STATUS_COMPLETED
 from plane.settings.storage import S3Storage
 from plane.app.permissions import allow_permission, ROLE
 from plane.utils.cache import invalidate_cache_directly
@@ -242,7 +244,71 @@ class WorkspaceFileAssetEndpoint(BaseAPIView):
         # Mermaid diagrams are scoped to a project for access control
         if entity_type == FileAsset.EntityTypeContext.MERMAID_DIAGRAM:
             return {"project_id": entity_id}
+
+        # The files of a test run hang on the record they belong to:
+        # the measured value of one step or the evidence of one case.
+        if entity_type == FileAsset.EntityTypeContext.TEST_RUN_STEP_RECORD:
+            return {"test_run_step_record_id": entity_id}
+
+        if entity_type == FileAsset.EntityTypeContext.TEST_RUN_CASE_EVIDENCE:
+            return {"test_run_case_id": entity_id}
+
         return {}
+
+    def get_test_run_record(self, entity_type, entity_id):
+        """The record an asset of a test-run entity type hangs on.
+
+        ``None`` for every other entity type — those are not bound to a
+        record of a batch.
+        """
+        if entity_type == FileAsset.EntityTypeContext.TEST_RUN_STEP_RECORD:
+            return (
+                TestRunStepRecord.objects.filter(pk=entity_id)
+                .select_related("test_run_case__test_run")
+                .first()
+            )
+        if entity_type == FileAsset.EntityTypeContext.TEST_RUN_CASE_EVIDENCE:
+            return (
+                TestRunCase.objects.filter(pk=entity_id).select_related("test_run").first()
+            )
+        return None
+
+    def get_entity_project_id(self, entity_type, entity_identifier):
+        """The project an asset of this entity type belongs to.
+
+        An asset with ``project_id is None`` is readable by every member
+        of the workspace. The files of a test run belong to the project
+        of the record they hang on, so the project is resolved here.
+        """
+        record = self.get_test_run_record(entity_type, entity_identifier)
+        if record is None:
+            return None
+        return record.project_id
+
+    def get_test_run_status(self, record):
+        """The status of the batch a record of a test run belongs to."""
+        if record is None:
+            return None
+        if isinstance(record, TestRunStepRecord):
+            return record.test_run_case.test_run.status
+        return record.test_run.status
+
+    def get_asset_test_run_status(self, asset):
+        """The status of the batch an asset belongs to, or ``None``."""
+        if asset.test_run_case_id:
+            return (
+                TestRunCase.objects.filter(pk=asset.test_run_case_id)
+                .values_list("test_run__status", flat=True)
+                .first()
+            )
+        if asset.test_run_step_record_id:
+            return (
+                TestRunStepRecord.objects.filter(pk=asset.test_run_step_record_id)
+                .values_list("test_run_case__test_run__status", flat=True)
+                .first()
+            )
+        return None
+
 
     def asset_delete(self, asset_id):
         asset = FileAsset.objects.filter(id=asset_id).first()
@@ -404,6 +470,27 @@ class WorkspaceFileAssetEndpoint(BaseAPIView):
         # Get the workspace
         workspace = Workspace.objects.get(slug=slug)
 
+        # The files of a test run hang on a record of the batch. The
+        # record decides the project of the file (an asset without a
+        # project is readable by every member of the workspace), and a
+        # completed batch is frozen — the verdict of a finished batch
+        # may not change any more.
+        if entity_type in (
+            FileAsset.EntityTypeContext.TEST_RUN_STEP_RECORD,
+            FileAsset.EntityTypeContext.TEST_RUN_CASE_EVIDENCE,
+        ):
+            test_run_record = self.get_test_run_record(entity_type, entity_identifier)
+            if test_run_record is None or test_run_record.workspace_id != workspace.id:
+                return Response(
+                    {"error": "The requested record could not be found.", "status": False},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            if self.get_test_run_status(test_run_record) == RUN_STATUS_COMPLETED:
+                return Response(
+                    {"error": "A completed batch is frozen.", "status": False},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
         # asset key
         asset_key = f"{workspace.id}/{uuid.uuid4().hex}-{name}"
 
@@ -420,6 +507,9 @@ class WorkspaceFileAssetEndpoint(BaseAPIView):
             workspace=workspace,
             created_by=actor_for_request(request),
             entity_type=entity_type,
+            project_id=self.get_entity_project_id(
+                entity_type=entity_type, entity_identifier=entity_identifier
+            ),
             **self.get_entity_id_field(entity_type=entity_type, entity_id=entity_identifier),
         )
 
@@ -474,6 +564,15 @@ class WorkspaceFileAssetEndpoint(BaseAPIView):
                 {"error": "You don't have access to this asset."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        # A completed batch is frozen: the files of its records are part
+        # of the verdict and may not disappear afterwards. The db layer
+        # has no freeze guard on FileAsset, so the API is the place that
+        # keeps the verdict of a finished batch stable.
+        if self.get_asset_test_run_status(asset) == RUN_STATUS_COMPLETED:
+            return Response(
+                {"error": "A completed batch is frozen.", "status": False},
+                status=status.HTTP_409_CONFLICT,
+            )
         asset.is_deleted = True
         asset.deleted_at = timezone.now()
         # get the entity and save the asset id for the request field
@@ -501,10 +600,17 @@ class WorkspaceFileAssetEndpoint(BaseAPIView):
 
         # Get the presigned URL
         storage = S3Storage(request=request)
-        # Mermaid diagrams are generated by our own renderer and are safe to display inline
+        # Mermaid diagrams are generated by our own renderer and are safe to display inline.
+        # The files of a test run are screenshots of what the tester saw
+        # — they are rendered in the report, not downloaded.
         disposition = (
             "inline"
-            if asset.entity_type == FileAsset.EntityTypeContext.MERMAID_DIAGRAM
+            if asset.entity_type
+            in (
+                FileAsset.EntityTypeContext.MERMAID_DIAGRAM,
+                FileAsset.EntityTypeContext.TEST_RUN_STEP_RECORD,
+                FileAsset.EntityTypeContext.TEST_RUN_CASE_EVIDENCE,
+            )
             else "attachment"
         )
         # Generate a presigned URL to share an S3 object

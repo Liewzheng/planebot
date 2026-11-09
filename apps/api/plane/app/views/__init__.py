@@ -84,6 +84,22 @@ from .workspace.quick_link import QuickLinkViewSet
 from .workspace.sticky import WorkspaceStickyViewSet
 
 from .state.base import StateViewSet, IntakeStateEndpoint
+from .test_case import (
+    TestCaseIssueDetailEndpoint,
+    TestCaseIssueEndpoint,
+    TestCaseModuleEndpoint,
+    TestCaseStepEndpoint,
+    TestCaseViewSet,
+)
+from .test_run import (
+    TestRunAttachmentEndpoint,
+    TestRunCaseDetailEndpoint,
+    TestRunCaseEndpoint,
+    TestRunFinalizeEndpoint,
+    TestRunStepAttachmentEndpoint,
+    TestRunStepRecordEndpoint,
+    TestRunViewSet,
+)
 from .view.base import (
     WorkspaceViewViewSet,
     WorkspaceViewIssuesViewSet,

@@ -99,14 +99,23 @@ def _authorize_sp(
     slug: str | None,
     project_id: str | None,
     sp_fallback: bool,
+    action: str | None = None,
+    resource: object | None = None,
 ):
     """Run :func:`authorize` for an SP and short-circuit on deny.
 
     The endpoint must declare ``resource_type`` for an SP to reach this
     branch — without it we cannot pick the action-required-role floor so
-    we deny. The action comes from the HTTP verb; project_id is taken
-    from the URL kwargs when the endpoint is project-scoped (``level``
-    or an explicit project id in kwargs).
+    we deny. The action comes from the HTTP verb unless the endpoint
+    declares one explicitly (``action``); project_id is taken from the URL
+    kwargs when the endpoint is project-scoped (``level`` or an explicit
+    project id in kwargs).
+
+    ``resource`` is the row the action acts on. The engine's
+    per-resource ownership step (M40) compares the row's creator with the
+    SP's bot user, and the row's ``project_id`` is what the grant step
+    anchors on. A member-tier SP may therefore only write the rows it
+    created itself.
 
     When ``sp_fallback`` is True, an SP token without resource_type is
     allowed through (the dispatch endpoint is this shape — it's the
@@ -132,13 +141,14 @@ def _authorize_sp(
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    action = _method_to_action(method)
+    effective_action = action or _method_to_action(method)
     ctx = AuthzContext(workspace_slug=slug, project_id=project_id)
     try:
         decision = authorize(
             principal,
-            action,
+            effective_action,
             resource_type,
+            resource=resource,
             ctx=ctx,
         )
     except Exception:
@@ -160,6 +170,9 @@ def allow_permission(
     model=None,
     resource_type: str | None = None,
     sp_fallback: bool = False,
+    action: str | None = None,
+    resource_model=None,
+    resource_lookup: str = "pk",
 ):
     """Decorate a method to gate it on role membership (humans) or on
     :func:`plane.core.authz.authorize` (service principals).
@@ -178,6 +191,21 @@ def allow_permission(
         sp_fallback: When True, an SP request without ``resource_type``
             still passes. Used by meta endpoints that don't fit a single
             resource type (e.g. principal dispatch).
+        action: Optional explicit authz action for the SP path. The
+            default derives it from the HTTP verb. An endpoint whose verb
+            does not describe the write it performs (a ``POST`` that
+            replaces the step table of a case, say) declares the action
+            it really is.
+        resource_model: Optional model of the row the action acts on. The
+            row is loaded from the URL kwarg named by ``resource_lookup``
+            and handed to :func:`authorize`, so the engine's per-resource
+            ownership step applies: a member-tier service principal may
+            only write the rows its own bot user created. Left ``None``
+            the row is unknown and a member-tier write is denied
+            (fail-closed), which is the behaviour of every endpoint that
+            does not declare it.
+        resource_lookup: The URL kwarg carrying the row id. Defaults to
+            ``pk``.
     """
 
     def decorator(view_func):
@@ -189,6 +217,15 @@ def allow_permission(
             if isinstance(principal, ServicePrincipalAuthz):
                 slug = kwargs.get("slug")
                 project_id = kwargs.get("project_id")
+                effective_action = action or _method_to_action(request.method)
+                resource = None
+                if resource_model is not None and effective_action in (
+                    AuthzAction.UPDATE,
+                    AuthzAction.DELETE,
+                ):
+                    row_id = kwargs.get(resource_lookup)
+                    if row_id:
+                        resource = resource_model.objects.filter(pk=row_id).first()
                 resp = _authorize_sp(
                     principal,
                     level=level,
@@ -197,6 +234,8 @@ def allow_permission(
                     slug=slug,
                     project_id=project_id,
                     sp_fallback=sp_fallback,
+                    action=effective_action,
+                    resource=resource,
                 )
                 if resp is not None:
                     return resp
