@@ -30,12 +30,15 @@ Markdown and attachments
 ------------------------
 The measured value of a step and the evidence of a case are stored as the
 **Markdown source** that was typed — no HTML conversion, no stripping of
-the markup. The rules read that source with a **parser** (mistune, the
-same CommonMark the front end renders this field with), so what the
-tester sees is what the rules judge:
+the markup. The rules read that source with a **parser** (mistune), so
+what the tester sees is what the rules judge — with one difference to
+the renderer of this field, spelled out below:
 
 * the markup is removed before the value is judged, so ``**不一致**`` and
   ``<b>正常</b>`` are judged as ``不一致`` and ``正常``;
+* the **HTML entities** of a text node are decoded (``&amp;`` reads as
+  ``&``), the way the renderer decodes them. The decoding happens after
+  the parse, so a decoded ``&lt;img&gt;`` stays text;
 * **an image contributes no text of its own — not even its alt text.**
   ``![alt](url)`` is a picture and not a sentence, in every shape it can
   be written (inline, in the reference style, with balanced parentheses
@@ -50,10 +53,21 @@ tester sees is what the rules judge:
   value — the screenshot of the screen is what the tester saw. How many
   files are attached comes in through the dataclasses
   (``attachment_count`` and ``evidence_attachment_count``).
+
+The one difference to the renderer
+----------------------------------
+The parser carries the **GFM strikethrough extension**: ``~~ok~~`` is
+read as ``ok`` and is rejected as an evaluation word. The renderer of
+this field (``react-markdown`` in
+``apps/web/core/components/ui/markdown-to-component.tsx``) has no
+``remark-gfm`` yet, so it still shows the tildes. The web layer has to
+enable remark-gfm, otherwise the rules judge a value the renderer shows
+verbatim.
 """
 
 from dataclasses import dataclass
 from datetime import date
+import html
 import re
 
 # Third party imports
@@ -203,12 +217,14 @@ REASON_MESSAGES = {
 # Markdown
 # --------------------------------------------------------------------------- #
 
-#: The parser. mistune reads the value with CommonMark — the standard
-#: the front end renders this field with — so the rules and the
-#: rendered form agree: what the tester sees is what the rules judge.
+#: The parser. mistune reads the value with CommonMark plus the GFM
+#: strikethrough extension, so the rules judge what the tester sees —
+#: with one exception: the renderer of this field has no remark-gfm yet
+#: (see the module docstring), so ``~~ok~~`` is still shown verbatim
+#: there while the rules read it as ``ok``.
 #:
-#: The strikethrough plugin is on: a judgement word is a judgement word
-#: however it is marked, and the source is stored as it was typed.
+#: The strikethrough extension is on: a judgement word is a judgement
+#: word however it is marked, and the source is stored as it was typed.
 _MARKDOWN_PARSER = mistune.create_markdown(renderer="ast", plugins=["strikethrough"])
 
 #: The shapes the tower ruled to be images although CommonMark does not
@@ -217,19 +233,26 @@ _MARKDOWN_PARSER = mistune.create_markdown(renderer="ast", plugins=["strikethrou
 #: * ``![](Screenshot (1).png)`` — a destination with a space in it;
 #: * ``![](a.png`` — a destination that was never closed;
 #: * ``![alt][ref]`` — a reference-style image whose definition is
-#:   missing.
+#:   missing. (Its collapsed sibling ``![alt][]`` is caught by the same
+#:   pattern, while the shortcut form ``![alt]`` stays literal text —
+#:   the ruling names the full form only.)
 #:
 #: CommonMark reads all three as literal text, so the parser leaves them
 #: in the text; they are taken out here. This is the only place where
 #: the rules look at the source with a pattern instead of with the
 #: parse — and it never looks inside a code span, whose content is a
 #: quotation.
+#:
+#: A malformed image takes only itself: the token ends at the first
+#: blank, so the words behind it stay text ("``![](a.png error 42``"
+#: keeps "error 42").
 _LOOSE_IMAGE_RE = re.compile(
     # an inline image, closed — the destination may hold spaces and
     # balanced parentheses
     r"!\[[^\]\n]*\]\((?:[^()\n]|\([^()\n]*\))*\)"
-    # an inline image that was never closed
-    r"|!\[[^\]\n]*\]\([^)\n]*"
+    # an inline image that was never closed — the malformed token ends
+    # at the first blank
+    r"|!\[[^\]\n]*\]\([^)\s\n]*"
     # a reference-style image
     r"|!\[[^\]\n]*\]\[[^\]\n]*\]"
 )
@@ -261,7 +284,12 @@ def _collect_markdown(node: dict) -> tuple[str, bool]:
     node_type = node.get("type")
 
     if node_type == "text":
-        return _strip_loose_images(node.get("raw", ""))
+        raw = node.get("raw", "")
+        text, has_image = _strip_loose_images(raw)
+        # The entities are decoded **after** the parse, never before: a
+        # decoded ``&lt;img&gt;`` is text, not markup. The content of a
+        # code span is literal and keeps its entities.
+        return html.unescape(text), has_image
 
     if node_type in ("codespan", "block_code"):
         # The content of a code span is literal text: no markup inside

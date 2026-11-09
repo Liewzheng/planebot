@@ -174,6 +174,9 @@ PARITY_CASES = [
     ("![shot][img]\n\n[img]: https://files.test/shot.png", "", False, True, True),
     ("[log]: http://x.test", "", False, False, False),
     ("`![](x.png)`", "![](x.png)", True, False, False),
+    ("![](a.png error 42", "error 42", True, True, False),
+    # the image is taken out of the text and leaves a blank behind it
+    ("the marker ![x](y after the marker", "the marker   after the marker", True, True, False),
 ]
 
 
@@ -602,6 +605,68 @@ class TestCodeSpans:
             )
         )
         assert "step_1:" + ACTUAL_VALUE_IS_EVALUATION not in reasons
+
+
+class TestLooseFallback:
+    """A malformed image takes only itself.
+
+    The fallback takes the image out of the text — the words behind a
+    malformed image are the tester's words and stay text.
+    """
+
+    def test_the_words_after_a_malformed_image_stay_text(self):
+        assert markdown_text("![](a.png error 42").strip() == "error 42"
+        assert is_filled_markdown("![](a.png error 42") is True
+
+    def test_the_words_after_a_malformed_image_stay_text_in_a_sentence(self):
+        # the image is taken out of the text and leaves a blank behind it
+        assert markdown_text("the marker ![x](y after the marker") == "the marker   after the marker"
+        assert is_filled_markdown("the marker ![x](y after the marker") is True
+
+    def test_a_failed_step_with_words_after_a_malformed_image_is_accepted(self):
+        """The tester wrote "error 42" — the rule may not call that
+        "not measured"."""
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value="![](a.png error 42"),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert reasons == []
+
+    def test_a_pure_malformed_image_is_still_an_image(self):
+        """The words are kept — the image is still taken out."""
+        assert markdown_text("![](https://files.test/shot.png").strip() == ""
+        assert contains_image("![](https://files.test/shot.png") is True
+
+
+class TestHtmlEntities:
+    """The entities of a text node are decoded — after the parse."""
+
+    def test_an_evaluation_written_as_entities_is_rejected(self):
+        assert markdown_text("&#x4E0D;&#x4E00;&#x81F4;") == "不一致"
+        assert is_evaluation_phrase("&#x4E0D;&#x4E00;&#x81F4;") is True
+
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value="&#x4E0D;&#x4E00;&#x81F4;"),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert "step_1:" + ACTUAL_VALUE_IS_EVALUATION in reasons
+
+    def test_an_entity_is_read_as_the_character(self):
+        assert markdown_text("&amp;") == "&"
+
+    def test_a_decoded_entity_is_still_text(self):
+        """The entities are decoded after the parse, never before: a
+        decoded ``&lt;img&gt;`` is text, not markup."""
+        assert markdown_text("&lt;img&gt;") == "<img>"
+        assert contains_image("&lt;img&gt;") is False
+
+    def test_the_content_of_a_code_span_keeps_its_entities(self):
+        """A code span is literal — its entities are literal too."""
+        assert markdown_text("`&amp;`") == "&amp;"
 
 
 class TestEmphasis:
