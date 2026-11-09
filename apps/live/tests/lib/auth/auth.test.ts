@@ -6,6 +6,26 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// `@/env` validates required env vars at module load. Mock it so the
+// test can import the auth module without a full `.env` in place.
+vi.mock("@/env", () => ({
+  env: {
+    APP_VERSION: "1.0.0",
+    HOSTNAME: "test",
+    PORT: "3000",
+    API_BASE_URL: "http://localhost:8000",
+    CORS_ALLOWED_ORIGINS: "",
+    LIVE_BASE_PATH: "/live",
+    COMPRESSION_LEVEL: 6,
+    COMPRESSION_THRESHOLD: 5000,
+    LIVE_SERVER_SECRET_KEY: "test-secret",
+    LIVE_INTERNAL_API_KEY: "",
+    REDIS_HOST: undefined,
+    REDIS_PORT: 6379,
+    REDIS_URL: undefined,
+  },
+}));
+
 // Mock the UserService (legacy cookie path) before the module is
 // imported.  The SP path doesn't go through it, so the mock only
 // needs to satisfy the JSON-token branch.

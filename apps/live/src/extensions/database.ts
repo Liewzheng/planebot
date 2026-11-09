@@ -15,8 +15,10 @@ import type { TDocumentPayload } from "@plane/types";
 import { logger } from "@plane/logger";
 // lib
 import { AppError } from "@/lib/errors";
+import { assertIssueEventsChannelAccess } from "@/lib/issue-events-auth";
 // services
 import { getPageService } from "@/services/page/handler";
+import { ISSUE_EVENTS_DOCUMENT_PREFIX } from "@/services/issue-events.service";
 // type
 import type { FetchPayloadWithContext, StorePayloadWithContext } from "@/types";
 import { ForceCloseReason, CloseCode } from "@/types/admin-commands";
@@ -33,13 +35,16 @@ import { detectDocumentDuplication } from "@/utils/document-duplication";
 // force close utility
 import { forceCloseDocumentAcrossServers } from "./force-close-handler";
 
-const ISSUE_EVENTS_DOCUMENT_PREFIX = "issue-events:";
-
 // Exported so the store path can be exercised from tests and so Hocuspocus
 // can reference them from the Database extension below.
 export const fetchDocument = async ({ context, documentName: pageId, instance }: FetchPayloadWithContext) => {
   // issue-events documents are ephemeral broadcast channels without any persisted content
   if (pageId.startsWith(ISSUE_EVENTS_DOCUMENT_PREFIX)) {
+    // Every connection on the channel receives the project's issue events,
+    // so the subscription is authorized on the app API before the document
+    // is handed out. The project id comes from the document name — the
+    // client supplied `projectId` query parameter is never trusted.
+    await assertIssueEventsChannelAccess({ context, documentName: pageId });
     return Y.encodeStateAsUpdate(new Y.Doc());
   }
   try {
