@@ -16,6 +16,7 @@ import { logger } from "@plane/logger";
 // lib
 import { AppError } from "@/lib/errors";
 import { assertIssueEventsChannelAccess } from "@/lib/issue-events-auth";
+import { assertPageDocumentAccess } from "@/lib/page-auth";
 // services
 import { getPageService } from "@/services/page/handler";
 import { ISSUE_EVENTS_DOCUMENT_PREFIX } from "@/services/issue-events.service";
@@ -47,6 +48,11 @@ export const fetchDocument = async ({ context, documentName: pageId, instance }:
     await assertIssueEventsChannelAccess({ context, documentName: pageId });
     return Y.encodeStateAsUpdate(new Y.Doc());
   }
+  // A page document holds the page body. The document is shared — once a
+  // member has opened it, it stays in memory — so the load-time check below
+  // is the second line of defence: the per-connection check in
+  // `onAuthenticate` is what refuses a caller that may not read the page.
+  await assertPageDocumentAccess({ context, documentName: pageId });
   try {
     const service = getPageService(context.documentType, context);
     // fetch details

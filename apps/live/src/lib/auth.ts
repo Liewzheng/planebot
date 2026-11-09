@@ -10,6 +10,7 @@ import type { TUserDetails } from "@plane/editor";
 import { logger } from "@plane/logger";
 import { AppError } from "@/lib/errors";
 import { assertIssueEventsChannelAccess } from "@/lib/issue-events-auth";
+import { assertPageDocumentAccess } from "@/lib/page-auth";
 // services
 import { isServiceToken, PrincipalService } from "@/services/principal.service";
 import { UserService } from "@/services/user.service";
@@ -74,6 +75,10 @@ export const onAuthenticate = async ({
     // The issue-events channel is a broadcast bus — its subscription is
     // authorized on the app API before the connection is established.
     await assertIssueEventsChannelAccess({ context, documentName });
+    // A page document holds the page body and stays in memory once it is
+    // loaded — every connection has to prove on its own that it may read
+    // the page.
+    await assertPageDocumentAccess({ context, documentName });
     return authenticated;
   }
 
@@ -116,6 +121,10 @@ export const onAuthenticate = async ({
   // The issue-events channel is a broadcast bus — its subscription is
   // authorized on the app API before the connection is established.
   await assertIssueEventsChannelAccess({ context, documentName });
+  // A page document holds the page body and stays in memory once it is
+  // loaded — every connection has to prove on its own that it may read the
+  // page.
+  await assertPageDocumentAccess({ context, documentName });
 
   return authenticated;
 };
