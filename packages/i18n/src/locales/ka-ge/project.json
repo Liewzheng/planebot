@@ -426,8 +426,8 @@
       "leave_project": {
         "button": "Leave Project",
         "confirm_instruction": "To confirm, type {value} below:",
-        "confirm_placeholder": "Enter 'leave project'",
-        "description": "Are you sure you want to leave the project -{name}? All of the work items associated with you will become inaccessible.",
+        "confirm_placeholder": "Enter 'Leave Project'",
+        "description": "Are you sure you want to leave the project {name}? All of the work items associated with you will become inaccessible.",
         "leaving": "Leaving...",
         "name_placeholder": "Enter project name",
         "title": "Leave Project",
