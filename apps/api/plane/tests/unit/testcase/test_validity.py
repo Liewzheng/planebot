@@ -58,6 +58,7 @@ from plane.db.testcase_validity import (
     RunCaseData,
     RunData,
     StepRecordData,
+    contains_image,
     is_evaluation_phrase,
     is_filled_markdown,
     is_placeholder,
@@ -137,14 +138,42 @@ def _run(**overrides):
 
 #: The shapes an image can be written in. Every one of them is a picture
 #: and no text: the plain inline image, one whose file name carries a
-#: parenthesis, the reference style and the one whose syntax was never
-#: closed.
+#: parenthesis, one with balanced parentheses at any depth, the
+#: reference style with and without its definition, and the one whose
+#: syntax was never closed.
 IMAGE_SHAPES = [
     "![](https://files.test/shot.png)",
     "![](Screenshot (1).png)",
     "![](a(b).png)",
+    "![](a(b(c)).png)",
+    "![](a(b(c(d)).png))",
     "![alt][ref]",
+    "![shot][img]\n\n[img]: https://files.test/shot.png",
     "![](https://files.test/shot.png",
+]
+
+#: The shapes the reviewer tabulated, with what the rules must say about
+#: them: the text the value carries, whether that is enough to be a
+#: measured value, whether the value holds an image, and whether a
+#: failed step with that value is told to attach the file.
+#:
+#: The list is the parity list: the rules read every shape the same way
+#: the front end renders it, and the two shapes CommonMark does not
+#: recognise but the tower ruled to be images are the only deviation.
+PARITY_CASES = [
+    # value, text, filled, image, image hint
+    ("![](https://files.test/shot.png)", "", False, True, True),
+    ("![](Screenshot (1).png)", "", False, True, True),
+    ("![](a(b).png)", "", False, True, True),
+    ("![alt][ref]", "", False, True, True),
+    ("![](https://files.test/shot.png", "", False, True, True),
+    ("exit 1 ![](Screenshot (1).png)", "exit 1", True, True, False),
+    ("line one\nline two ![alt](url", "line one\nline two", True, True, False),
+    ("![](a(b(c)).png)", "", False, True, True),
+    ("![](a(b(c(d)).png))", "", False, True, True),
+    ("![shot][img]\n\n[img]: https://files.test/shot.png", "", False, True, True),
+    ("[log]: http://x.test", "", False, False, False),
+    ("`![](x.png)`", "![](x.png)", True, False, False),
 ]
 
 
@@ -463,7 +492,10 @@ class TestMarkdownHelpers:
         assert markdown_text("[exit code 1](http://x.test)") == "exit code 1"
 
     def test_the_text_of_a_reference_link_stays(self):
-        assert markdown_text("[exit code 1][log]") == "exit code 1"
+        """A reference link needs its definition — without one it is
+        literal text, the way CommonMark reads it."""
+        assert markdown_text("[exit code 1][log]\n\n[log]: http://x.test").strip() == "exit code 1"
+        assert markdown_text("[exit code 1][log]") == "[exit code 1][log]"
 
     def test_an_image_carries_no_text(self):
         assert markdown_text("![](a.png)").strip() == ""
@@ -472,6 +504,104 @@ class TestMarkdownHelpers:
     def test_every_shape_of_an_image_carries_no_text(self, value):
         assert markdown_text(value).strip() == ""
         assert is_filled_markdown(value) is False
+
+    @pytest.mark.parametrize("value", IMAGE_SHAPES)
+    def test_every_shape_of_an_image_is_an_image(self, value):
+        assert contains_image(value) is True
+
+    def test_a_bare_reference_definition_is_no_text(self):
+        """``[log]: http://x.test`` is markup, not a sentence."""
+        assert markdown_text("[log]: http://x.test").strip() == ""
+        assert is_filled_markdown("[log]: http://x.test") is False
+        assert contains_image("[log]: http://x.test") is False
+
+    def test_a_bare_reference_definition_is_not_a_measured_value(self):
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value="[log]: http://x.test"),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert "step_1:" + FAIL_WITHOUT_ACTUAL_VALUE in reasons
+        assert "step_1:" + ACTUAL_VALUE_IS_IMAGE_ONLY not in reasons
+
+
+class TestParity:
+    """The rules read every shape the way the front end renders it.
+
+    The list is the one the reviewer tabulated: the text the value
+    carries, whether that is a measured value, whether the value holds an
+    image, and whether a failed step is told to attach the file.
+    """
+
+    @pytest.mark.parametrize(
+        "value,text,filled,image,hint",
+        PARITY_CASES,
+        ids=[case[0] for case in PARITY_CASES],
+    )
+    def test_the_shape_is_read_as_it_is_listed(self, value, text, filled, image, hint):
+        assert markdown_text(value).strip() == text
+        assert is_filled_markdown(value) is filled
+        assert contains_image(value) is image
+
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value=value),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert ("step_1:" + ACTUAL_VALUE_IS_IMAGE_ONLY in reasons) is hint
+        assert ("step_1:" + FAIL_WITHOUT_ACTUAL_VALUE in reasons) is (not filled)
+
+
+class TestCodeSpans:
+    """The content of a code span is literal text.
+
+    No markup inside it is markup — an image inside backticks is a
+    quotation, not a picture.
+    """
+
+    def test_an_image_inside_a_code_span_is_text(self):
+        assert markdown_text("`![](x.png)`") == "![](x.png)"
+        assert is_filled_markdown("`![](x.png)`") is True
+        assert contains_image("`![](x.png)`") is False
+
+    def test_an_image_inside_a_code_span_raises_no_image_hint(self):
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value="`![](x.png)`"),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert reasons == []
+
+    def test_an_evaluation_word_in_a_code_span_is_still_rejected(self):
+        """`` `不一致` `` is the word itself — the backticks are
+        formatting, the tester wrote the word."""
+        assert is_evaluation_phrase("`不一致`") is True
+        assert is_evaluation_phrase("`ok`") is True
+
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value="`不一致`"),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert "step_1:" + ACTUAL_VALUE_IS_EVALUATION in reasons
+
+    def test_a_quotation_of_the_raw_source_is_accepted(self):
+        """`` `**不一致**` `` quotes the source; the content is not an
+        evaluation word."""
+        assert markdown_text("`**不一致**`") == "**不一致**"
+        assert is_evaluation_phrase("`**不一致**`") is False
+
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value="`**不一致**`"),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert "step_1:" + ACTUAL_VALUE_IS_EVALUATION not in reasons
 
 
 class TestEmphasis:
@@ -497,8 +627,12 @@ class TestEmphasis:
     def test_the_single_underscore_is_stripped(self):
         assert markdown_text("_italic_") == "italic"
 
-    def test_a_dunder_stays(self):
-        assert markdown_text("__init__") == "__init__"
+    def test_a_dunder_is_read_as_bold(self):
+        """The parser reads ``__init__`` as bold — the front end renders
+        it the same way. The text it carries is still a text, and still
+        no evaluation word."""
+        assert markdown_text("__init__") == "init"
+        assert is_evaluation_phrase("__init__") is False
 
     def test_a_word_with_an_underscore_stays(self):
         assert markdown_text("snake_case_name") == "snake_case_name"

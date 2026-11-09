@@ -30,13 +30,20 @@ Markdown and attachments
 ------------------------
 The measured value of a step and the evidence of a case are stored as the
 **Markdown source** that was typed — no HTML conversion, no stripping of
-the markup. The rules read that source:
+the markup. The rules read that source with a **parser** (mistune, the
+same CommonMark the front end renders this field with), so what the
+tester sees is what the rules judge:
 
 * the markup is removed before the value is judged, so ``**不一致**`` and
   ``<b>正常</b>`` are judged as ``不一致`` and ``正常``;
 * **an image contributes no text of its own — not even its alt text.**
   ``![alt](url)`` is a picture and not a sentence, in every shape it can
-  be written (inline, reference style, or with the syntax left open);
+  be written (inline, in the reference style, with balanced parentheses
+  in the destination, or with the syntax left open);
+* the content of a code span is **literal text**: no markup inside it is
+  markup. `` `ok` `` is the word itself and is rejected as an evaluation
+  word, while `` `**不一致**` `` is a quotation of the raw source and is
+  not;
 * a value that carries no text of its own is not a measured value: an
   inline image is a picture, and a placeholder is filler;
 * a file that is attached to the step or to the case **is** a measured
@@ -48,6 +55,9 @@ the markup. The rules read that source:
 from dataclasses import dataclass
 from datetime import date
 import re
+
+# Third party imports
+import mistune
 
 # Module imports
 from plane.db.testcase_numbering import (
@@ -193,56 +203,120 @@ REASON_MESSAGES = {
 # Markdown
 # --------------------------------------------------------------------------- #
 
-#: The target of an image or a link. The parentheses may be nested one
-#: level deep — ``Screenshot (1).png`` is a file name, not a sentence
-#: with a parenthesis in it.
-_MARKDOWN_TARGET = r"\((?:[^()]|\([^()]*\))*\)"
+#: The parser. mistune reads the value with CommonMark — the standard
+#: the front end renders this field with — so the rules and the
+#: rendered form agree: what the tester sees is what the rules judge.
+#:
+#: The strikethrough plugin is on: a judgement word is a judgement word
+#: however it is marked, and the source is stored as it was typed.
+_MARKDOWN_PARSER = mistune.create_markdown(renderer="ast", plugins=["strikethrough"])
 
-#: ``![alt](url)`` — an image, inline. The picture carries no text of
-#: its own: an image alone is not a measured value. The file behind it
-#: is, and it counts only when it is attached to the step (see the
-#: attachment rules below).
-_MARKDOWN_IMAGE_INLINE_RE = re.compile(r"!\[[^\]]*\]\s*" + _MARKDOWN_TARGET)
+#: The shapes the tower ruled to be images although CommonMark does not
+#: treat them as such:
+#:
+#: * ``![](Screenshot (1).png)`` — a destination with a space in it;
+#: * ``![](a.png`` — a destination that was never closed;
+#: * ``![alt][ref]`` — a reference-style image whose definition is
+#:   missing.
+#:
+#: CommonMark reads all three as literal text, so the parser leaves them
+#: in the text; they are taken out here. This is the only place where
+#: the rules look at the source with a pattern instead of with the
+#: parse — and it never looks inside a code span, whose content is a
+#: quotation.
+_LOOSE_IMAGE_RE = re.compile(
+    # an inline image, closed — the destination may hold spaces and
+    # balanced parentheses
+    r"!\[[^\]\n]*\]\((?:[^()\n]|\([^()\n]*\))*\)"
+    # an inline image that was never closed
+    r"|!\[[^\]\n]*\]\([^)\n]*"
+    # a reference-style image
+    r"|!\[[^\]\n]*\]\[[^\]\n]*\]"
+)
 
-#: ``![alt][ref]`` — an image, in the reference style.
-_MARKDOWN_IMAGE_REFERENCE_RE = re.compile(r"!\[[^\]]*\]\s*\[[^\]]*\]")
 
-#: ``![alt](url`` — the image syntax was never closed. What is left is
-#: the fragment of a picture, not a sentence.
-_MARKDOWN_IMAGE_FRAGMENT_RE = re.compile(r"!\[[^\]]*\]\s*\([^)]*$", re.MULTILINE)
+def _strip_loose_images(text: str) -> tuple[str, bool]:
+    """Take the images CommonMark does not recognise out of the text.
 
-#: ``[text](url)`` — a link. The text of the link stays: "the exit code
-#: is 1" is an observation even when it links to the log.
-_MARKDOWN_LINK_INLINE_RE = re.compile(r"\[([^\]]*)\]\s*" + _MARKDOWN_TARGET)
+    Returns the text without them and whether there was one.
+    """
+    if "!" not in text:
+        return text, False
 
-#: ``[text][ref]`` — a link, in the reference style. The text stays.
-_MARKDOWN_LINK_REFERENCE_RE = re.compile(r"\[([^\]]*)\]\s*\[[^\]]*\]")
+    has_image = False
 
-#: ``<b>``/``</b>`` — an HTML tag.
-_HTML_TAG_RE = re.compile(r"</?[A-Za-z][^>]*>")
+    def replace(match):
+        nonlocal has_image
+        has_image = True
+        return " "
 
-#: ``**bold**`` — the doubled asterisk.
-_MARKDOWN_BOLD_RE = re.compile(r"(?<!\w)\*\*(?!\s)(.+?)(?<!\s)\*\*(?!\w)")
+    return _LOOSE_IMAGE_RE.sub(replace, text), has_image
 
-#: ``*italic*`` — the single asterisk. It has to be a pair: a lone
-#: ``*`` is a multiplication sign or a stray character ("ok*",
-#: "5*3=15"), and stripping it would invent a word that the tester
-#: never wrote.
-_MARKDOWN_ITALIC_ASTERISK_RE = re.compile(r"(?<!\w)\*(?!\s)([^*\n]+?)(?<!\s)\*(?!\w)")
 
-#: ``_italic_`` — the single underscore. The doubled form (``__init__``)
-#: is left alone: in a measured value it is a name, not bold text.
-_MARKDOWN_ITALIC_UNDERSCORE_RE = re.compile(r"(?<!\w)_(?!\s)([^_\n]+?)(?<!\s)_(?!\w)")
+def _collect_markdown(node: dict) -> tuple[str, bool]:
+    """Read one node of the parse.
 
-#: ``~~strike~~``.
-_MARKDOWN_STRIKE_RE = re.compile(r"(?<!\w)~~(?!\s)(.+?)(?<!\s)~~(?!\w)")
+    Returns the text of the node and whether it holds an image.
+    """
+    node_type = node.get("type")
 
-#: `` `code` ``.
-_MARKDOWN_CODE_RE = re.compile(r"(?<!`)`([^`\n]+?)`(?!`)")
+    if node_type == "text":
+        return _strip_loose_images(node.get("raw", ""))
 
-#: ``# heading``/``> quote``/``- item``/``1. item`` — the block markers at
-#: the start of a line.
-_MARKDOWN_BLOCK_MARKER_RE = re.compile(r"(?m)^[ \t]*(?:#{1,6}[ \t]+|>[ \t]?|[-*+][ \t]+|\d+[.)][ \t]+)")
+    if node_type in ("codespan", "block_code"):
+        # The content of a code span is literal text: no markup inside
+        # it is markup. A fenced code block is literal content too.
+        return node.get("raw", ""), False
+
+    if node_type == "image":
+        # A picture is a file, not a sentence: it carries no text.
+        return "", True
+
+    if node_type in ("inline_html", "block_html", "thematic_break", "blank_line"):
+        # Markup, not text.
+        return "", False
+
+    if node_type in ("linebreak", "softbreak"):
+        return "\n", False
+
+    children = node.get("children")
+    if children:
+        parts: list[str] = []
+        has_image = False
+        for child in children:
+            child_text, child_image = _collect_markdown(child)
+            parts.append(child_text)
+            has_image = has_image or child_image
+        return "".join(parts), has_image
+
+    raw = node.get("raw")
+    if isinstance(raw, str):
+        return raw, False
+    return "", False
+
+
+def _read_markdown(value: object) -> tuple[str, bool]:
+    """Read the value once: the text it carries and whether it has an image.
+
+    One parse, two answers. Every rule of the standard reads the value
+    through this function, so the text and the image flag can never
+    disagree.
+    """
+    if not isinstance(value, str):
+        return "", False
+
+    parts: list[str] = []
+    has_image = False
+    blocks = _MARKDOWN_PARSER(value) or []
+    for index, block in enumerate(blocks):
+        if index:
+            # Two blocks are two pieces of text, not one word glued
+            # together.
+            parts.append("\n")
+        block_text, block_image = _collect_markdown(block)
+        parts.append(block_text)
+        has_image = has_image or block_image
+    return "".join(parts), has_image
 
 
 def markdown_text(value: object) -> str:
@@ -255,39 +329,24 @@ def markdown_text(value: object) -> str:
 
     **An image contributes no text of its own — not even its alt text.**
     ``![alt](url)`` is a picture, and a picture is a file, not a
-    sentence. The text of a link stays.
+    sentence. The text of a link stays, the destination of a link does
+    not, and a link reference definition is not text either.
     """
-    if not isinstance(value, str):
-        return ""
-    text = _MARKDOWN_IMAGE_INLINE_RE.sub(" ", value)
-    text = _MARKDOWN_IMAGE_REFERENCE_RE.sub(" ", text)
-    text = _MARKDOWN_IMAGE_FRAGMENT_RE.sub(" ", text)
-    text = _MARKDOWN_LINK_INLINE_RE.sub(r"\1", text)
-    text = _MARKDOWN_LINK_REFERENCE_RE.sub(r"\1", text)
-    text = _HTML_TAG_RE.sub(" ", text)
-    text = _MARKDOWN_BOLD_RE.sub(r"\1", text)
-    text = _MARKDOWN_ITALIC_ASTERISK_RE.sub(r"\1", text)
-    text = _MARKDOWN_ITALIC_UNDERSCORE_RE.sub(r"\1", text)
-    text = _MARKDOWN_STRIKE_RE.sub(r"\1", text)
-    text = _MARKDOWN_CODE_RE.sub(r"\1", text)
-    text = _MARKDOWN_BLOCK_MARKER_RE.sub("", text)
-    return text
+    return _read_markdown(value)[0]
 
 
 def contains_image(value: object) -> bool:
-    """True when the source holds an image — complete or a leftover.
+    """True when the source holds an image.
 
-    The shapes that count: the inline image, the reference-style image
-    and the fragment of an image whose syntax was never closed. A value
-    that holds one of them holds a picture and no text.
+    The shapes that count: every image the parser recognises — inline,
+    in the reference style, with balanced parentheses in the destination
+    at any depth — and the shapes CommonMark does not recognise but the
+    tower ruled to be images (see :data:`_LOOSE_IMAGE_RE`).
+
+    A value inside a code span holds no image: `` `![](x.png)` `` is a
+    quotation, not a picture.
     """
-    if not isinstance(value, str):
-        return False
-    return bool(
-        _MARKDOWN_IMAGE_INLINE_RE.search(value)
-        or _MARKDOWN_IMAGE_REFERENCE_RE.search(value)
-        or _MARKDOWN_IMAGE_FRAGMENT_RE.search(value)
-    )
+    return _read_markdown(value)[1]
 
 
 # --------------------------------------------------------------------------- #
@@ -416,7 +475,11 @@ def is_filled_markdown(value: object) -> bool:
     either. ``**不一致**`` carries the text ``不一致`` — the markup is not
     what makes a value empty.
     """
-    text = markdown_text(value)
+    return _is_filled_text(_read_markdown(value)[0])
+
+
+def _is_filled_text(text: str) -> bool:
+    """True when the text carries something of its own."""
     if text.strip() == "":
         return False
     return not is_placeholder(text)
@@ -430,11 +493,18 @@ def is_evaluation_phrase(value: object) -> bool:
     "失败" alone are judgements and are rejected.
 
     The markup is removed first, so ``**不一致**`` and ``<b>正常</b>``
-    are judged on the text they carry.
+    are judged on the text they carry. A code span is literal text:
+    `` `不一致` `` is the word itself and is rejected, while
+    `` `**不一致**` `` is a quotation of the raw source and is not.
     """
     if not isinstance(value, str):
         return False
-    normalized = _normalize_evaluation_candidate(markdown_text(value))
+    return _is_evaluation_text(_read_markdown(value)[0])
+
+
+def _is_evaluation_text(text: str) -> bool:
+    """True when the text is nothing but an evaluation word."""
+    normalized = _normalize_evaluation_candidate(text)
     if normalized == "":
         return False
     return normalized in EVALUATION_PHRASES
@@ -577,9 +647,10 @@ def validate_run_case(case: RunCaseData) -> list[str]:
 
         # The measured value of a step is the text it carries or the
         # files that are attached to it. The Markdown source is read
-        # first: a value that holds nothing but an image (``![](…)``)
+        # once: a value that holds nothing but an image (``![](…)``)
         # carries no text, and a placeholder carries no text either.
-        step_has_text = is_filled_markdown(step.actual_value)
+        step_text, step_has_image = _read_markdown(step.actual_value)
+        step_has_text = _is_filled_text(step_text)
         step_has_attachment = step.attachment_count > 0
         step_has_measurement = step_has_text or step_has_attachment
 
@@ -597,12 +668,12 @@ def validate_run_case(case: RunCaseData) -> list[str]:
             failed_steps.append(step)
             if not step_has_measurement:
                 reasons.append(label + FAIL_WITHOUT_ACTUAL_VALUE)
-                if contains_image(step.actual_value):
+                if step_has_image:
                     # The tester wrote a picture but did not attach the
                     # file: an inline image is not a measured value.
                     reasons.append(label + ACTUAL_VALUE_IS_IMAGE_ONLY)
 
-        if step_has_text and is_evaluation_phrase(step.actual_value):
+        if step_has_text and _is_evaluation_text(step_text):
             reasons.append(label + ACTUAL_VALUE_IS_EVALUATION)
         if step_has_measurement and step.conclusion == STEP_VERDICT_UNSET:
             reasons.append(label + ACTUAL_VALUE_WITHOUT_CONCLUSION)
