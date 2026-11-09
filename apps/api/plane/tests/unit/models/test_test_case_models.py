@@ -13,6 +13,7 @@ from datetime import date
 
 import pytest
 from django.core.exceptions import ValidationError
+from django.db.utils import IntegrityError
 
 from plane.db.models import (
     Project,
@@ -24,11 +25,18 @@ from plane.db.models import (
     TestCaseStep,
     TestRun,
     TestRunCase,
+    TestRunStepRecord,
     User,
     Workspace,
     WorkspaceMember,
 )
-from plane.db.testcase_validity import CONCLUSION_IS_FINAL
+from plane.db.testcase_validity import (
+    CONCLUSION_IS_FINAL,
+    DUPLICATE_CASE_NUMBER,
+    RUN_EXECUTED_BY_MISSING,
+    RunData,
+    validate_run,
+)
 
 
 pytestmark = pytest.mark.unit
@@ -664,6 +672,208 @@ class TestConclusionIsFinal:
 
 
 @pytest.mark.django_db
+class TestSnapshotIsAtomic:
+    """The snapshot of a case is written in one transaction.
+
+    A failure while the step records are copied must not leave a case in
+    the batch without its snapshot steps — the snapshot is what makes the
+    batch historical (the mission's hard requirement).
+    """
+
+    def _run(self, project):
+        return TestRun.objects.create(
+            project=project,
+            run_date=date(2026, 11, 9),
+            version_number="1.2.3",
+            build_number="b4021",
+            commit_hash="9f1c0de",
+            environment="Windows 10 on the test bench",
+        )
+
+    def test_a_failure_while_copying_the_steps_leaves_nothing_behind(
+        self, project, module, monkeypatch
+    ):
+        case = _case(module, project)
+        _step(case, project, 1, "First step", "It works")
+        _step(case, project, 2, "Second step", "It works too")
+        run = self._run(project)
+
+        original_create = TestRunStepRecord.objects.create
+        calls = {"count": 0}
+
+        def failing_create(*args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 2:
+                raise RuntimeError("the second step record cannot be written")
+            return original_create(*args, **kwargs)
+
+        monkeypatch.setattr(TestRunStepRecord.objects, "create", failing_create)
+
+        with pytest.raises(RuntimeError):
+            TestRunCase.create_for_test_case(case, run)
+
+        assert TestRunCase.all_objects.count() == 0, (
+            "the half-written case record must have been rolled back"
+        )
+        assert TestRunStepRecord.all_objects.count() == 0, (
+            "no step record may survive a failed snapshot"
+        )
+
+    def test_the_happy_path_still_copies_every_step(self, project, module):
+        case = _case(module, project)
+        _step(case, project, 1, "First step", "It works")
+        _step(case, project, 2, "Second step", "It works too")
+        run = self._run(project)
+
+        run_case = TestRunCase.create_for_test_case(case, run)
+
+        assert run_case.step_records.count() == 2
+
+
+@pytest.mark.django_db
+class TestExecutorSnapshot:
+    """The batch keeps the name of its executor next to the foreign key.
+
+    The foreign key is ``SET_NULL``; a deleted user would leave the batch
+    without an executor and a completed batch retroactively invalid. The
+    text snapshot keeps the name.
+    """
+
+    def _run(self, project, executed_by):
+        return TestRun.objects.create(
+            project=project,
+            run_date=date(2026, 11, 9),
+            version_number="1.2.3",
+            build_number="b4021",
+            commit_hash="9f1c0de",
+            environment="Windows 10 on the test bench",
+            executed_by=executed_by,
+        )
+
+    def _executor(self, suffix=""):
+        executor = User.objects.create(
+            email=f"executor-m63{suffix}@plane.so",
+            username=f"executor_m63{suffix}",
+            first_name="Exe",
+            last_name="Cutor",
+        )
+        executor.set_password("human@123")
+        executor.save()
+        return executor
+
+    def test_the_name_of_the_executor_is_snapshotted(self, project):
+        executor = self._executor()
+        run = self._run(project, executor)
+
+        run.refresh_from_db()
+        assert run.executed_by_name == executor.display_name
+        assert run.executed_by_name != ""
+
+    def test_the_name_survives_the_deletion_of_the_user_row(self, project):
+        executor = self._executor()
+        run = self._run(project, executor)
+        run.refresh_from_db()
+        snapshot = run.executed_by_name
+
+        # A hard delete — the repository has no user deletion flow, but
+        # the foreign key is SET_NULL and the snapshot has to survive it.
+        # ``User`` is not a soft-delete model, so ``delete()`` is a hard
+        # delete already.
+        executor.delete()
+
+        run.refresh_from_db()
+        assert run.executed_by_id is None
+        assert run.executed_by_name == snapshot
+
+    def test_a_completed_batch_stays_valid_after_the_deletion(self, project):
+        executor = self._executor()
+        run = self._run(project, executor)
+        run.status = "completed"
+        run.save()
+
+        executor.delete()
+        run.refresh_from_db()
+
+        reasons = validate_run(
+            RunData(
+                number=run.number,
+                run_date=run.run_date,
+                version_number=run.version_number,
+                build_number=run.build_number,
+                commit_hash=run.commit_hash,
+                environment=run.environment,
+                executed_by="",
+                executed_by_name=run.executed_by_name,
+                status="completed",
+            )
+        )
+        assert RUN_EXECUTED_BY_MISSING not in reasons
+
+    def test_the_snapshot_follows_a_changed_executor(self, project):
+        executor = self._executor()
+        run = self._run(project, executor)
+        first_snapshot = run.executed_by_name
+
+        other = self._executor("-second")
+        run.executed_by = other
+        run.save()
+        run.refresh_from_db()
+
+        assert run.executed_by_name != first_snapshot
+        assert run.executed_by_name == other.display_name
+
+
+@pytest.mark.django_db
+class TestDuplicateCaseInBatch:
+    """The same test case may not sit in one batch twice."""
+
+    def _run(self, project):
+        return TestRun.objects.create(
+            project=project,
+            run_date=date(2026, 11, 9),
+            version_number="1.2.3",
+            build_number="b4021",
+            commit_hash="9f1c0de",
+            environment="Windows 10 on the test bench",
+        )
+
+    def test_the_same_case_may_not_be_added_twice(self, project, module):
+        case = _case(module, project)
+        run = self._run(project)
+
+        TestRunCase.create_for_test_case(case, run)
+
+        with pytest.raises(ValidationError) as error:
+            TestRunCase.create_for_test_case(case, run)
+
+        assert DUPLICATE_CASE_NUMBER in str(error.value)
+        assert not isinstance(error.value, IntegrityError)
+        assert TestRunCase.all_objects.count() == 1
+
+    def test_a_soft_deleted_record_does_not_block_re_adding(self, project, module):
+        case = _case(module, project)
+        run = self._run(project)
+
+        first = TestRunCase.create_for_test_case(case, run)
+        first.delete(soft=True)
+
+        second = TestRunCase.create_for_test_case(case, run)
+
+        assert second.pk != first.pk
+        assert TestRunCase.objects.filter(test_run=run, test_case=case).count() == 1
+
+    def test_the_same_case_may_be_added_to_another_batch(self, project, module):
+        case = _case(module, project)
+        first_run = self._run(project)
+        second_run = self._run(project)
+
+        TestRunCase.create_for_test_case(case, first_run)
+        TestRunCase.create_for_test_case(case, second_run)
+
+        assert TestRunCase.all_objects.count() == 2
+
+
+@pytest.mark.django_db
 class TestCaseIssueLink:
     def test_a_case_may_be_linked_to_a_work_item(self, project, module):
         from plane.db.models import Issue
@@ -680,38 +890,45 @@ class TestCaseIssueLink:
         assert link.test_case.issue_links.count() == 1
         assert issue.test_case_links.count() == 1
 
-    def test_a_link_to_a_work_item_of_another_project_is_rejected(
+    def test_a_link_whose_case_and_work_item_disagree_is_rejected(
         self, project, other_project, module
     ):
-        """The reviewer's PROBE4: a case of project A linked to a work
-        item of project B must not be written."""
+        """The case and the work item are in different projects — the
+        first branch of the guard fires."""
         from plane.db.models import Issue
 
         issue = Issue.objects.create(
             project=other_project,
             name="The work item of the other project",
         )
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError) as error:
             TestCaseIssue.objects.create(
                 project=project,
                 test_case=_case(module, project),
                 issue=issue,
             )
+        assert "test_case" in error.value.error_dict
 
-    def test_a_link_that_carries_the_foreign_project_is_rejected(
+    def test_a_link_that_claims_another_project_is_rejected(
         self, project, other_project, module
     ):
-        """The same link, but the link row itself claims the project of
-        the work item — the case and the work item still disagree."""
+        """Only the second branch of the guard can satisfy this.
+
+        The case and the work item are in the **same** project — a
+        legitimate pair — but the link row itself claims another project.
+        The first branch has nothing to find here, so only the ``issue``
+        branch can refuse the row.
+        """
         from plane.db.models import Issue
 
         issue = Issue.objects.create(
-            project=other_project,
-            name="The work item of the other project",
+            project=project,
+            name="The work item of the same project",
         )
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError) as error:
             TestCaseIssue.objects.create(
                 project=other_project,
                 test_case=_case(module, project),
                 issue=issue,
             )
+        assert "issue" in error.value.error_dict

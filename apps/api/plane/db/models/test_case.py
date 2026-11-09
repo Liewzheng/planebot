@@ -43,6 +43,7 @@ from plane.db.testcase_numbering import (
 )
 from plane.db.testcase_validity import (
     CONCLUSION_IS_FINAL,
+    DUPLICATE_CASE_NUMBER,
     RUN_CASE_CONCLUSION_FAIL,
     RUN_CASE_CONCLUSION_MANUAL,
     RUN_CASE_CONCLUSION_NA,
@@ -414,6 +415,16 @@ class TestRun(ProjectBaseModel):
         blank=True,
         related_name="test_runs",
     )
+    executed_by_name = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Executed By Name",
+        help_text=(
+            "Text snapshot of the executor. The foreign key is SET_NULL, so "
+            "the name of a deleted user would be lost from the history of "
+            "the batch; the snapshot keeps it."
+        ),
+    )
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
@@ -446,7 +457,47 @@ class TestRun(ProjectBaseModel):
             self._assert_version_fixed()
             self._assert_not_frozen()
 
+        self._sync_executed_by_name()
+
         super(TestRun, self).save(*args, **kwargs)
+
+    def _sync_executed_by_name(self):
+        """Keep a text snapshot of the executor next to the foreign key.
+
+        The foreign key is ``SET_NULL``: a deleted user would leave the
+        batch without an executor, and a completed batch would become
+        retroactively invalid. The snapshot keeps the name of the person
+        who executed the batch. It is (re)written when the executor
+        changes; it survives the user row.
+        """
+        if self._state.adding:
+            if self.executed_by_id and not self.executed_by_name:
+                self.executed_by_name = self._executor_display_name()
+            return
+
+        stored = (
+            TestRun.all_objects.filter(pk=self.pk)
+            .values_list("executed_by_id", flat=True)
+            .first()
+        )
+        if stored is None:
+            return
+
+        if self.executed_by_id != stored:
+            # The executor of the batch changed — the snapshot follows.
+            self.executed_by_name = (
+                self._executor_display_name() if self.executed_by_id else ""
+            )
+        elif not self.executed_by_name and self.executed_by_id:
+            self.executed_by_name = self._executor_display_name()
+
+    def _executor_display_name(self):
+        user = self.executed_by
+        if user is None:
+            return ""
+        return (
+            user.display_name or user.full_name or user.email or ""
+        ).strip()
 
     def _assign_number(self):
         if self.sequence_id is None:
@@ -611,6 +662,13 @@ class TestRunCase(ProjectBaseModel):
         verbose_name_plural = "Test Run Cases"
         db_table = "test_run_cases"
         ordering = ("created_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=["test_run", "test_case"],
+                condition=models.Q(test_case__isnull=False, deleted_at__isnull=True),
+                name="test_run_case_unique_run_case",
+            )
+        ]
 
     def __str__(self):
         return f"{self.case_number} <{self.test_run.number}>"
@@ -619,7 +677,38 @@ class TestRunCase(ProjectBaseModel):
         self._validate_run_belongs_to_project()
         self._assert_run_not_frozen()
         self._assert_conclusion_is_final()
+        self._assert_case_is_not_already_in_the_batch()
         super(TestRunCase, self).save(*args, **kwargs)
+
+    def _assert_case_is_not_already_in_the_batch(self):
+        """The same test case may not sit in one batch twice.
+
+        The database carries the same rule as a partial unique constraint
+        (``test_run_case_unique_run_case``); the check here turns the
+        violation into the stable ``duplicate_case_number`` reason
+        instead of letting an ``IntegrityError`` escape. A soft-deleted
+        row does not block the case from being added again.
+        """
+        if not (self.test_run_id and self.test_case_id):
+            return
+
+        duplicate = (
+            TestRunCase.objects.filter(
+                test_run_id=self.test_run_id,
+                test_case_id=self.test_case_id,
+            )
+            .exclude(pk=self.pk)
+            .exists()
+        )
+        if duplicate:
+            raise ValidationError(
+                {
+                    "test_case": (
+                        f"{DUPLICATE_CASE_NUMBER}: the test case is already "
+                        "in this batch."
+                    )
+                }
+            )
 
     def _validate_run_belongs_to_project(self):
         if (

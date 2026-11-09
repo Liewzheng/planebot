@@ -285,7 +285,14 @@ class RunCaseData:
 
 @dataclass(frozen=True)
 class RunData:
-    """One batch: the header of the execution plus the cases it holds."""
+    """One batch: the header of the execution plus the cases it holds.
+
+    ``executed_by`` is the name of the executor as it can be read from
+    the live user row; ``executed_by_name`` is the text snapshot the
+    batch keeps next to the foreign key. The batch is valid when either
+    of them is filled — a deleted user leaves the foreign key empty, but
+    the snapshot keeps the name of the person who executed the batch.
+    """
 
     number: str = ""
     run_date: date | None = None
@@ -294,6 +301,7 @@ class RunData:
     commit_hash: str = ""
     environment: str = ""
     executed_by: str = ""
+    executed_by_name: str = ""
     status: str = ""
     cases: tuple[RunCaseData, ...] = ()
 
@@ -429,7 +437,7 @@ def validate_run(run: RunData) -> list[str]:
         reasons.append(RUN_COMMIT_HASH_MISSING)
     if not _is_filled(run.environment):
         reasons.append(RUN_ENVIRONMENT_MISSING)
-    if not _is_filled(run.executed_by):
+    if not (_is_filled(run.executed_by) or _is_filled(run.executed_by_name)):
         reasons.append(RUN_EXECUTED_BY_MISSING)
 
     seen_numbers: set[str] = set()

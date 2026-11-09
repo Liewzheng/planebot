@@ -400,6 +400,17 @@ class TestBatchHeader:
     def test_a_missing_executor_is_rejected(self):
         assert RUN_EXECUTED_BY_MISSING in validate_run(_run(executed_by=""))
 
+    def test_the_executor_may_be_named_by_the_snapshot_only(self):
+        """The batch keeps a text snapshot of the executor next to the
+        foreign key: a deleted user leaves the foreign key empty, but the
+        snapshot keeps the name of the person who executed the batch."""
+        reasons = validate_run(_run(executed_by="", executed_by_name="Li Wei"))
+        assert RUN_EXECUTED_BY_MISSING not in reasons
+
+    def test_a_batch_without_any_executor_name_is_rejected(self):
+        reasons = validate_run(_run(executed_by="", executed_by_name=""))
+        assert RUN_EXECUTED_BY_MISSING in reasons
+
     def test_all_four_environment_items_missing_are_all_reported(self):
         reasons = validate_run(
             _run(
