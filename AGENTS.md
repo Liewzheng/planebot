@@ -60,6 +60,14 @@ git push
 git push planebot integration/selfhost:main
 ```
 
+## Upstream is no longer maintained (2026-11-09)
+
+We do **not** maintain the official `makeplane/plane` repo any more — not the code, not the PRs, not the issues. The only line we maintain is **pbot: this fork**.
+
+- Do not open, update, reply on, or re-submit anything upstream (PRs, issues, discussions). The upstream PRs filed earlier (#9761, #9780, #9798, …) are archived history; leave them as they are.
+- **But do not dismiss upstream review comments either.** A finding written against one of those PRs describes code that also lives here. Treat it as a lead that must be verified against **this** repository — locate the file:line, check whether the described behaviour actually exists here, and only then decide. Two examples from 2026-11-09 where the lead was real: PR #9780's comment exposed an authorization bypass in `apps/live`'s `issue-events` channel (tracked as PLANE-115, fixed by mission M69), and PR #9798's two CodeRabbit items were both present in our locale files (PLANE-116).
+- Every fix lands here: topic branch → review → `integration/selfhost` (deploys) → `planebot/dev`, with `main` fast-forward only. Nothing goes upstream.
+
 ## Self-host images (integration/selfhost only)
 
 The deployment in `~/docker/plane` runs images built from the `integration/selfhost` branch. Rebuild and redeploy procedure:
