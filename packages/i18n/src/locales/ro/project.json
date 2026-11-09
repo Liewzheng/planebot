@@ -426,10 +426,10 @@
       },
       "leave_project": {
         "title": "Leave Project",
-        "description": "Are you sure you want to leave the project -{name}? All of the work items associated with you will become inaccessible.",
+        "description": "Are you sure you want to leave the project {name}? All of the work items associated with you will become inaccessible.",
         "confirm_instruction": "To confirm, type {value} below:",
         "name_placeholder": "Enter project name",
-        "confirm_placeholder": "Enter 'leave project'",
+        "confirm_placeholder": "Enter 'Leave Project'",
         "leaving": "Leaving...",
         "button": "Leave Project",
         "toast_confirm_mismatch": "Please confirm leaving the project by typing the 'Leave Project'.",

@@ -426,10 +426,10 @@
       },
       "leave_project": {
         "title": "离开项目",
-        "description": "确定要离开项目 -{name} 吗？所有与你关联的工作项都将无法访问。",
+        "description": "确定要离开项目 {name} 吗？所有与你关联的工作项都将无法访问。",
         "confirm_instruction": "请在下方输入 {value} 以确认：",
         "name_placeholder": "输入项目名称",
-        "confirm_placeholder": "输入 'leave project'",
+        "confirm_placeholder": "输入 'Leave Project'",
         "leaving": "离开中…",
         "button": "离开项目",
         "toast_confirm_mismatch": "请输入 'Leave Project' 以确认离开项目。",

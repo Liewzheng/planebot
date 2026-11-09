@@ -63,7 +63,8 @@ export const LeaveProjectModal = observer(function LeaveProjectModal(props: ILea
 
     if (data) {
       if (data.projectName === project?.name) {
-        if (data.confirmLeave === "Leave Project") {
+        // The confirmation token is matched case-sensitively; only surrounding whitespace is ignored.
+        if (data.confirmLeave.trim() === "Leave Project") {
           router.push(`/${workspaceSlug}/projects`);
           return leaveProject(workspaceSlug.toString(), project.id)
             .then(() => {
@@ -113,7 +114,7 @@ export const LeaveProjectModal = observer(function LeaveProjectModal(props: ILea
 
         <span>
           <p className="text-13 leading-7 text-secondary">
-            {t("project.modals.leave_project.description", { name: ` "${project?.name}" ` })}
+            {t("project.modals.leave_project.description", { name: project?.name })}
           </p>
         </span>
 
