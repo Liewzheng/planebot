@@ -292,6 +292,10 @@ class RunData:
     batch keeps next to the foreign key. The batch is valid when either
     of them is filled — a deleted user leaves the foreign key empty, but
     the snapshot keeps the name of the person who executed the batch.
+
+    ``executed_by_name`` is the **last** field on purpose: a field that
+    is added in the middle would silently bind the wrong value in a
+    positional construction.
     """
 
     number: str = ""
@@ -301,9 +305,9 @@ class RunData:
     commit_hash: str = ""
     environment: str = ""
     executed_by: str = ""
-    executed_by_name: str = ""
     status: str = ""
     cases: tuple[RunCaseData, ...] = ()
+    executed_by_name: str = ""
 
 
 # --------------------------------------------------------------------------- #

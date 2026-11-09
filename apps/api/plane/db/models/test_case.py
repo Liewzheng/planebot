@@ -458,6 +458,7 @@ class TestRun(ProjectBaseModel):
             self._assert_not_frozen()
 
         self._sync_executed_by_name()
+        self._keep_snapshot_in_update_fields(kwargs)
 
         super(TestRun, self).save(*args, **kwargs)
 
@@ -475,21 +476,45 @@ class TestRun(ProjectBaseModel):
                 self.executed_by_name = self._executor_display_name()
             return
 
-        stored = (
+        # The row is fetched, not the flat value of the column: a flat
+        # ``None`` cannot be told apart from "the row does not exist",
+        # and the snapshot would then never be filled on the ordinary
+        # flow of assigning an executor to a batch that had none.
+        row = (
             TestRun.all_objects.filter(pk=self.pk)
-            .values_list("executed_by_id", flat=True)
+            .values("executed_by_id")
             .first()
         )
-        if stored is None:
+        if row is None:
             return
+        stored = row["executed_by_id"]
 
         if self.executed_by_id != stored:
             # The executor of the batch changed — the snapshot follows.
+            # A batch whose executor was deleted and is now assigned to
+            # somebody else gets the new name, not the deleted one.
             self.executed_by_name = (
                 self._executor_display_name() if self.executed_by_id else ""
             )
         elif not self.executed_by_name and self.executed_by_id:
             self.executed_by_name = self._executor_display_name()
+
+    def _keep_snapshot_in_update_fields(self, kwargs):
+        """Keep the snapshot in step with a partial update.
+
+        Django only writes the fields listed in ``update_fields``; a
+        caller that moves the executor with
+        ``save(update_fields=["executed_by"])`` would otherwise leave the
+        old name next to the new person.
+        """
+        update_fields = kwargs.get("update_fields")
+        if not update_fields:
+            return
+        if "executed_by" not in update_fields:
+            return
+        if "executed_by_name" in update_fields:
+            return
+        kwargs["update_fields"] = list(update_fields) + ["executed_by_name"]
 
     def _executor_display_name(self):
         user = self.executed_by

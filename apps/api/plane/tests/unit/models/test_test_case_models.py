@@ -822,6 +822,63 @@ class TestExecutorSnapshot:
         assert run.executed_by_name != first_snapshot
         assert run.executed_by_name == other.display_name
 
+    def test_an_executor_assigned_later_is_snapshotted(self, project):
+        """A batch may be opened without an executor; the executor is
+        assigned when the run starts. The snapshot has to be filled then
+        as well."""
+        run = self._run(project, None)
+        run.refresh_from_db()
+        assert run.executed_by_id is None
+        assert run.executed_by_name == ""
+
+        executor = self._executor()
+        run.executed_by = executor
+        run.save()
+
+        run.refresh_from_db()
+        assert run.executed_by_id == executor.id
+        assert run.executed_by_name == executor.display_name
+
+    def test_a_new_executor_replaces_the_name_of_a_deleted_one(self, project):
+        """The foreign key of a deleted executor is NULL again. A new
+        executor must not inherit the name of the deleted one."""
+        executor = self._executor()
+        run = self._run(project, executor)
+        run.refresh_from_db()
+        deleted_name = run.executed_by_name
+
+        executor.delete()
+        run.refresh_from_db()
+        assert run.executed_by_id is None
+        assert run.executed_by_name == deleted_name
+
+        replacement = self._executor("-replacement")
+        run.executed_by = replacement
+        run.save()
+
+        run.refresh_from_db()
+        assert run.executed_by_id == replacement.id
+        assert run.executed_by_name == replacement.display_name
+        assert run.executed_by_name != deleted_name
+
+    def test_a_partial_update_of_the_executor_keeps_the_snapshot_in_step(self, project):
+        """Django only writes the fields listed in ``update_fields``; a
+        partial update that moves the executor has to carry the snapshot
+        with it, otherwise the old name stays next to the new person."""
+        executor = self._executor()
+        run = self._run(project, executor)
+        run.refresh_from_db()
+        first_snapshot = run.executed_by_name
+
+        replacement = self._executor("-replacement")
+        run.executed_by = replacement
+        run.save(update_fields=["executed_by"])
+
+        run.refresh_from_db()
+        assert run.executed_by_id == replacement.id
+        assert run.executed_by_name == replacement.display_name
+        assert run.executed_by_name != first_snapshot
+
 
 @pytest.mark.django_db
 class TestDuplicateCaseInBatch:
