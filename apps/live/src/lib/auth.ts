@@ -9,6 +9,7 @@ import type { IncomingHttpHeaders } from "http";
 import type { TUserDetails } from "@plane/editor";
 import { logger } from "@plane/logger";
 import { AppError } from "@/lib/errors";
+import { assertIssueEventsChannelAccess } from "@/lib/issue-events-auth";
 // services
 import { isServiceToken, PrincipalService } from "@/services/principal.service";
 import { UserService } from "@/services/user.service";
@@ -43,11 +44,13 @@ export const onAuthenticate = async ({
   requestParameters,
   context,
   token,
+  documentName,
 }: {
   requestHeaders: IncomingHttpHeaders;
   context: HocusPocusServerContext;
   requestParameters: URLSearchParams;
   token: string;
+  documentName?: string;
 }) => {
   context.documentType = requestParameters.get("documentType")?.toString() as TDocumentTypes;
   context.projectId = requestParameters.get("projectId");
@@ -63,11 +66,15 @@ export const onAuthenticate = async ({
       logger.error("Service token auth missing workspace slug", appError);
       throw appError;
     }
-    return await handleServicePrincipalAuthentication({
+    const authenticated = await handleServicePrincipalAuthentication({
       workspaceSlug: slug,
       token,
       context,
     });
+    // The issue-events channel is a broadcast bus — its subscription is
+    // authorized on the app API before the connection is established.
+    await assertIssueEventsChannelAccess({ context, documentName });
+    return authenticated;
   }
 
   let cookie: string | undefined = undefined;
@@ -101,10 +108,16 @@ export const onAuthenticate = async ({
   context.cookie = cookie ?? requestParameters.get("cookie") ?? "";
   context.userId = userId;
 
-  return await handleAuthentication({
+  const authenticated = await handleAuthentication({
     cookie: context.cookie,
     userId: context.userId,
   });
+
+  // The issue-events channel is a broadcast bus — its subscription is
+  // authorized on the app API before the connection is established.
+  await assertIssueEventsChannelAccess({ context, documentName });
+
+  return authenticated;
 };
 
 export const handleAuthentication = async ({ cookie, userId }: { cookie: string; userId: string }) => {
