@@ -34,9 +34,11 @@ the markup. The rules read that source:
 
 * the markup is removed before the value is judged, so ``**不一致**`` and
   ``<b>正常</b>`` are judged as ``不一致`` and ``正常``;
+* **an image contributes no text of its own — not even its alt text.**
+  ``![alt](url)`` is a picture and not a sentence, in every shape it can
+  be written (inline, reference style, or with the syntax left open);
 * a value that carries no text of its own is not a measured value: an
-  inline image (``![](…)``) is a picture and not a sentence, and a
-  placeholder is filler;
+  inline image is a picture, and a placeholder is filler;
 * a file that is attached to the step or to the case **is** a measured
   value — the screenshot of the screen is what the tester saw. How many
   files are attached comes in through the dataclasses
@@ -191,21 +193,52 @@ REASON_MESSAGES = {
 # Markdown
 # --------------------------------------------------------------------------- #
 
-#: ``![alt](url)`` — an image. The picture carries no text of its own:
-#: an image alone is not a measured value. The file behind it is, and it
-#: counts only when it is attached to the step (see the attachment rules
-#: below).
-_MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+#: The target of an image or a link. The parentheses may be nested one
+#: level deep — ``Screenshot (1).png`` is a file name, not a sentence
+#: with a parenthesis in it.
+_MARKDOWN_TARGET = r"\((?:[^()]|\([^()]*\))*\)"
+
+#: ``![alt](url)`` — an image, inline. The picture carries no text of
+#: its own: an image alone is not a measured value. The file behind it
+#: is, and it counts only when it is attached to the step (see the
+#: attachment rules below).
+_MARKDOWN_IMAGE_INLINE_RE = re.compile(r"!\[[^\]]*\]\s*" + _MARKDOWN_TARGET)
+
+#: ``![alt][ref]`` — an image, in the reference style.
+_MARKDOWN_IMAGE_REFERENCE_RE = re.compile(r"!\[[^\]]*\]\s*\[[^\]]*\]")
+
+#: ``![alt](url`` — the image syntax was never closed. What is left is
+#: the fragment of a picture, not a sentence.
+_MARKDOWN_IMAGE_FRAGMENT_RE = re.compile(r"!\[[^\]]*\]\s*\([^)]*$", re.MULTILINE)
 
 #: ``[text](url)`` — a link. The text of the link stays: "the exit code
 #: is 1" is an observation even when it links to the log.
-_MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MARKDOWN_LINK_INLINE_RE = re.compile(r"\[([^\]]*)\]\s*" + _MARKDOWN_TARGET)
+
+#: ``[text][ref]`` — a link, in the reference style. The text stays.
+_MARKDOWN_LINK_REFERENCE_RE = re.compile(r"\[([^\]]*)\]\s*\[[^\]]*\]")
 
 #: ``<b>``/``</b>`` — an HTML tag.
 _HTML_TAG_RE = re.compile(r"</?[A-Za-z][^>]*>")
 
-#: ``**``/``__``/``*``/``~~``/`` `` `` — the emphasis markers.
-_EMPHASIS_RE = re.compile(r"\*\*|__|~~|\*|`")
+#: ``**bold**`` — the doubled asterisk.
+_MARKDOWN_BOLD_RE = re.compile(r"(?<!\w)\*\*(?!\s)(.+?)(?<!\s)\*\*(?!\w)")
+
+#: ``*italic*`` — the single asterisk. It has to be a pair: a lone
+#: ``*`` is a multiplication sign or a stray character ("ok*",
+#: "5*3=15"), and stripping it would invent a word that the tester
+#: never wrote.
+_MARKDOWN_ITALIC_ASTERISK_RE = re.compile(r"(?<!\w)\*(?!\s)([^*\n]+?)(?<!\s)\*(?!\w)")
+
+#: ``_italic_`` — the single underscore. The doubled form (``__init__``)
+#: is left alone: in a measured value it is a name, not bold text.
+_MARKDOWN_ITALIC_UNDERSCORE_RE = re.compile(r"(?<!\w)_(?!\s)([^_\n]+?)(?<!\s)_(?!\w)")
+
+#: ``~~strike~~``.
+_MARKDOWN_STRIKE_RE = re.compile(r"(?<!\w)~~(?!\s)(.+?)(?<!\s)~~(?!\w)")
+
+#: `` `code` ``.
+_MARKDOWN_CODE_RE = re.compile(r"(?<!`)`([^`\n]+?)`(?!`)")
 
 #: ``# heading``/``> quote``/``- item``/``1. item`` — the block markers at
 #: the start of a line.
@@ -220,17 +253,41 @@ def markdown_text(value: object) -> str:
     not what the value says — ``**不一致**`` says exactly what
     ``不一致`` says — so it is removed before the comparison.
 
-    An image contributes no text: ``![alt](url)`` is a picture, and a
-    picture is a file, not a sentence. The text of a link stays.
+    **An image contributes no text of its own — not even its alt text.**
+    ``![alt](url)`` is a picture, and a picture is a file, not a
+    sentence. The text of a link stays.
     """
     if not isinstance(value, str):
         return ""
-    text = _MARKDOWN_IMAGE_RE.sub(" ", value)
-    text = _MARKDOWN_LINK_RE.sub(r"\1", text)
+    text = _MARKDOWN_IMAGE_INLINE_RE.sub(" ", value)
+    text = _MARKDOWN_IMAGE_REFERENCE_RE.sub(" ", text)
+    text = _MARKDOWN_IMAGE_FRAGMENT_RE.sub(" ", text)
+    text = _MARKDOWN_LINK_INLINE_RE.sub(r"\1", text)
+    text = _MARKDOWN_LINK_REFERENCE_RE.sub(r"\1", text)
     text = _HTML_TAG_RE.sub(" ", text)
-    text = _EMPHASIS_RE.sub("", text)
+    text = _MARKDOWN_BOLD_RE.sub(r"\1", text)
+    text = _MARKDOWN_ITALIC_ASTERISK_RE.sub(r"\1", text)
+    text = _MARKDOWN_ITALIC_UNDERSCORE_RE.sub(r"\1", text)
+    text = _MARKDOWN_STRIKE_RE.sub(r"\1", text)
+    text = _MARKDOWN_CODE_RE.sub(r"\1", text)
     text = _MARKDOWN_BLOCK_MARKER_RE.sub("", text)
     return text
+
+
+def contains_image(value: object) -> bool:
+    """True when the source holds an image — complete or a leftover.
+
+    The shapes that count: the inline image, the reference-style image
+    and the fragment of an image whose syntax was never closed. A value
+    that holds one of them holds a picture and no text.
+    """
+    if not isinstance(value, str):
+        return False
+    return bool(
+        _MARKDOWN_IMAGE_INLINE_RE.search(value)
+        or _MARKDOWN_IMAGE_REFERENCE_RE.search(value)
+        or _MARKDOWN_IMAGE_FRAGMENT_RE.search(value)
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -307,6 +364,10 @@ PLACEHOLDER_VALUES = frozenset(
         "?",
         "??",
         "???",
+        "*",
+        "**",
+        "_",
+        "__",
         "tbd",
         "todo",
         "xxx",
@@ -536,7 +597,7 @@ def validate_run_case(case: RunCaseData) -> list[str]:
             failed_steps.append(step)
             if not step_has_measurement:
                 reasons.append(label + FAIL_WITHOUT_ACTUAL_VALUE)
-                if _MARKDOWN_IMAGE_RE.search(step.actual_value or ""):
+                if contains_image(step.actual_value):
                     # The tester wrote a picture but did not attach the
                     # file: an inline image is not a measured value.
                     reasons.append(label + ACTUAL_VALUE_IS_IMAGE_ONLY)

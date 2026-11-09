@@ -135,6 +135,19 @@ def _run(**overrides):
     return RunData(**base)
 
 
+#: The shapes an image can be written in. Every one of them is a picture
+#: and no text: the plain inline image, one whose file name carries a
+#: parenthesis, the reference style and the one whose syntax was never
+#: closed.
+IMAGE_SHAPES = [
+    "![](https://files.test/shot.png)",
+    "![](Screenshot (1).png)",
+    "![](a(b).png)",
+    "![alt][ref]",
+    "![](https://files.test/shot.png",
+]
+
+
 class TestValidRecords:
     def test_a_complete_case_is_valid(self):
         assert validate_run_case(_case()) == []
@@ -354,34 +367,43 @@ class TestMarkdownMeasuredValue:
         )
         assert "step_1:" + ACTUAL_VALUE_IS_EVALUATION in reasons
 
-    def test_a_pure_image_is_not_a_measured_value(self):
-        """An inline image is a picture, not a sentence."""
+    @pytest.mark.parametrize("value", IMAGE_SHAPES)
+    def test_a_pure_image_is_not_a_measured_value(self, value):
+        """An image is a picture, not a sentence — in every shape."""
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value=value),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert "step_1:" + FAIL_WITHOUT_ACTUAL_VALUE in reasons
+
+    @pytest.mark.parametrize("value", IMAGE_SHAPES)
+    def test_a_pure_image_names_the_missing_file(self, value):
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value=value),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert "step_1:" + ACTUAL_VALUE_IS_IMAGE_ONLY in reasons
+
+    def test_the_alt_text_of_an_image_is_no_text(self):
+        """An image contributes no text of its own — not even its alt
+        text. The picture counts when the file is attached to the step."""
         reasons = validate_run_case(
             _case(
                 steps=(
                     _step(
                         conclusion=STEP_VERDICT_FAIL,
-                        actual_value="![](https://files.test/shot.png)",
+                        actual_value="![the login screen](https://files.test/shot.png)",
                     ),
                 ),
                 conclusion=RUN_CASE_CONCLUSION_FAIL,
             )
         )
         assert "step_1:" + FAIL_WITHOUT_ACTUAL_VALUE in reasons
-
-    def test_a_pure_image_names_the_missing_file(self):
-        reasons = validate_run_case(
-            _case(
-                steps=(
-                    _step(
-                        conclusion=STEP_VERDICT_FAIL,
-                        actual_value="![](https://files.test/shot.png)",
-                    ),
-                ),
-                conclusion=RUN_CASE_CONCLUSION_FAIL,
-            )
-        )
-        assert "step_1:" + ACTUAL_VALUE_IS_IMAGE_ONLY in reasons
+        assert markdown_text("![the login screen](https://files.test/shot.png)").strip() == ""
 
     def test_an_image_next_to_a_text_is_a_measured_value(self):
         reasons = validate_run_case(
@@ -440,8 +462,55 @@ class TestMarkdownHelpers:
     def test_the_text_of_a_link_stays(self):
         assert markdown_text("[exit code 1](http://x.test)") == "exit code 1"
 
+    def test_the_text_of_a_reference_link_stays(self):
+        assert markdown_text("[exit code 1][log]") == "exit code 1"
+
     def test_an_image_carries_no_text(self):
         assert markdown_text("![](a.png)").strip() == ""
+
+    @pytest.mark.parametrize("value", IMAGE_SHAPES)
+    def test_every_shape_of_an_image_carries_no_text(self, value):
+        assert markdown_text(value).strip() == ""
+        assert is_filled_markdown(value) is False
+
+
+class TestEmphasis:
+    """The emphasis markers are delimiters, not characters.
+
+    A lone ``*`` is a multiplication sign or a stray character. Stripping
+    it would invent a word that the tester never wrote — and an invented
+    word can be an evaluation word ("ok*" would become "ok").
+    """
+
+    def test_a_stray_asterisk_stays(self):
+        assert markdown_text("ok*") == "ok*"
+        assert is_evaluation_phrase("ok*") is False
+
+    def test_a_multiplication_stays(self):
+        assert markdown_text("5*3=15") == "5*3=15"
+        assert markdown_text("value*2") == "value*2"
+
+    def test_the_double_asterisk_is_stripped(self):
+        assert markdown_text("**不一致**") == "不一致"
+        assert is_evaluation_phrase("**不一致**") is True
+
+    def test_the_single_underscore_is_stripped(self):
+        assert markdown_text("_italic_") == "italic"
+
+    def test_a_dunder_stays(self):
+        assert markdown_text("__init__") == "__init__"
+
+    def test_a_word_with_an_underscore_stays(self):
+        assert markdown_text("snake_case_name") == "snake_case_name"
+
+    def test_a_paired_asterisk_is_stripped(self):
+        assert markdown_text("*italic*") == "italic"
+
+    def test_a_strike_is_stripped(self):
+        assert markdown_text("~~gone~~") == "gone"
+
+    def test_the_code_markers_are_stripped(self):
+        assert markdown_text("`exit code 1`") == "exit code 1"
 
     @pytest.mark.parametrize("value", ["-", "--", "...", "待补充", "TBD", "todo"])
     def test_a_placeholder_is_recognised(self, value):
@@ -615,9 +684,10 @@ class TestEvidence:
     def test_a_blank_evidence_is_rejected(self):
         assert EVIDENCE_MISSING in validate_run_case(_case(evidence="   "))
 
-    def test_a_pure_image_is_not_evidence(self):
-        """An inline image is a picture, not a file the batch can show."""
-        assert EVIDENCE_MISSING in validate_run_case(_case(evidence="![](https://files.test/shot.png)"))
+    @pytest.mark.parametrize("value", IMAGE_SHAPES)
+    def test_a_pure_image_is_not_evidence(self, value):
+        """An image is a picture, not a file the batch can show."""
+        assert EVIDENCE_MISSING in validate_run_case(_case(evidence=value))
 
     def test_a_placeholder_is_not_evidence(self):
         assert EVIDENCE_MISSING in validate_run_case(_case(evidence="待补充"))
@@ -630,6 +700,13 @@ class TestEvidence:
     def test_a_markdown_evidence_is_evidence(self):
         reasons = validate_run_case(_case(evidence="**the report** of the run, see [the log](http://x.test)"))
         assert EVIDENCE_MISSING not in reasons
+
+    def test_the_evidence_is_not_judged_for_evaluation_words(self):
+        """Only the measured value of a step is judged for evaluation
+        words. The evidence is not — the docstring of the model says so,
+        and this test pins it."""
+        reasons = validate_run_case(_case(evidence="不一致"))
+        assert not [reason for reason in reasons if ACTUAL_VALUE_IS_EVALUATION in reason]
 
 
 class TestBatchHeader:

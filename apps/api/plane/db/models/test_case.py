@@ -661,7 +661,9 @@ class TestRunCase(ProjectBaseModel):
     stripped. A serializer hands the source out unchanged — the front end
     renders it. The rules of :mod:`plane.db.testcase_validity` read the
     source: they remove the markup to decide whether there is evidence at
-    all, and they judge the evaluation words on the text that is left.
+    all, and they accept a file that is attached to the record as the
+    evidence. The evidence is not judged for evaluation words — that
+    check applies to the measured value of a step.
 
     The evidence may also be a **file**: the screenshot of the report is
     the evidence. The file is bound to this record through
