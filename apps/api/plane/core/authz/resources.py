@@ -39,6 +39,8 @@ class ResourceType:
     STATE = "state"
     PAGE = "page"
     INVITE = "invite"
+    TEST_CASE = "test_case"
+    TEST_RUN = "test_run"
 
 
 # The complete, ordered set. Used by ``RESOURCE_CHOICES`` (Django) and by the
@@ -60,6 +62,8 @@ RESOURCE_CHOICES = (
     (ResourceType.STATE, "State"),
     (ResourceType.PAGE, "Page"),
     (ResourceType.INVITE, "Invite"),
+    (ResourceType.TEST_CASE, "Test Case"),
+    (ResourceType.TEST_RUN, "Test Run"),
 )
 
 
@@ -86,6 +90,11 @@ WORKSPACE_LEVEL_RESOURCES = frozenset(
 # Workspace-level resource types only accept read actions. Writes must land
 # on a project-scoped resource via an explicit ProjectGrant. This is the
 # Q4 enforcement point for workspace-wide grants.
+#
+# ``test_case`` and ``test_run`` are deliberately NOT in this set: both are
+# project-scoped (a case belongs to a project and a module code, a batch
+# belongs to a project), so a write on them is anchored on a project grant
+# like every other project resource.
 ALLOWED_WORKSPACE_LEVEL_ACTIONS = frozenset({"read"})
 
 

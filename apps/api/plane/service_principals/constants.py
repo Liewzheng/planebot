@@ -56,6 +56,8 @@ class ResourceType:
     STATE = "state"
     PAGE = "page"
     INVITE = "invite"
+    TEST_CASE = "test_case"
+    TEST_RUN = "test_run"
 
 
 RESOURCE_CHOICES = (
@@ -75,6 +77,8 @@ RESOURCE_CHOICES = (
     (ResourceType.STATE, "State"),
     (ResourceType.PAGE, "Page"),
     (ResourceType.INVITE, "Invite"),
+    (ResourceType.TEST_CASE, "Test Case"),
+    (ResourceType.TEST_RUN, "Test Run"),
 )
 
 
