@@ -157,6 +157,23 @@ ACTION_REQUIRED_ROLE = {
     (Action.CREATE, "page"): ROLE_MEMBER,        # app + v1 (project member)
     (Action.UPDATE, "page"): ROLE_MEMBER,        # app + v1 (project member)
     (Action.DELETE, "page"): ROLE_MEMBER,        # app + v1 (project member)
+    # test_case / test_run — project-scoped resources of the test-case
+    # feature (M63). Reading a case or a batch is open to every project
+    # member (GUEST); writing one needs MEMBER; removing one needs ADMIN.
+    # The rows carry the usual ``created_by`` attribution column, so the
+    # per-resource ownership step (M40) applies to them unchanged: a
+    # member-tier service principal may only update or delete the cases and
+    # batches it created itself (``_OWNER_ATTNAME = "created_by_id"``).
+    (Action.READ, "test_case"): ROLE_GUEST,
+    (Action.LIST, "test_case"): ROLE_GUEST,
+    (Action.CREATE, "test_case"): ROLE_MEMBER,
+    (Action.UPDATE, "test_case"): ROLE_MEMBER,
+    (Action.DELETE, "test_case"): ROLE_ADMIN,
+    (Action.READ, "test_run"): ROLE_GUEST,
+    (Action.LIST, "test_run"): ROLE_GUEST,
+    (Action.CREATE, "test_run"): ROLE_MEMBER,
+    (Action.UPDATE, "test_run"): ROLE_MEMBER,
+    (Action.DELETE, "test_run"): ROLE_ADMIN,
 }
 
 

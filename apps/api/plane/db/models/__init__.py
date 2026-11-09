@@ -62,6 +62,19 @@ from .project import (
 from .session import Session
 from .social_connection import SocialLoginConnection
 from .state import State, StateGroup, DEFAULT_STATES
+from .test_case import (
+    TestCase,
+    TestCaseIssue,
+    TestCaseModule,
+    TestCaseSequence,
+    TestCaseStep,
+    TestRun,
+    TestRunCase,
+    TestRunSequence,
+    TestRunStepRecord,
+    allocate_test_case_number,
+    allocate_test_run_number,
+)
 from .user import Account, Profile, User, BotTypeEnum
 from .view import IssueView
 from .webhook import Webhook, WebhookLog
