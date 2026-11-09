@@ -68,6 +68,12 @@ const readVarString = (buffer: Buffer, offset: number): { value: string; offset:
   return { value: buffer.subarray(length.offset, end).toString("utf8"), offset: end };
 };
 
+const readVarUint8Array = (buffer: Buffer, offset: number): { value: Uint8Array; offset: number } => {
+  const length = readVarUint(buffer, offset);
+  const end = length.offset + length.value;
+  return { value: new Uint8Array(buffer.subarray(length.offset, end)), offset: end };
+};
+
 export type TRawClientOptions = {
   /** websocket url including the query string the web client sends */
   url: string;
@@ -97,6 +103,8 @@ export class RawHocuspocusClient {
   private statelessWaiters: ((payload: string) => void)[] = [];
   /** waiters for the completed sync handshake */
   private syncWaiters: (() => void)[] = [];
+  /** the document the server synced into this client */
+  private readonly document = new Y.Doc();
 
   /** the server accepted the connection */
   public authenticated = false;
@@ -232,6 +240,10 @@ export class RawHocuspocusClient {
           return;
         }
         if (syncType.value === YJS_SYNC_TYPE.SyncStep2) {
+          // The server answers the client's SyncStep1 with the missing
+          // structs of the document — that is where the page body arrives.
+          const update = readVarUint8Array(data, syncType.offset);
+          Y.applyUpdate(this.document, update.value);
           this.synced = true;
           this.syncWaiters.splice(0).forEach((waiter) => waiter());
         }
@@ -300,6 +312,17 @@ export class RawHocuspocusClient {
   /** Give the server a moment to deliver anything that is in flight. */
   async settle(ms = 250): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * The body the server synced into this client.
+   *
+   * The page body lives in the "default" fragment of the shared document
+   * (the title is a second fragment — see
+   * `packages/editor/src/helpers/yjs-utils.ts`).
+   */
+  documentBody(): string {
+    return this.document.getXmlFragment("default").toString();
   }
 
   destroy() {

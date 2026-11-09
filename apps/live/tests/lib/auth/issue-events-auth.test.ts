@@ -5,7 +5,7 @@
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeAppApi } from "../../helpers/fake-app-api";
+import { FakeAppApi, PAGE_ACCESS_PUBLIC } from "../../helpers/fake-app-api";
 
 const apiState = vi.hoisted(() => ({ baseURL: "http://127.0.0.1:1" }));
 
@@ -43,6 +43,7 @@ const { onAuthenticate } = await import("@/lib/auth");
 const WORKSPACE_SLUG = "acme";
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 const SECRET_PROJECT_ID = "22222222-2222-4222-8222-222222222222";
+const PAGE_ID = "33333333-3333-4333-8333-333333333333";
 const USER = { id: "user-1", display_name: "Ada Lovelace", cookie: "session=user-1" };
 const SERVICE_TOKEN = "plane_svc_0123456789abcdef";
 
@@ -171,12 +172,22 @@ describe("onAuthenticate — issue-events channel", () => {
     appApi.setOptions({
       user: USER,
       access: {
-        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: {} } },
+        // a member of the project — the page gate (not the issue-events
+        // gate) decides about a page document
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: { [PROJECT_ID]: 15 } } },
         workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
       },
       projects: {
         [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 2 },
         [SECRET_PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 0 },
+      },
+      pages: {
+        [PAGE_ID]: {
+          workspaceSlug: WORKSPACE_SLUG,
+          projectId: PROJECT_ID,
+          access: PAGE_ACCESS_PUBLIC,
+          ownedBy: USER.id,
+        },
       },
     });
 
@@ -186,12 +197,17 @@ describe("onAuthenticate — issue-events channel", () => {
       requestParameters: parameters({ projectId: PROJECT_ID }),
       context,
       token: humanToken,
-      documentName: `page:${PROJECT_ID}`,
+      // the document name of a page is the page id itself
+      documentName: PAGE_ID,
     });
 
     expect(result.user).toEqual({ id: USER.id, name: USER.display_name });
-    // no issue-events lookup happened
-    expect(appApi.requests.map((request) => request.url)).toEqual(["/api/users/me/"]);
+    // no issue-events lookup happened — the page gate owns the page
+    // documents (it asks the app API for the page itself)
+    expect(appApi.requests.map((request) => request.url)).toEqual([
+      "/api/users/me/",
+      `/api/workspaces/${WORKSPACE_SLUG}/projects/${PROJECT_ID}/pages/${PAGE_ID}/?track_visit=false`,
+    ]);
   });
 
   it("refuses a service principal without a grant on the project", async () => {

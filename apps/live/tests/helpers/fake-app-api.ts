@@ -16,11 +16,30 @@ export const ROLE_GUEST = 5;
 export const NETWORK_SECRET = 0;
 export const NETWORK_PUBLIC = 2;
 
+/** `Page.access` values (0 public, 1 private). */
+export const PAGE_ACCESS_PUBLIC = 0;
+export const PAGE_ACCESS_PRIVATE = 1;
+
 export type TProjectFixture = {
   /** the workspace the project lives in */
   workspaceSlug: string;
   /** `network` value of the project (0 = secret, 2 = public) */
   network?: number;
+  /** `guest_view_all_features` of the project (default false) */
+  guestViewAllFeatures?: boolean;
+};
+
+export type TPageFixture = {
+  /** the workspace the page lives in */
+  workspaceSlug: string;
+  /** the project the page is linked to */
+  projectId: string;
+  /** 0 = public, 1 = private */
+  access: number;
+  /** the user id that owns the page */
+  ownedBy: string;
+  /** the collaborative binary the description endpoint serves */
+  binary?: Buffer;
 };
 
 export type TServicePrincipalFixture = {
@@ -51,6 +70,8 @@ export type TFakeAppApiOptions = {
   access?: TProjectAccess;
   /** project id -> the project (its workspace and network value) */
   projects?: Record<string, TProjectFixture>;
+  /** page id -> the page (its workspace, project, visibility and owner) */
+  pages?: Record<string, TPageFixture>;
   /** service token -> the service principal it resolves to */
   servicePrincipals?: Record<string, TServicePrincipalFixture>;
   /**
@@ -83,6 +104,15 @@ export type TFakeAppApiOptions = {
  *  - `GET /api/v1/workspaces/<slug>/projects/<pid>/issues/` — 200 for a
  *    service principal that holds the `work_item:read` scope *and* an
  *    active grant on the project, 403 otherwise
+ *  - `GET /api/workspaces/<slug>/projects/<pid>/pages/<page_id>/` — the
+ *    page itself: 404 when the page does not live in that (workspace,
+ *    project), 403 when the caller has no project membership row or the
+ *    page is private and not theirs, 400 for a guest that may not view all
+ *    features, 200 otherwise
+ *  - `GET /api/workspaces/<slug>/projects/<pid>/pages/<page_id>/description/`
+ *    — the collaborative binary of the page, under the same membership and
+ *    visibility rules (without the guest rule, which the description
+ *    endpoint does not carry)
  *  - `GET /api/workspaces/<slug>/principal/permissions/` — the service
  *    principal dispatch endpoint (401 for an unknown token)
  */
@@ -260,6 +290,105 @@ export class FakeAppApi {
       return;
     }
 
+    // Page endpoints of the app layer — the "may this user read this page"
+    // rule the live server delegates to.
+    const pageMatch = url.match(
+      /^\/api\/workspaces\/([^/]+)\/projects\/([^/]+)\/pages\/([^/?]+)(\/description)?\/?(\?.*)?$/
+    );
+    if (pageMatch) {
+      const [, workspaceSlug, projectId, pageId, descriptionPath] = pageMatch;
+      if (!isSessionUser()) {
+        json(401, { error: "authentication required" });
+        return;
+      }
+      const denial = this.pageDenial({
+        workspaceSlug,
+        projectId,
+        pageId,
+        isDescription: Boolean(descriptionPath),
+      });
+      if (denial) {
+        json(denial.status, { error: denial.error });
+        return;
+      }
+      if (descriptionPath) {
+        // The collaborative binary of the page.
+        const binary = this.options.pages?.[pageId]?.binary ?? Buffer.alloc(0);
+        res.writeHead(200, { "Content-Type": "application/octet-stream" });
+        res.end(binary);
+        return;
+      }
+      const page = this.options.pages?.[pageId];
+      json(200, {
+        id: pageId,
+        name: `page-${pageId}`,
+        access: page?.access ?? PAGE_ACCESS_PUBLIC,
+        owned_by: page?.ownedBy,
+        description_html: "<p>page body</p>",
+      });
+      return;
+    }
+
     json(404, { error: "not found" });
+  }
+
+  /**
+   * The app layer's rule for reading a page, in the order the real view
+   * applies it (`plane.app.permissions.page.ProjectPagePermission` plus
+   * `plane.app.views.page.base.PageViewSet`):
+   *
+   *  1. the caller needs an active `ProjectMember` row for (user, project,
+   *     workspace) — the permission class resolves the role from that row
+   *     and denies when there is none. A workspace admin without a project
+   *     membership is denied here (the page endpoints have no workspace
+   *     admin bypass, unlike the issue endpoints).
+   *  2. the page has to live in that (workspace, project) — the queryset
+   *     annotates the `ProjectPage` link of the project and filters on it,
+   *     so a page of another project answers 404.
+   *  3. a private page is readable by its owner only.
+   *  4. a guest (role 5) may only read the pages they own unless the
+   *     project sets `guest_view_all_features` — the detail endpoint
+   *     answers 400 then, the description endpoint does not carry that
+   *     rule.
+   *
+   * The project's `network` flag is not part of the rule: the page endpoints
+   * ask for a project membership row and never look at it.
+   */
+  private pageDenial({
+    workspaceSlug,
+    projectId,
+    pageId,
+    isDescription,
+  }: {
+    workspaceSlug: string;
+    projectId: string;
+    pageId: string;
+    isDescription: boolean;
+  }): { status: number; error: string } | null {
+    const access = this.options.access ?? {};
+    const projects = this.options.projects ?? {};
+    const pages = this.options.pages ?? {};
+    const userId = this.options.user?.id ?? "";
+
+    const page = pages[pageId];
+    if (!page || page.workspaceSlug !== workspaceSlug || page.projectId !== projectId) {
+      return { status: 404, error: "Page not found" };
+    }
+
+    const role = access.projectRoles?.[userId]?.[workspaceSlug]?.[projectId];
+    if (role === undefined) {
+      return { status: 403, error: "You don't have the required permissions." };
+    }
+
+    const isOwner = page.ownedBy === userId;
+    if (page.access === PAGE_ACCESS_PRIVATE && !isOwner) {
+      return { status: 403, error: "You don't have the required permissions." };
+    }
+
+    if (!isDescription && role === ROLE_GUEST && !isOwner && !projects[projectId]?.guestViewAllFeatures) {
+      return { status: 400, error: "You are not allowed to view this page" };
+    }
+
+    return null;
   }
 }

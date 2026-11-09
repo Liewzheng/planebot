@@ -23,6 +23,16 @@ export class AppError extends Error {
   url?: string;
   code?: string;
   context?: Record<string, any>;
+  /**
+   * A short, client-safe explanation of the refusal.
+   *
+   * Hocuspocus sends this to the client instead of its generic
+   * "permission-denied" answer (`error.reason`). Only use it for statements
+   * that carry no information about the resource the caller asked for — a
+   * statement about which *paths* exist is fine, a statement about the
+   * content or the owner of the resource is not.
+   */
+  reason?: string;
 
   constructor(messageOrError: string | unknown, data?: Partial<Omit<AppError, "name" | "message">>) {
     // Handle error objects - extract essential info

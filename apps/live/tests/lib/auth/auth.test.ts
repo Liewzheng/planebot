@@ -52,6 +52,15 @@ vi.mock("@/services/principal.service", () => ({
   }),
 }));
 
+// The page gate is a separate concern with its own tests (see
+// tests/lib/auth/page-auth.test.ts, tests/lib/page/authorization.test.ts and
+// tests/e2e/page-channel.test.ts).  It is mocked here so these cases stay
+// about the authentication itself — and so they are not coupled to a
+// document name the gate would have to resolve against the app API.
+vi.mock("@/lib/page-auth", () => ({
+  assertPageDocumentAccess: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Module under test.  Imported lazily so each test can prime the
 // mocks first.
 async function loadAuthModule() {
