@@ -879,6 +879,98 @@ class TestExecutorSnapshot:
         assert run.executed_by_name == replacement.display_name
         assert run.executed_by_name != first_snapshot
 
+    @pytest.mark.parametrize("shape", ["generator", "map", "iter"])
+    def test_a_one_shot_update_fields_writes_the_key_and_the_snapshot(
+        self, project, shape
+    ):
+        """Django accepts any iterable for ``update_fields``.
+
+        A one-shot iterator must not be consumed twice: the model would
+        then hand Django an exhausted iterable — the foreign key would
+        not be written while the snapshot was, and the row would claim
+        two different executors.
+        """
+        executor = self._executor()
+        run = self._run(project, executor)
+        run.refresh_from_db()
+        first_snapshot = run.executed_by_name
+
+        replacement = self._executor("-replacement")
+        run.executed_by = replacement
+
+        if shape == "generator":
+            update_fields = (field for field in ["executed_by"])
+        elif shape == "map":
+            update_fields = map(str, ["executed_by"])
+        else:
+            update_fields = iter(["executed_by"])
+
+        run.save(update_fields=update_fields)
+
+        run.refresh_from_db()
+        assert run.executed_by_id == replacement.id, (
+            "the foreign key must be written for a one-shot update_fields"
+        )
+        assert run.executed_by_name == replacement.display_name
+        assert run.executed_by_name != first_snapshot
+
+    def test_a_one_shot_iterator_over_an_unrelated_field_does_not_raise(self, project):
+        """The write the caller asked for must not blow up.
+
+        Before the iterable was materialised, the membership test
+        consumed the iterator and Django received an empty one — a bare
+        ``AssertionError`` out of ``save()``.
+        """
+        run = self._run(project, self._executor())
+
+        run.save(update_fields=(field for field in ["environment"]))
+
+    def test_a_one_shot_iterator_writes_the_field_it_names(self, project):
+        run = self._run(project, self._executor())
+        run.environment = "Windows 11 on the test bench"
+
+        run.save(update_fields=(field for field in ["environment"]))
+
+        run.refresh_from_db()
+        assert run.environment == "Windows 11 on the test bench"
+
+    def test_a_partial_update_without_the_foreign_key_leaves_the_snapshot_alone(self, project):
+        """The snapshot follows the foreign key, never the other way
+        round: a write that does not touch the foreign key must not move
+        the name."""
+        executor = self._executor()
+        run = self._run(project, executor)
+        run.refresh_from_db()
+        first_snapshot = run.executed_by_name
+
+        replacement = self._executor("-replacement")
+        run.executed_by = replacement
+
+        run.save(update_fields=["executed_by_name"])
+
+        run.refresh_from_db()
+        assert run.executed_by_id == executor.id, (
+            "the foreign key is not part of this write and must not change"
+        )
+        assert run.executed_by_name == first_snapshot
+
+    def test_the_snapshot_of_a_completed_batch_is_frozen(self, project):
+        """The name of the executor is part of the audit trail of a
+        finished batch — it may not be rewritten."""
+        run = self._run(project, self._executor())
+        run.status = "completed"
+        run.save()
+        run.refresh_from_db()
+        snapshot = run.executed_by_name
+
+        run.executed_by_name = "tampered"
+        with pytest.raises(ValidationError) as error:
+            run.save(update_fields=["executed_by_name"])
+
+        assert "executed_by_name" in str(error.value)
+        run.refresh_from_db()
+        assert run.executed_by_name == snapshot
+
 
 @pytest.mark.django_db
 class TestDuplicateCaseInBatch:

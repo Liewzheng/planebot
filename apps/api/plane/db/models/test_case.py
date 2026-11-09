@@ -457,12 +457,28 @@ class TestRun(ProjectBaseModel):
             self._assert_version_fixed()
             self._assert_not_frozen()
 
-        self._sync_executed_by_name()
-        self._keep_snapshot_in_update_fields(kwargs)
+        update_fields = self._materialise_update_fields(kwargs)
+        self._sync_executed_by_name(update_fields)
+        self._keep_snapshot_in_update_fields(kwargs, update_fields)
 
         super(TestRun, self).save(*args, **kwargs)
 
-    def _sync_executed_by_name(self):
+    def _materialise_update_fields(self, kwargs):
+        """Turn ``update_fields`` into a list exactly once.
+
+        Django accepts any iterable for ``update_fields`` (it converts it
+        to a frozenset itself), so a one-shot iterator must not be
+        consumed twice: a membership test would see an empty iterable
+        and Django would be handed a truncated one.
+        """
+        update_fields = kwargs.get("update_fields")
+        if update_fields is None:
+            return None
+        fields = list(update_fields)
+        kwargs["update_fields"] = fields
+        return fields
+
+    def _sync_executed_by_name(self, update_fields=None):
         """Keep a text snapshot of the executor next to the foreign key.
 
         The foreign key is ``SET_NULL``: a deleted user would leave the
@@ -474,6 +490,11 @@ class TestRun(ProjectBaseModel):
         if self._state.adding:
             if self.executed_by_id and not self.executed_by_name:
                 self.executed_by_name = self._executor_display_name()
+            return
+
+        if update_fields is not None and "executed_by" not in update_fields:
+            # The foreign key is not part of this write — the snapshot
+            # must not move with it.
             return
 
         # The row is fetched, not the flat value of the column: a flat
@@ -499,7 +520,7 @@ class TestRun(ProjectBaseModel):
         elif not self.executed_by_name and self.executed_by_id:
             self.executed_by_name = self._executor_display_name()
 
-    def _keep_snapshot_in_update_fields(self, kwargs):
+    def _keep_snapshot_in_update_fields(self, kwargs, update_fields=None):
         """Keep the snapshot in step with a partial update.
 
         Django only writes the fields listed in ``update_fields``; a
@@ -507,14 +528,11 @@ class TestRun(ProjectBaseModel):
         ``save(update_fields=["executed_by"])`` would otherwise leave the
         old name next to the new person.
         """
-        update_fields = kwargs.get("update_fields")
-        if not update_fields:
+        if update_fields is None:
             return
-        if "executed_by" not in update_fields:
-            return
-        if "executed_by_name" in update_fields:
-            return
-        kwargs["update_fields"] = list(update_fields) + ["executed_by_name"]
+        if "executed_by" in update_fields and "executed_by_name" not in update_fields:
+            update_fields.append("executed_by_name")
+        kwargs["update_fields"] = update_fields
 
     def _executor_display_name(self):
         user = self.executed_by
@@ -597,6 +615,7 @@ class TestRun(ProjectBaseModel):
                 "commit_hash",
                 "environment",
                 "executed_by",
+                "executed_by_name",
             )
             .first()
         )
@@ -615,6 +634,7 @@ class TestRun(ProjectBaseModel):
                 "build_number",
                 "commit_hash",
                 "environment",
+                "executed_by_name",
             )
             if getattr(self, field) != original[field]
         ]
