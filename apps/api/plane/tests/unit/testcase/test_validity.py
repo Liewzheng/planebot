@@ -17,6 +17,7 @@ import pytest
 
 from plane.db.testcase_validity import (
     ACTUAL_VALUE_IS_EVALUATION,
+    ACTUAL_VALUE_IS_IMAGE_ONLY,
     ACTUAL_VALUE_WITHOUT_CONCLUSION,
     ACTION_EMPTY,
     CASE_NUMBER_FORMAT,
@@ -58,6 +59,9 @@ from plane.db.testcase_validity import (
     RunData,
     StepRecordData,
     is_evaluation_phrase,
+    is_filled_markdown,
+    is_placeholder,
+    markdown_text,
     validate_run,
     validate_run_case,
     validate_run_write,
@@ -82,6 +86,7 @@ def _step(
     actual_value="",
     action="Open the login page",
     expected_result="The login page is shown",
+    attachment_count=0,
 ):
     return StepRecordData(
         sequence_id=sequence_id,
@@ -89,6 +94,7 @@ def _step(
         expected_result=expected_result,
         conclusion=conclusion,
         actual_value=actual_value,
+        attachment_count=attachment_count,
     )
 
 
@@ -106,6 +112,7 @@ def _case(**overrides):
         "steps": (_step(),),
         "conclusion": RUN_CASE_CONCLUSION_PASS,
         "evidence": "screenshot 2026-11-09.png",
+        "evidence_attachment_count": 0,
     }
     base.update(overrides)
     return RunCaseData(**base)
@@ -286,6 +293,237 @@ class TestEvaluationWords:
     def test_an_observation_is_not_an_evaluation_word(self, phrase):
         assert is_evaluation_phrase(phrase) is False
 
+    def test_an_evaluation_word_written_in_markdown_is_detected(self):
+        """The markup is not what the value says: ``**不一致**`` says
+        exactly what ``不一致`` says."""
+        assert is_evaluation_phrase("**不一致**") is True
+        assert is_evaluation_phrase("<b>正常</b>") is True
+        assert is_evaluation_phrase("`不一致`") is True
+
+    def test_a_yes_or_no_answer_is_an_observation(self):
+        """The list of evaluation words carries judgements only.
+
+        An answer to a yes/no question reports what was seen, so "no" is
+        a legitimate measured value ("did the device answer? — no"). The
+        judgement words stay in the list.
+        """
+        assert is_evaluation_phrase("no") is False
+        assert is_evaluation_phrase("yes") is False
+        assert is_evaluation_phrase("ok") is True
+        assert is_evaluation_phrase("pass") is True
+        assert is_evaluation_phrase("fail") is True
+        assert is_evaluation_phrase("n/a") is True
+
+
+class TestMarkdownMeasuredValue:
+    """The measured value is Markdown source: the markup is read, not stored."""
+
+    def test_a_plain_text_is_a_measured_value(self):
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value="error 42"),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert reasons == []
+
+    def test_the_markup_does_not_hide_the_text(self):
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value="**error 42**"),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert reasons == []
+
+    def test_an_evaluation_word_written_in_markdown_is_still_rejected(self):
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value="**不一致**"),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert "step_1:" + ACTUAL_VALUE_IS_EVALUATION in reasons
+
+    def test_an_evaluation_word_written_in_html_is_still_rejected(self):
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value="<b>正常</b>"),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert "step_1:" + ACTUAL_VALUE_IS_EVALUATION in reasons
+
+    def test_a_pure_image_is_not_a_measured_value(self):
+        """An inline image is a picture, not a sentence."""
+        reasons = validate_run_case(
+            _case(
+                steps=(
+                    _step(
+                        conclusion=STEP_VERDICT_FAIL,
+                        actual_value="![](https://files.test/shot.png)",
+                    ),
+                ),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert "step_1:" + FAIL_WITHOUT_ACTUAL_VALUE in reasons
+
+    def test_a_pure_image_names_the_missing_file(self):
+        reasons = validate_run_case(
+            _case(
+                steps=(
+                    _step(
+                        conclusion=STEP_VERDICT_FAIL,
+                        actual_value="![](https://files.test/shot.png)",
+                    ),
+                ),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert "step_1:" + ACTUAL_VALUE_IS_IMAGE_ONLY in reasons
+
+    def test_an_image_next_to_a_text_is_a_measured_value(self):
+        reasons = validate_run_case(
+            _case(
+                steps=(
+                    _step(
+                        conclusion=STEP_VERDICT_FAIL,
+                        actual_value="error 42 ![](https://files.test/shot.png)",
+                    ),
+                ),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert reasons == []
+
+    def test_a_placeholder_is_not_a_measured_value(self):
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value="待补充"),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert "step_1:" + FAIL_WITHOUT_ACTUAL_VALUE in reasons
+
+    def test_a_blank_value_is_not_a_measured_value(self):
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_FAIL, actual_value="   "),),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert "step_1:" + FAIL_WITHOUT_ACTUAL_VALUE in reasons
+
+
+class TestMarkdownHelpers:
+    @pytest.mark.parametrize(
+        "value",
+        ["", "   ", "![](a.png)", "![](a.png) ![](b.png)", "-", "待补充", "**-**", "<b></b>"],
+    )
+    def test_a_value_without_text_is_not_filled(self, value):
+        assert is_filled_markdown(value) is False
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "error 42",
+            "**error 42**",
+            "<b>error 42</b>",
+            "![shot](a.png) error 42",
+            "[exit code 1](http://x.test)",
+        ],
+    )
+    def test_a_value_with_text_is_filled(self, value):
+        assert is_filled_markdown(value) is True
+
+    def test_the_text_of_a_link_stays(self):
+        assert markdown_text("[exit code 1](http://x.test)") == "exit code 1"
+
+    def test_an_image_carries_no_text(self):
+        assert markdown_text("![](a.png)").strip() == ""
+
+    @pytest.mark.parametrize("value", ["-", "--", "...", "待补充", "TBD", "todo"])
+    def test_a_placeholder_is_recognised(self, value):
+        assert is_placeholder(value) is True
+
+    @pytest.mark.parametrize("value", ["— (the device stayed silent)", "error 42", "no", "-1"])
+    def test_an_observation_is_not_a_placeholder(self, value):
+        assert is_placeholder(value) is False
+
+
+class TestAttachments:
+    """A file that is attached to a step is a measured value."""
+
+    def test_a_text_with_an_attachment_is_accepted(self):
+        reasons = validate_run_case(
+            _case(
+                steps=(
+                    _step(
+                        conclusion=STEP_VERDICT_FAIL,
+                        actual_value="error 42",
+                        attachment_count=1,
+                    ),
+                ),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert reasons == []
+
+    def test_an_attachment_alone_is_a_measured_value(self):
+        """The screenshot of the screen is what the tester saw."""
+        reasons = validate_run_case(
+            _case(
+                steps=(
+                    _step(
+                        conclusion=STEP_VERDICT_FAIL,
+                        actual_value="",
+                        attachment_count=1,
+                    ),
+                ),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert reasons == []
+        assert "step_1:" + FAIL_WITHOUT_ACTUAL_VALUE not in reasons
+
+    def test_an_attachment_alone_does_not_hide_an_evaluation_word(self):
+        reasons = validate_run_case(
+            _case(
+                steps=(
+                    _step(
+                        conclusion=STEP_VERDICT_FAIL,
+                        actual_value="不一致",
+                        attachment_count=1,
+                    ),
+                ),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert "step_1:" + ACTUAL_VALUE_IS_EVALUATION in reasons
+
+    def test_an_attachment_without_a_verdict_is_rejected(self):
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_UNSET, attachment_count=1),),
+                conclusion=RUN_CASE_CONCLUSION_NA,
+                na_reason="the module is not built for Windows",
+                na_criteria_source="STD-SW-003 §5",
+            )
+        )
+        assert "step_1:" + ACTUAL_VALUE_WITHOUT_CONCLUSION in reasons
+
+    def test_a_measurement_without_a_verdict_is_rejected(self):
+        reasons = validate_run_case(
+            _case(
+                steps=(_step(conclusion=STEP_VERDICT_UNSET, actual_value="error 42"),),
+                conclusion=RUN_CASE_CONCLUSION_NA,
+                na_reason="the module is not built for Windows",
+                na_criteria_source="STD-SW-003 §5",
+            )
+        )
+        assert "step_1:" + ACTUAL_VALUE_WITHOUT_CONCLUSION in reasons
+
 
 class TestConclusion:
     def test_an_unknown_conclusion_is_rejected(self):
@@ -376,6 +614,22 @@ class TestEvidence:
 
     def test_a_blank_evidence_is_rejected(self):
         assert EVIDENCE_MISSING in validate_run_case(_case(evidence="   "))
+
+    def test_a_pure_image_is_not_evidence(self):
+        """An inline image is a picture, not a file the batch can show."""
+        assert EVIDENCE_MISSING in validate_run_case(_case(evidence="![](https://files.test/shot.png)"))
+
+    def test_a_placeholder_is_not_evidence(self):
+        assert EVIDENCE_MISSING in validate_run_case(_case(evidence="待补充"))
+
+    def test_an_attachment_alone_is_evidence(self):
+        """The screenshot of the report is the evidence."""
+        reasons = validate_run_case(_case(evidence="", evidence_attachment_count=1))
+        assert EVIDENCE_MISSING not in reasons
+
+    def test_a_markdown_evidence_is_evidence(self):
+        reasons = validate_run_case(_case(evidence="**the report** of the run, see [the log](http://x.test)"))
+        assert EVIDENCE_MISSING not in reasons
 
 
 class TestBatchHeader:
@@ -472,7 +726,14 @@ class TestReasonMessages:
             priority="P9",
             preconditions="",
             environment="",
-            steps=(_step(conclusion="nonsense", actual_value="不一致"),),
+            steps=(
+                _step(conclusion="nonsense", actual_value="不一致"),
+                _step(
+                    sequence_id=2,
+                    conclusion=STEP_VERDICT_FAIL,
+                    actual_value="![](https://files.test/shot.png)",
+                ),
+            ),
             conclusion="nonsense",
             evidence="",
         )

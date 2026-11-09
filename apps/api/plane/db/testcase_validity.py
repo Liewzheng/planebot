@@ -25,10 +25,27 @@ the location of the problem:
 The codes themselves never contain ``:`` or ``|``, so the decorations can
 be split off unambiguously. :data:`REASON_MESSAGES` maps the bare code to
 an English sentence; the front end localises from the code.
+
+Markdown and attachments
+------------------------
+The measured value of a step and the evidence of a case are stored as the
+**Markdown source** that was typed — no HTML conversion, no stripping of
+the markup. The rules read that source:
+
+* the markup is removed before the value is judged, so ``**不一致**`` and
+  ``<b>正常</b>`` are judged as ``不一致`` and ``正常``;
+* a value that carries no text of its own is not a measured value: an
+  inline image (``![](…)``) is a picture and not a sentence, and a
+  placeholder is filler;
+* a file that is attached to the step or to the case **is** a measured
+  value — the screenshot of the screen is what the tester saw. How many
+  files are attached comes in through the dataclasses
+  (``attachment_count`` and ``evidence_attachment_count``).
 """
 
 from dataclasses import dataclass
 from datetime import date
+import re
 
 # Module imports
 from plane.db.testcase_numbering import (
@@ -90,6 +107,12 @@ STEP_CONCLUSION_INVALID = "step_conclusion_invalid"
 STEP_CONCLUSION_UNSET = "step_conclusion_unset"
 FAIL_WITHOUT_ACTUAL_VALUE = "fail_without_actual_value"
 ACTUAL_VALUE_IS_EVALUATION = "actual_value_is_evaluation"
+#: The measured value of a failed step carries nothing but an image.
+#: The code never decides the validity on its own — it always comes with
+#: :data:`FAIL_WITHOUT_ACTUAL_VALUE` — but it tells the front end what
+#: to say: an inline image is not a measured value, the file behind it
+#: has to be attached to the step.
+ACTUAL_VALUE_IS_IMAGE_ONLY = "actual_value_is_image_only"
 ACTUAL_VALUE_WITHOUT_CONCLUSION = "actual_value_without_conclusion"
 CONCLUSION_INVALID = "conclusion_invalid"
 CONCLUSION_PASS_WITH_FAILED_STEP = "conclusion_pass_with_failed_step"
@@ -135,8 +158,9 @@ REASON_MESSAGES = {
     EXPECTED_EMPTY: "The step expected result is required.",
     STEP_CONCLUSION_INVALID: "The step verdict must be pass, fail or unset.",
     STEP_CONCLUSION_UNSET: "The step verdict must be marked, it may not be left blank.",
-    FAIL_WITHOUT_ACTUAL_VALUE: "A failed step must carry the measured value.",
+    FAIL_WITHOUT_ACTUAL_VALUE: "A failed step must carry the measured value — as text or as an attached file.",
     ACTUAL_VALUE_IS_EVALUATION: "The measured value must be the observed original, not an evaluation word.",
+    ACTUAL_VALUE_IS_IMAGE_ONLY: "The measured value is only an image — attach the file to the step.",
     ACTUAL_VALUE_WITHOUT_CONCLUSION: "A measured value without a step verdict is not allowed.",
     CONCLUSION_INVALID: "The conclusion must be PASS, FAIL, N/A or MANUAL.",
     CONCLUSION_PASS_WITH_FAILED_STEP: "A PASS conclusion must not have a failed step.",
@@ -164,12 +188,64 @@ REASON_MESSAGES = {
 
 
 # --------------------------------------------------------------------------- #
+# Markdown
+# --------------------------------------------------------------------------- #
+
+#: ``![alt](url)`` — an image. The picture carries no text of its own:
+#: an image alone is not a measured value. The file behind it is, and it
+#: counts only when it is attached to the step (see the attachment rules
+#: below).
+_MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+
+#: ``[text](url)`` — a link. The text of the link stays: "the exit code
+#: is 1" is an observation even when it links to the log.
+_MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+
+#: ``<b>``/``</b>`` — an HTML tag.
+_HTML_TAG_RE = re.compile(r"</?[A-Za-z][^>]*>")
+
+#: ``**``/``__``/``*``/``~~``/`` `` `` — the emphasis markers.
+_EMPHASIS_RE = re.compile(r"\*\*|__|~~|\*|`")
+
+#: ``# heading``/``> quote``/``- item``/``1. item`` — the block markers at
+#: the start of a line.
+_MARKDOWN_BLOCK_MARKER_RE = re.compile(r"(?m)^[ \t]*(?:#{1,6}[ \t]+|>[ \t]?|[-*+][ \t]+|\d+[.)][ \t]+)")
+
+
+def markdown_text(value: object) -> str:
+    """The text of a Markdown source, with the markup taken away.
+
+    The result answers two questions: does the value carry text of its
+    own, and is that text nothing but an evaluation word. The markup is
+    not what the value says — ``**不一致**`` says exactly what
+    ``不一致`` says — so it is removed before the comparison.
+
+    An image contributes no text: ``![alt](url)`` is a picture, and a
+    picture is a file, not a sentence. The text of a link stays.
+    """
+    if not isinstance(value, str):
+        return ""
+    text = _MARKDOWN_IMAGE_RE.sub(" ", value)
+    text = _MARKDOWN_LINK_RE.sub(r"\1", text)
+    text = _HTML_TAG_RE.sub(" ", text)
+    text = _EMPHASIS_RE.sub("", text)
+    text = _MARKDOWN_BLOCK_MARKER_RE.sub("", text)
+    return text
+
+
+# --------------------------------------------------------------------------- #
 # Evaluation words (评价词)
 # --------------------------------------------------------------------------- #
 
 #: Words that judge the result instead of reporting it. A measured value
 #: that is nothing but one of these is not the observed original — the
 #: standard rejects "不一致" as a measured value.
+#:
+#: The list carries judgements only. An answer to a yes/no question is
+#: an observation ("no" answers "did the device answer?"), so "yes" and
+#: "no" are **not** in the list — a measured value of exactly "no" is a
+#: legitimate result. "ok", "pass", "fail" and "n/a" stay: they judge
+#: the outcome or the applicability, exactly like "正常" and "通过" do.
 EVALUATION_PHRASES = frozenset(
     {
         "不一致",
@@ -210,8 +286,36 @@ EVALUATION_PHRASES = frozenset(
         "passed",
         "fail",
         "failed",
-        "yes",
-        "no",
+    }
+)
+
+#: Values that are only filler — the field was touched, but nothing was
+#: measured. They do not count as a measured value. The list holds
+#: neither an evaluation word nor an observation: "n/a" stays an
+#: evaluation word, "待补充" is a placeholder.
+PLACEHOLDER_VALUES = frozenset(
+    {
+        "-",
+        "--",
+        "---",
+        "—",
+        "–",
+        ".",
+        "..",
+        "...",
+        "…",
+        "?",
+        "??",
+        "???",
+        "tbd",
+        "todo",
+        "xxx",
+        "待补充",
+        "待填写",
+        "待填",
+        "待定",
+        "暂填",
+        "待确认",
     }
 )
 
@@ -229,16 +333,47 @@ def _normalize_evaluation_candidate(value: str) -> str:
     return value.strip().strip(_EDGE_PUNCTUATION).strip().casefold()
 
 
+def is_placeholder(value: object) -> bool:
+    """True when ``value`` is nothing but a placeholder.
+
+    The comparison is on the **whole** value: "—" is a placeholder,
+    "— (the device stayed silent)" is an observation.
+    """
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().casefold()
+    if normalized == "":
+        return False
+    return normalized in PLACEHOLDER_VALUES
+
+
+def is_filled_markdown(value: object) -> bool:
+    """True when the Markdown source carries text of its own.
+
+    The markup is removed first: a value that consists only of an image
+    (``![](…)``) carries no text, and a placeholder carries no text
+    either. ``**不一致**`` carries the text ``不一致`` — the markup is not
+    what makes a value empty.
+    """
+    text = markdown_text(value)
+    if text.strip() == "":
+        return False
+    return not is_placeholder(text)
+
+
 def is_evaluation_phrase(value: object) -> bool:
     """True when ``value`` is nothing but an evaluation word.
 
     The comparison is on the **whole** value, not a substring: "命令失败，
     退出码 1" reports an observation and stays valid, while "不一致" and
     "失败" alone are judgements and are rejected.
+
+    The markup is removed first, so ``**不一致**`` and ``<b>正常</b>``
+    are judged on the text they carry.
     """
     if not isinstance(value, str):
         return False
-    normalized = _normalize_evaluation_candidate(value)
+    normalized = _normalize_evaluation_candidate(markdown_text(value))
     if normalized == "":
         return False
     return normalized in EVALUATION_PHRASES
@@ -251,18 +386,32 @@ def is_evaluation_phrase(value: object) -> bool:
 
 @dataclass(frozen=True)
 class StepRecordData:
-    """One row of the step table of a batch case."""
+    """One row of the step table of a batch case.
+
+    ``attachment_count`` is the number of files that are attached to the
+    step record. A file is a measured result in its own right: the
+    screenshot of the screen is what the tester saw. Only the number is
+    carried, because the rules ask one question about it: is there at
+    least one attachment?
+    """
 
     sequence_id: int
     action: str = ""
     expected_result: str = ""
     conclusion: str = STEP_VERDICT_UNSET
     actual_value: str = ""
+    attachment_count: int = 0
 
 
 @dataclass(frozen=True)
 class RunCaseData:
-    """One test case inside a batch, with the header snapshot and the steps."""
+    """One test case inside a batch, with the header snapshot and the steps.
+
+    ``evidence_attachment_count`` is the number of files that are
+    attached to the case record. The evidence of a case is often a
+    screenshot, and a screenshot that is only written down as a link in
+    the Markdown is not a file the batch can show.
+    """
 
     case_number: str = ""
     module_code: str = ""
@@ -281,6 +430,7 @@ class RunCaseData:
     manual_condition: str = ""
     remarks: str = ""
     actual_result_summary: str = ""
+    evidence_attachment_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -364,6 +514,14 @@ def validate_run_case(case: RunCaseData) -> list[str]:
             reasons.append(label + STEP_CONCLUSION_INVALID)
             continue
 
+        # The measured value of a step is the text it carries or the
+        # files that are attached to it. The Markdown source is read
+        # first: a value that holds nothing but an image (``![](…)``)
+        # carries no text, and a placeholder carries no text either.
+        step_has_text = is_filled_markdown(step.actual_value)
+        step_has_attachment = step.attachment_count > 0
+        step_has_measurement = step_has_text or step_has_attachment
+
         if step.conclusion == STEP_VERDICT_UNSET:
             unset_steps.append(step)
             if case.conclusion in (
@@ -376,14 +534,17 @@ def validate_run_case(case: RunCaseData) -> list[str]:
                 reasons.append(label + STEP_CONCLUSION_UNSET)
         if step.conclusion == STEP_VERDICT_FAIL:
             failed_steps.append(step)
-            if not _is_filled(step.actual_value):
+            if not step_has_measurement:
                 reasons.append(label + FAIL_WITHOUT_ACTUAL_VALUE)
+                if _MARKDOWN_IMAGE_RE.search(step.actual_value or ""):
+                    # The tester wrote a picture but did not attach the
+                    # file: an inline image is not a measured value.
+                    reasons.append(label + ACTUAL_VALUE_IS_IMAGE_ONLY)
 
-        if _is_filled(step.actual_value):
-            if is_evaluation_phrase(step.actual_value):
-                reasons.append(label + ACTUAL_VALUE_IS_EVALUATION)
-            if step.conclusion == STEP_VERDICT_UNSET:
-                reasons.append(label + ACTUAL_VALUE_WITHOUT_CONCLUSION)
+        if step_has_text and is_evaluation_phrase(step.actual_value):
+            reasons.append(label + ACTUAL_VALUE_IS_EVALUATION)
+        if step_has_measurement and step.conclusion == STEP_VERDICT_UNSET:
+            reasons.append(label + ACTUAL_VALUE_WITHOUT_CONCLUSION)
 
     # --- conclusion --------------------------------------------------------
     if case.conclusion not in RUN_CASE_CONCLUSIONS:
@@ -414,7 +575,10 @@ def validate_run_case(case: RunCaseData) -> list[str]:
             reasons.append(CONCLUSION_MANUAL_WITH_FAILED_STEP)
 
     # --- evidence ----------------------------------------------------------
-    if not _is_filled(case.evidence):
+    # The evidence is the text the case carries or the files that are
+    # attached to it. A screenshot of the report is the evidence, and an
+    # inline image in the Markdown is not a file the batch can show.
+    if not (is_filled_markdown(case.evidence) or case.evidence_attachment_count > 0):
         reasons.append(EVIDENCE_MISSING)
 
     return reasons
