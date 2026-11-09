@@ -24,6 +24,7 @@ from plane.db.testcase_validity import (
     CONCLUSION_FAIL_WITHOUT_FAILED_STEP,
     CONCLUSION_FAIL_WITH_UNSET_STEP,
     CONCLUSION_INVALID,
+    CONCLUSION_IS_FINAL,
     CONCLUSION_MANUAL_WITHOUT_CONDITION,
     CONCLUSION_MANUAL_WITHOUT_EXECUTOR,
     CONCLUSION_NA_WITHOUT_CRITERIA_SOURCE,
@@ -486,3 +487,9 @@ class TestReasonMessages:
         for code, message in REASON_MESSAGES.items():
             assert isinstance(code, str) and code
             assert isinstance(message, str) and message
+
+    def test_the_final_conclusion_code_is_part_of_the_enumeration(self):
+        """``conclusion_is_final`` is raised by the model layer, not by
+        the validators, so the completeness walk above never sees it."""
+        assert CONCLUSION_IS_FINAL in REASON_MESSAGES
+        assert REASON_MESSAGES[CONCLUSION_IS_FINAL]

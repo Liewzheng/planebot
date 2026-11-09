@@ -20,6 +20,7 @@ from plane.db.models import (
     TestCase,
     TestCaseIssue,
     TestCaseModule,
+    TestCaseSequence,
     TestCaseStep,
     TestRun,
     TestRunCase,
@@ -27,6 +28,7 @@ from plane.db.models import (
     Workspace,
     WorkspaceMember,
 )
+from plane.db.testcase_validity import CONCLUSION_IS_FINAL
 
 
 pytestmark = pytest.mark.unit
@@ -180,6 +182,60 @@ class TestModuleRegistry:
         case.save()
         with pytest.raises(ValidationError):
             module.delete()
+
+    def test_a_module_with_a_case_that_has_no_counter_row_cannot_be_deleted(
+        self, project, module
+    ):
+        """The "carries cases" guard on its own.
+
+        A case created with an explicitly supplied ``sequence_id`` never
+        goes through the allocator, so the module has **no** counter row:
+        the "has already issued a number" guard has nothing to find and
+        only the "carries cases" guard can refuse the deletion. Without
+        this test the first guard would be dead code that no test
+        protects (the reviewer's P2-3).
+        """
+        case = _case(module, project, sequence_id=42)
+        assert case.number == "TC-CLI-042"
+        assert not TestCaseSequence.all_objects.filter(module=module).exists(), (
+            "the premise of this test: the module must not have a counter row"
+        )
+
+        with pytest.raises(ValidationError):
+            module.delete()
+
+    def test_the_code_is_normalised_by_clean_as_well(self, project):
+        module = TestCaseModule(
+            project=project,
+            workspace=project.workspace,
+            code="cli",
+            description="The command line interface of pbot",
+        )
+        module.clean()
+        assert module.code == "CLI"
+
+    def test_full_clean_accepts_a_lowercase_code(self, project, user):
+        """``clean()`` and ``save()`` have to agree.
+
+        ``save()`` upper-cases the code before it validates it, so
+        ``full_clean()`` — what a serializer calls — must not reject a
+        lowercase code that ``save()`` stores happily.
+
+        The audit columns are set by hand because ``UserAuditModel``
+        declares them ``null=True`` without ``blank=True``, so
+        ``full_clean()`` rejects an unset one (a repo-wide quirk of the
+        audit mixin, not of this model).
+        """
+        module = TestCaseModule(
+            project=project,
+            workspace=project.workspace,
+            code="cli",
+            description="The command line interface of pbot",
+            created_by=user,
+            updated_by=user,
+        )
+        module.full_clean()
+        assert module.code == "CLI"
 
 
 @pytest.mark.django_db
@@ -476,6 +532,138 @@ class TestCompletedBatchIsFrozen:
 
 
 @pytest.mark.django_db
+class TestConclusionIsFinal:
+    """A conclusion that is written into a batch is never changed.
+
+    「结论一经写进批次不再改，重跑开新批次」 (STD-SW-003 §6). The batch
+    stays writable while it is open — the evidence, the remarks and the
+    measured value may still be filled in — but the conclusion and the
+    step verdicts are final once they are written.
+    """
+
+    def _run_case(self, project, module, status="in_progress"):
+        run = TestRun.objects.create(
+            project=project,
+            run_date=date(2026, 11, 9),
+            version_number="1.2.3",
+            build_number="b4021",
+            commit_hash="9f1c0de",
+            environment="Windows 10 on the test bench",
+        )
+        run.status = status
+        run.save()
+
+        case = _case(module, project)
+        _step(case, project)
+        run_case = TestRunCase.create_for_test_case(case, run)
+        return run, run_case
+
+    def test_a_written_conclusion_cannot_be_changed(self, project, module):
+        _, run_case = self._run_case(project, module)
+
+        run_case.conclusion = "PASS"
+        run_case.save()
+
+        run_case.conclusion = "FAIL"
+        with pytest.raises(ValidationError) as error:
+            run_case.save()
+        assert CONCLUSION_IS_FINAL in str(error.value)
+
+        run_case.refresh_from_db()
+        assert run_case.conclusion == "PASS", "the stored conclusion must not change"
+
+    def test_a_written_conclusion_cannot_be_cleared(self, project, module):
+        _, run_case = self._run_case(project, module)
+
+        run_case.conclusion = "PASS"
+        run_case.save()
+
+        run_case.conclusion = ""
+        with pytest.raises(ValidationError) as error:
+            run_case.save()
+        assert CONCLUSION_IS_FINAL in str(error.value)
+
+        run_case.refresh_from_db()
+        assert run_case.conclusion == "PASS", "the stored conclusion must not be cleared"
+
+    def test_a_conclusion_may_be_set_once(self, project, module):
+        _, run_case = self._run_case(project, module)
+        assert run_case.conclusion == ""
+
+        run_case.conclusion = "PASS"
+        run_case.save()
+
+        run_case.refresh_from_db()
+        assert run_case.conclusion == "PASS"
+
+    def test_the_evidence_may_still_be_written_after_the_conclusion(self, project, module):
+        _, run_case = self._run_case(project, module)
+
+        run_case.conclusion = "PASS"
+        run_case.save()
+
+        run_case.evidence = "screenshot 2026-11-09.png"
+        run_case.save()
+
+        run_case.refresh_from_db()
+        assert run_case.evidence == "screenshot 2026-11-09.png"
+
+    def test_a_marked_step_verdict_cannot_be_changed(self, project, module):
+        _, run_case = self._run_case(project, module)
+        record = run_case.step_records.first()
+
+        record.conclusion = "fail"
+        record.save()
+
+        record.conclusion = "pass"
+        with pytest.raises(ValidationError) as error:
+            record.save()
+        assert CONCLUSION_IS_FINAL in str(error.value)
+
+        record.refresh_from_db()
+        assert record.conclusion == "fail", "the stored verdict must not change"
+
+    def test_a_marked_step_verdict_cannot_be_uncrossed(self, project, module):
+        _, run_case = self._run_case(project, module)
+        record = run_case.step_records.first()
+
+        record.conclusion = "pass"
+        record.save()
+
+        record.conclusion = "unset"
+        with pytest.raises(ValidationError) as error:
+            record.save()
+        assert CONCLUSION_IS_FINAL in str(error.value)
+
+        record.refresh_from_db()
+        assert record.conclusion == "pass", "the stored verdict must not be cleared"
+
+    def test_the_measured_value_may_still_be_written_after_a_verdict(self, project, module):
+        _, run_case = self._run_case(project, module)
+        record = run_case.step_records.first()
+
+        record.conclusion = "fail"
+        record.save()
+
+        record.actual_value = "error 42"
+        record.save()
+
+        record.refresh_from_db()
+        assert record.actual_value == "error 42"
+
+    def test_an_unset_step_verdict_may_be_set(self, project, module):
+        _, run_case = self._run_case(project, module)
+        record = run_case.step_records.first()
+        assert record.conclusion == "unset"
+
+        record.conclusion = "pass"
+        record.save()
+
+        record.refresh_from_db()
+        assert record.conclusion == "pass"
+
+
+@pytest.mark.django_db
 class TestCaseIssueLink:
     def test_a_case_may_be_linked_to_a_work_item(self, project, module):
         from plane.db.models import Issue
@@ -491,3 +679,39 @@ class TestCaseIssueLink:
         )
         assert link.test_case.issue_links.count() == 1
         assert issue.test_case_links.count() == 1
+
+    def test_a_link_to_a_work_item_of_another_project_is_rejected(
+        self, project, other_project, module
+    ):
+        """The reviewer's PROBE4: a case of project A linked to a work
+        item of project B must not be written."""
+        from plane.db.models import Issue
+
+        issue = Issue.objects.create(
+            project=other_project,
+            name="The work item of the other project",
+        )
+        with pytest.raises(ValidationError):
+            TestCaseIssue.objects.create(
+                project=project,
+                test_case=_case(module, project),
+                issue=issue,
+            )
+
+    def test_a_link_that_carries_the_foreign_project_is_rejected(
+        self, project, other_project, module
+    ):
+        """The same link, but the link row itself claims the project of
+        the work item — the case and the work item still disagree."""
+        from plane.db.models import Issue
+
+        issue = Issue.objects.create(
+            project=other_project,
+            name="The work item of the other project",
+        )
+        with pytest.raises(ValidationError):
+            TestCaseIssue.objects.create(
+                project=other_project,
+                test_case=_case(module, project),
+                issue=issue,
+            )

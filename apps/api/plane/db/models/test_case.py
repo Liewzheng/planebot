@@ -42,6 +42,7 @@ from plane.db.testcase_numbering import (
     is_valid_module_code,
 )
 from plane.db.testcase_validity import (
+    CONCLUSION_IS_FINAL,
     RUN_CASE_CONCLUSION_FAIL,
     RUN_CASE_CONCLUSION_MANUAL,
     RUN_CASE_CONCLUSION_NA,
@@ -88,6 +89,11 @@ class TestCaseModule(ProjectBaseModel):
 
     def clean(self):
         super().clean()
+        # ``save()`` normalises before it validates; ``clean()`` has to do
+        # the same, otherwise ``full_clean()`` (what a serializer calls)
+        # would reject a lowercase code that ``save()`` stores happily.
+        self.code = (self.code or "").strip().upper()
+        self.description = (self.description or "").strip()
         self._validate_code_and_description()
 
     def save(self, *args, **kwargs):
@@ -612,6 +618,7 @@ class TestRunCase(ProjectBaseModel):
     def save(self, *args, **kwargs):
         self._validate_run_belongs_to_project()
         self._assert_run_not_frozen()
+        self._assert_conclusion_is_final()
         super(TestRunCase, self).save(*args, **kwargs)
 
     def _validate_run_belongs_to_project(self):
@@ -624,43 +631,78 @@ class TestRunCase(ProjectBaseModel):
                 {"test_run": "The batch must belong to the same project as the case record."}
             )
 
+    def _assert_conclusion_is_final(self):
+        """A conclusion that is written into a batch is never changed.
+
+        「结论一经写进批次不再改，重跑开新批次」 (STD-SW-003 §6). Once the
+        conclusion is written it may neither be changed nor cleared; a
+        wrong conclusion is corrected by voiding the case record and
+        running the case again in a new batch.
+
+        The other fields of the record (the evidence, the remarks, the
+        summary) stay writable while the batch is open — only the
+        conclusion itself is final.
+        """
+        if self._state.adding:
+            return
+        stored = (
+            TestRunCase.all_objects.filter(pk=self.pk)
+            .values_list("conclusion", flat=True)
+            .first()
+        )
+        if not stored:
+            return
+        if stored != self.conclusion:
+            raise ValidationError(
+                {
+                    "conclusion": (
+                        f"{CONCLUSION_IS_FINAL}: the conclusion of a case in a "
+                        "batch is never changed; void the record and run the "
+                        "case again in a new batch."
+                    )
+                }
+            )
+
     @classmethod
     def create_for_test_case(cls, test_case: TestCase, test_run: TestRun, **kwargs):
         """Add ``test_case`` to ``test_run`` and snapshot it.
 
         The header of the case and every row of its step table are copied
         into the batch, so a later edit of the case does not rewrite the
-        history of the batch.
+        history of the batch. The copy is one transaction: a failure
+        while the step records are written must not leave a case in the
+        batch without its snapshot steps.
         """
         if test_case.project_id != test_run.project_id:
             raise ValidationError(
                 "A test case can only be added to a batch of the same project."
             )
 
-        run_case = cls(
-            test_run=test_run,
-            test_case=test_case,
-            project=test_run.project,
-            case_number=test_case.number,
-            case_module_code=test_case.module.code,
-            case_title=test_case.title,
-            case_purpose=test_case.purpose,
-            case_object_overview=test_case.object_overview,
-            case_priority=test_case.priority,
-            case_preconditions=test_case.preconditions,
-            case_environment=test_case.environment,
-            **kwargs,
-        )
-        run_case.save()
-
-        for step in test_case.steps.all().order_by("sequence_id"):
-            TestRunStepRecord.objects.create(
-                test_run_case=run_case,
+        with transaction.atomic():
+            run_case = cls(
+                test_run=test_run,
+                test_case=test_case,
                 project=test_run.project,
-                sequence_id=step.sequence_id,
-                action_snapshot=step.action,
-                expected_result_snapshot=step.expected_result,
+                case_number=test_case.number,
+                case_module_code=test_case.module.code,
+                case_title=test_case.title,
+                case_purpose=test_case.purpose,
+                case_object_overview=test_case.object_overview,
+                case_priority=test_case.priority,
+                case_preconditions=test_case.preconditions,
+                case_environment=test_case.environment,
+                **kwargs,
             )
+            run_case.save()
+
+            for step in test_case.steps.all().order_by("sequence_id"):
+                TestRunStepRecord.objects.create(
+                    test_run_case=run_case,
+                    project=test_run.project,
+                    sequence_id=step.sequence_id,
+                    action_snapshot=step.action,
+                    expected_result_snapshot=step.expected_result,
+                )
 
         return run_case
 
@@ -718,6 +760,7 @@ class TestRunStepRecord(ProjectBaseModel):
     def save(self, *args, **kwargs):
         self._validate_run_case_belongs_to_project()
         self._assert_run_not_frozen()
+        self._assert_verdict_is_final()
         super(TestRunStepRecord, self).save(*args, **kwargs)
 
     def _validate_run_case_belongs_to_project(self):
@@ -729,6 +772,35 @@ class TestRunStepRecord(ProjectBaseModel):
             raise ValidationError(
                 {
                     "test_run_case": "The case record must belong to the same project as the step record."
+                }
+            )
+
+    def _assert_verdict_is_final(self):
+        """A verdict that is marked on a step is never changed.
+
+        The verdict box of a step is a deliberate act (「两框不预勾、不留空」):
+        once ✔ or ✘ is marked it may not be changed back or swapped. The
+        measured value stays writable — it is the observation, not the
+        verdict — and a wrong verdict is corrected by running the case
+        again in a new batch.
+        """
+        if self._state.adding:
+            return
+        stored = (
+            TestRunStepRecord.all_objects.filter(pk=self.pk)
+            .values_list("conclusion", flat=True)
+            .first()
+        )
+        if stored not in (STEP_VERDICT_PASS, STEP_VERDICT_FAIL):
+            return
+        if stored != self.conclusion:
+            raise ValidationError(
+                {
+                    "conclusion": (
+                        f"{CONCLUSION_IS_FINAL}: the verdict of a step in a "
+                        "batch is never changed; void the record and run the "
+                        "case again in a new batch."
+                    )
                 }
             )
 
@@ -772,6 +844,35 @@ class TestCaseIssue(ProjectBaseModel):
 
     def __str__(self):
         return f"{self.test_case.number} -> {self.issue_id}"
+
+    def save(self, *args, **kwargs):
+        self._validate_issue_belongs_to_project()
+        super(TestCaseIssue, self).save(*args, **kwargs)
+
+    def _validate_issue_belongs_to_project(self):
+        """A case may only be linked to a work item of the same project.
+
+        Same shape as the four sibling guards of this file: the case, the
+        work item and the link itself all live in one project. A link
+        across projects would be a cross-project data path the moment an
+        API serialises it.
+        """
+        if not (self.issue_id and self.project_id):
+            return
+
+        issue_project_id = self.issue.project_id
+
+        if self.test_case_id and self.test_case.project_id != issue_project_id:
+            raise ValidationError(
+                {
+                    "test_case": "The test case and the work item must belong to the same project."
+                }
+            )
+
+        if issue_project_id != self.project_id:
+            raise ValidationError(
+                {"issue": "The work item must belong to the same project as the link."}
+            )
 
 
 # --------------------------------------------------------------------------- #

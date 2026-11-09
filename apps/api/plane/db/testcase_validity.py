@@ -112,6 +112,10 @@ RUN_ENVIRONMENT_MISSING = "run_environment_missing"
 RUN_EXECUTED_BY_MISSING = "run_executed_by_missing"
 DUPLICATE_CASE_NUMBER = "duplicate_case_number"
 RUN_COMPLETED = "run_completed"
+#: A conclusion that is written into a batch is never changed afterwards
+#: (STD-SW-003 §6). The model layer raises this code; the batch is
+#: corrected by voiding the case record and running again in a new batch.
+CONCLUSION_IS_FINAL = "conclusion_is_final"
 
 
 #: English sentence per bare reason code. The front end localises from the
@@ -155,6 +159,7 @@ REASON_MESSAGES = {
     RUN_EXECUTED_BY_MISSING: "The executor is required.",
     DUPLICATE_CASE_NUMBER: "The same test case is in the batch twice.",
     RUN_COMPLETED: "The batch is completed, a conclusion is never written back into it.",
+    CONCLUSION_IS_FINAL: "A conclusion that is written into a batch is never changed.",
 }
 
 
