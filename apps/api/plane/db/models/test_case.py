@@ -653,6 +653,22 @@ class TestRunCase(ProjectBaseModel):
     The snapshot is the point of this model: the case may be edited (or
     voided) later, but the batch keeps what was executed. The step table
     is snapshotted as well, in :class:`TestRunStepRecord`.
+
+    Storage contract of ``evidence``
+    --------------------------------
+    ``evidence`` holds the **Markdown source** of the evidence, exactly
+    as it was typed: it is not converted to HTML and the markup is not
+    stripped. A serializer hands the source out unchanged — the front end
+    renders it. The rules of :mod:`plane.db.testcase_validity` read the
+    source: they remove the markup to decide whether there is evidence at
+    all, and they accept a file that is attached to the record as the
+    evidence. The evidence is not judged for evaluation words — that
+    check applies to the measured value of a step.
+
+    The evidence may also be a **file**: the screenshot of the report is
+    the evidence. The file is bound to this record through
+    ``FileAsset.test_run_case``, not through a link that is parsed out of
+    the Markdown — see the comment on that field.
     """
 
     CONCLUSION_CHOICES = (
@@ -692,7 +708,15 @@ class TestRunCase(ProjectBaseModel):
         blank=True,
         default="",
     )
-    evidence = models.TextField(blank=True, default="")
+    evidence = models.TextField(
+        blank=True,
+        default="",
+        help_text=(
+            "The evidence as Markdown source. It is stored as it was typed: "
+            "no HTML conversion, no stripping of the markup. A serializer "
+            "hands the source out unchanged."
+        ),
+    )
     remarks = models.TextField(blank=True, default="")
     actual_result_summary = models.TextField(blank=True, default="")
 
@@ -717,6 +741,21 @@ class TestRunCase(ProjectBaseModel):
 
     def __str__(self):
         return f"{self.case_number} <{self.test_run.number}>"
+
+    @property
+    def evidence_attachment_count(self) -> int:
+        """The number of files attached to this case record.
+
+        The files are bound by a foreign key (``FileAsset.test_run_case``);
+        they are not parsed out of the Markdown source of the evidence. A
+        deleted file does not count any more: the evidence of a case may
+        be a screenshot, and a deleted screenshot is no evidence.
+
+        The count is a query. A caller that walks many case records
+        should fetch the assets in one go (prefetch the ``assets``
+        relation) instead of asking every record for its count.
+        """
+        return self.assets.filter(is_deleted=False).count()
 
     def save(self, *args, **kwargs):
         self._validate_run_belongs_to_project()
@@ -853,7 +892,23 @@ class TestRunCase(ProjectBaseModel):
 
 
 class TestRunStepRecord(ProjectBaseModel):
-    """The verdict and the measured value of one step of a batch case."""
+    """The verdict and the measured value of one step of a batch case.
+
+    Storage contract of ``actual_value``
+    ------------------------------------
+    ``actual_value`` holds the **Markdown source** of the measured value,
+    exactly as it was typed: it is not converted to HTML and the markup
+    is not stripped. A serializer hands the source out unchanged — the
+    front end renders it. The rules of :mod:`plane.db.testcase_validity`
+    read the source: they remove the markup to decide whether a value was
+    measured at all, and they judge the evaluation words on the text that
+    is left.
+
+    The measured value may also be a **file**: a screenshot of the screen
+    is what the tester saw. The file is bound to this record through
+    ``FileAsset.test_run_step_record``, not through a link that is parsed
+    out of the Markdown — see the comment on that field.
+    """
 
     CONCLUSION_CHOICES = (
         (STEP_VERDICT_PASS, "Pass"),
@@ -874,7 +929,15 @@ class TestRunStepRecord(ProjectBaseModel):
         choices=CONCLUSION_CHOICES,
         default=STEP_VERDICT_UNSET,
     )
-    actual_value = models.TextField(blank=True, default="")
+    actual_value = models.TextField(
+        blank=True,
+        default="",
+        help_text=(
+            "The measured value as Markdown source. It is stored as it was "
+            "typed: no HTML conversion, no stripping of the markup. A "
+            "serializer hands the source out unchanged."
+        ),
+    )
 
     class Meta:
         verbose_name = "Test Run Step Record"
@@ -890,6 +953,22 @@ class TestRunStepRecord(ProjectBaseModel):
 
     def __str__(self):
         return f"{self.test_run_case.case_number}#{self.sequence_id}"
+
+    @property
+    def attachment_count(self) -> int:
+        """The number of files attached to this step record.
+
+        The files are bound by a foreign key
+        (``FileAsset.test_run_step_record``); they are not parsed out of
+        the Markdown source of the measured value. A deleted file does not
+        count any more: a screenshot of the measured result is a measured
+        value, and a deleted screenshot is none.
+
+        The count is a query. A caller that walks many step records
+        should fetch the assets in one go (prefetch the ``assets``
+        relation) instead of asking every record for its count.
+        """
+        return self.assets.filter(is_deleted=False).count()
 
     def save(self, *args, **kwargs):
         self._validate_run_case_belongs_to_project()

@@ -45,6 +45,11 @@ class FileAsset(BaseModel):
         DRAFT_ISSUE_ATTACHMENT = "DRAFT_ISSUE_ATTACHMENT"
         DRAFT_ISSUE_DESCRIPTION = "DRAFT_ISSUE_DESCRIPTION"
         MERMAID_DIAGRAM = "MERMAID_DIAGRAM"
+        #: A file attached to the measured value of one step of a batch
+        #: case — the screenshot of what the tester saw.
+        TEST_RUN_STEP_RECORD = "TEST_RUN_STEP_RECORD"
+        #: A file attached to the evidence of one case inside a batch.
+        TEST_RUN_CASE_EVIDENCE = "TEST_RUN_CASE_EVIDENCE"
 
     attributes = models.JSONField(default=dict)
     asset = models.FileField(upload_to=get_upload_path, max_length=800)
@@ -55,6 +60,35 @@ class FileAsset(BaseModel):
     issue = models.ForeignKey("db.Issue", on_delete=models.CASCADE, null=True, related_name="assets")
     comment = models.ForeignKey("db.IssueComment", on_delete=models.CASCADE, null=True, related_name="assets")
     page = models.ForeignKey("db.Page", on_delete=models.CASCADE, null=True, related_name="assets")
+    # The attachments of a test run are bound by a foreign key and not by
+    # a link that is parsed out of the Markdown source of the measured
+    # value or of the evidence:
+    #
+    # * the Markdown source is written by hand and may be reworded or
+    #   re-ordered at any time — a parsed link would break the moment
+    #   the sentence around it moves,
+    # * the file row knows its owner, so "the attachments of this step"
+    #   is a query and not a text search over a column that anybody may
+    #   rewrite,
+    # * deleting an attachment is a row operation (the file row is
+    #   flagged deleted); the Markdown source does not have to be edited
+    #   along with it,
+    # * the URL inside the Markdown is not an identity: it may point at
+    #   a copy of the file, and it may be pasted from another system.
+    test_run_step_record = models.ForeignKey(
+        "db.TestRunStepRecord",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="assets",
+    )
+    test_run_case = models.ForeignKey(
+        "db.TestRunCase",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="assets",
+    )
     entity_type = models.CharField(max_length=255, null=True, blank=True)
     entity_identifier = models.CharField(max_length=255, null=True, blank=True)
     is_deleted = models.BooleanField(default=False)
@@ -107,6 +141,14 @@ class FileAsset(BaseModel):
         # inline disposition (the project-path endpoint forces attachment, which
         # makes browsers download instead of rendering the image).
         if self.entity_type == self.EntityTypeContext.MERMAID_DIAGRAM:
+            return f"/api/assets/v2/workspaces/{self.workspace.slug}/{self.id}/"
+
+        # The attachments of a test run live in the workspace of the
+        # project; they are served by the workspace asset endpoint.
+        if self.entity_type in [
+            self.EntityTypeContext.TEST_RUN_STEP_RECORD,
+            self.EntityTypeContext.TEST_RUN_CASE_EVIDENCE,
+        ]:
             return f"/api/assets/v2/workspaces/{self.workspace.slug}/{self.id}/"
 
         return None

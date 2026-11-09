@@ -76,3 +76,6 @@ opentelemetry-exporter-otlp-proto-grpc==1.28.1
 drf-spectacular==0.29.0
 # html sanitizer
 nh3==0.2.18
+# Markdown parser — the test-case measured values and the evidence are
+# Markdown source, and the validity rules read it with this parser.
+mistune==3.4.0
