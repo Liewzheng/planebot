@@ -91,8 +91,12 @@ describe("onAuthenticate — issue-events channel", () => {
     appApi.setOptions({
       user: USER,
       access: {
-        projectRoles: { [USER.id]: {} },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: {} } },
         workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
+      },
+      projects: {
+        [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 2 },
+        [SECRET_PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 0 },
       },
     });
 
@@ -111,8 +115,12 @@ describe("onAuthenticate — issue-events channel", () => {
     appApi.setOptions({
       user: USER,
       access: {
-        projectRoles: { [USER.id]: { [PROJECT_ID]: 15 } },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: { [PROJECT_ID]: 15 } } },
         workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
+      },
+      projects: {
+        [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 2 },
+        [SECRET_PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 0 },
       },
     });
 
@@ -133,8 +141,12 @@ describe("onAuthenticate — issue-events channel", () => {
       user: USER,
       access: {
         // the user is a member of PROJECT_ID only
-        projectRoles: { [USER.id]: { [PROJECT_ID]: 15 } },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: { [PROJECT_ID]: 15 } } },
         workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
+      },
+      projects: {
+        [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 2 },
+        [SECRET_PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 0 },
       },
     });
 
@@ -159,8 +171,12 @@ describe("onAuthenticate — issue-events channel", () => {
     appApi.setOptions({
       user: USER,
       access: {
-        projectRoles: { [USER.id]: {} },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: {} } },
         workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
+      },
+      projects: {
+        [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 2 },
+        [SECRET_PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 0 },
       },
     });
 
@@ -182,7 +198,7 @@ describe("onAuthenticate — issue-events channel", () => {
     appApi.setOptions({
       user: USER,
       access: { projectRoles: {}, workspaceRoles: {} },
-      serviceTokens: { [SERVICE_TOKEN]: [SECRET_PROJECT_ID] },
+      servicePrincipals: { [SERVICE_TOKEN]: { grants: [SECRET_PROJECT_ID], scopes: ["work_item:read"] } },
     });
 
     await expect(
@@ -200,7 +216,7 @@ describe("onAuthenticate — issue-events channel", () => {
     appApi.setOptions({
       user: USER,
       access: { projectRoles: {}, workspaceRoles: {} },
-      serviceTokens: { [SERVICE_TOKEN]: [PROJECT_ID] },
+      servicePrincipals: { [SERVICE_TOKEN]: { grants: [PROJECT_ID], scopes: ["work_item:read"] } },
     });
 
     const context = emptyContext();

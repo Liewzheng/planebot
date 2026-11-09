@@ -46,6 +46,7 @@ const { onAuthenticate } = await import("@/lib/auth");
 const { Database } = await import("@/extensions/database");
 
 const WORKSPACE_SLUG = "acme";
+const OTHER_WORKSPACE_SLUG = "other";
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 const SECRET_PROJECT_ID = "22222222-2222-4222-8222-222222222222";
 const USER = { id: "user-1", display_name: "Ada Lovelace", cookie: "session=user-1" };
@@ -65,8 +66,8 @@ const issueEventPayload = (projectId: string) =>
     },
   });
 
-const clientURL = (projectId: string) =>
-  `ws://127.0.0.1:${server.address.port}/live/collaboration?documentType=project_page&workspaceSlug=${WORKSPACE_SLUG}&projectId=${projectId}`;
+const clientURL = (projectId: string, workspaceSlug: string = WORKSPACE_SLUG) =>
+  `ws://127.0.0.1:${server.address.port}/live/collaboration?documentType=project_page&workspaceSlug=${workspaceSlug}&projectId=${projectId}`;
 
 const connect = async (projectId: string, token: string) => {
   const client = await RawHocuspocusClient.connect({
@@ -108,8 +109,12 @@ describe("issue-events broadcast channel — subscription authorization", () => 
       user: USER,
       access: {
         // the user is a workspace member, but not a member of the project
-        projectRoles: { [USER.id]: {} },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: {} } },
         workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
+      },
+      projects: {
+        [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 2 },
+        [SECRET_PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 0 },
       },
     });
 
@@ -126,8 +131,12 @@ describe("issue-events broadcast channel — subscription authorization", () => 
     appApi.setOptions({
       user: USER,
       access: {
-        projectRoles: { [USER.id]: { [PROJECT_ID]: 15 } },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: { [PROJECT_ID]: 15 } } },
         workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
+      },
+      projects: {
+        [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 2 },
+        [SECRET_PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 0 },
       },
     });
 
@@ -139,8 +148,11 @@ describe("issue-events broadcast channel — subscription authorization", () => 
     appApi.setOptions({
       user: OTHER_USER,
       access: {
-        projectRoles: { [OTHER_USER.id]: {} },
+        projectRoles: { [OTHER_USER.id]: { [WORKSPACE_SLUG]: {} } },
         workspaceRoles: { [OTHER_USER.id]: { [WORKSPACE_SLUG]: 15 } },
+      },
+      projects: {
+        [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 2 },
       },
     });
 
@@ -163,8 +175,12 @@ describe("issue-events broadcast channel — subscription authorization", () => 
     appApi.setOptions({
       user: USER,
       access: {
-        projectRoles: { [USER.id]: { [PROJECT_ID]: 15 } },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: { [PROJECT_ID]: 15 } } },
         workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
+      },
+      projects: {
+        [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 2 },
+        [SECRET_PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 0 },
       },
     });
 
@@ -197,8 +213,12 @@ describe("issue-events broadcast channel — subscription authorization", () => 
       user: USER,
       access: {
         // the user is a member of PROJECT_ID only
-        projectRoles: { [USER.id]: { [PROJECT_ID]: 15 } },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: { [PROJECT_ID]: 15 } } },
         workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
+      },
+      projects: {
+        [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 2 },
+        [SECRET_PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 0 },
       },
     });
 
@@ -213,6 +233,37 @@ describe("issue-events broadcast channel — subscription authorization", () => 
 
     expect(client.permissionDenied).toBe(true);
     expect(client.authenticated).toBe(false);
+
+    client.destroy();
+  });
+
+  it("refuses a workspace admin of another workspace for a project of a different workspace", async () => {
+    // the caller is an admin of "acme", the project lives in "other" and the
+    // client claims the slug of the workspace it administers — the app API
+    // binds project and workspace (IssueViewSet.list:
+    // Project.objects.get(pk=project_id, workspace__slug=slug)), so the
+    // subscription has to be refused
+    appApi.setOptions({
+      user: USER,
+      access: {
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: {} } },
+        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 20 } },
+      },
+      projects: {
+        [SECRET_PROJECT_ID]: { workspaceSlug: OTHER_WORKSPACE_SLUG, network: 0 },
+      },
+    });
+
+    const client = await RawHocuspocusClient.connect({
+      url: clientURL(SECRET_PROJECT_ID, WORKSPACE_SLUG),
+      documentName: `issue-events:${SECRET_PROJECT_ID}`,
+      token: JSON.stringify({ id: USER.id, cookie: USER.cookie }),
+    });
+    await client.waitForAuth();
+
+    expect(client.permissionDenied).toBe(true);
+    expect(client.authenticated).toBe(false);
+    expect(client.statelessPayloads).toHaveLength(0);
 
     client.destroy();
   });

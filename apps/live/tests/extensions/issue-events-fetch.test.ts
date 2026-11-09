@@ -84,8 +84,11 @@ describe("fetchDocument — issue-events channel", () => {
     appApi.setOptions({
       user: USER,
       access: {
-        projectRoles: { [USER.id]: {} },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: {} } },
         workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
+      },
+      projects: {
+        [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 2 },
       },
     });
 
@@ -98,8 +101,11 @@ describe("fetchDocument — issue-events channel", () => {
     appApi.setOptions({
       user: USER,
       access: {
-        projectRoles: { [USER.id]: { [PROJECT_ID]: 15 } },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: { [PROJECT_ID]: 15 } } },
         workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
+      },
+      projects: {
+        [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: 2 },
       },
     });
 

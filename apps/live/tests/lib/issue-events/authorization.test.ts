@@ -5,7 +5,14 @@
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeAppApi } from "../../helpers/fake-app-api";
+import {
+  FakeAppApi,
+  NETWORK_PUBLIC,
+  NETWORK_SECRET,
+  ROLE_ADMIN,
+  ROLE_GUEST,
+  ROLE_MEMBER,
+} from "../../helpers/fake-app-api";
 
 const apiState = vi.hoisted(() => ({ baseURL: "http://127.0.0.1:1" }));
 
@@ -42,6 +49,7 @@ const { IssueEventsAuthorizationService, parseIssueEventsProjectId } = await imp
 const { assertIssueEventsChannelAccess } = await import("@/lib/issue-events-auth");
 
 const WORKSPACE_SLUG = "acme";
+const OTHER_WORKSPACE_SLUG = "other";
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 const SECRET_PROJECT_ID = "22222222-2222-4222-8222-222222222222";
 const USER = { id: "user-1", display_name: "Ada Lovelace", cookie: "session=user-1" };
@@ -94,9 +102,10 @@ describe("IssueEventsAuthorizationService — human path", () => {
     appApi.setOptions({
       user: USER,
       access: {
-        projectRoles: { [USER.id]: { [PROJECT_ID]: 15 } },
-        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: { [PROJECT_ID]: ROLE_MEMBER } } },
+        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: ROLE_MEMBER } },
       },
+      projects: { [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: NETWORK_PUBLIC } },
     });
 
     await expect(
@@ -114,9 +123,10 @@ describe("IssueEventsAuthorizationService — human path", () => {
     appApi.setOptions({
       user: USER,
       access: {
-        projectRoles: { [USER.id]: { [PROJECT_ID]: 5 } },
-        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: { [PROJECT_ID]: ROLE_GUEST } } },
+        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: ROLE_MEMBER } },
       },
+      projects: { [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: NETWORK_PUBLIC } },
     });
 
     await expect(
@@ -128,14 +138,22 @@ describe("IssueEventsAuthorizationService — human path", () => {
     appApi.setOptions({
       user: USER,
       access: {
-        projectRoles: { [USER.id]: {} },
-        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: {} } },
+        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: ROLE_MEMBER } },
       },
+      projects: { [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: NETWORK_PUBLIC } },
     });
 
     await expect(
       service().authorize({ workspaceSlug: WORKSPACE_SLUG, projectId: PROJECT_ID, cookie: USER.cookie })
     ).rejects.toMatchObject({ code: "ISSUE_EVENTS_FORBIDDEN" });
+
+    // a non-member who is not a workspace admin stops after the workspace
+    // lookup — the project is never fetched
+    expect(appApi.requests.map((request) => request.url)).toEqual([
+      `/api/workspaces/${WORKSPACE_SLUG}/projects/${PROJECT_ID}/project-members/me/`,
+      `/api/workspaces/${WORKSPACE_SLUG}/workspace-members/me/`,
+    ]);
   });
 
   it("denies a workspace member of a public project who is not a member of it", async () => {
@@ -144,10 +162,10 @@ describe("IssueEventsAuthorizationService — human path", () => {
     appApi.setOptions({
       user: USER,
       access: {
-        projectRoles: { [USER.id]: {} },
-        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
-        projectNetworks: { [PROJECT_ID]: 2 },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: {} } },
+        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: ROLE_MEMBER } },
       },
+      projects: { [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: NETWORK_PUBLIC } },
     });
 
     await expect(
@@ -155,13 +173,40 @@ describe("IssueEventsAuthorizationService — human path", () => {
     ).rejects.toMatchObject({ code: "ISSUE_EVENTS_FORBIDDEN" });
   });
 
+  it("denies a member of the project when the client claims another workspace slug", async () => {
+    // the membership row belongs to (acme, project); the client asks with the
+    // slug of another workspace — the app API filters on the slug too
+    appApi.setOptions({
+      user: USER,
+      access: {
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: { [PROJECT_ID]: ROLE_MEMBER } } },
+        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: ROLE_MEMBER, [OTHER_WORKSPACE_SLUG]: ROLE_MEMBER } },
+      },
+      projects: { [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: NETWORK_PUBLIC } },
+    });
+
+    await expect(
+      service().authorize({
+        workspaceSlug: OTHER_WORKSPACE_SLUG,
+        projectId: PROJECT_ID,
+        cookie: USER.cookie,
+      })
+    ).rejects.toMatchObject({ code: "ISSUE_EVENTS_FORBIDDEN" });
+
+    expect(appApi.requests.map((request) => request.url)).toEqual([
+      `/api/workspaces/${OTHER_WORKSPACE_SLUG}/projects/${PROJECT_ID}/project-members/me/`,
+      `/api/workspaces/${OTHER_WORKSPACE_SLUG}/workspace-members/me/`,
+    ]);
+  });
+
   it("allows a workspace admin who is not a member of the project", async () => {
     appApi.setOptions({
       user: USER,
       access: {
-        projectRoles: { [USER.id]: {} },
-        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 20 } },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: {} } },
+        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: ROLE_ADMIN } },
       },
+      projects: { [SECRET_PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: NETWORK_SECRET } },
     });
 
     await expect(
@@ -171,6 +216,55 @@ describe("IssueEventsAuthorizationService — human path", () => {
     expect(appApi.requests.map((request) => request.url)).toEqual([
       `/api/workspaces/${WORKSPACE_SLUG}/projects/${SECRET_PROJECT_ID}/project-members/me/`,
       `/api/workspaces/${WORKSPACE_SLUG}/workspace-members/me/`,
+      `/api/workspaces/${WORKSPACE_SLUG}/projects/${SECRET_PROJECT_ID}/`,
+    ]);
+  });
+
+  it("denies a workspace admin of one workspace for a project of another workspace", async () => {
+    // the app API binds the project to the workspace: the issue list does
+    // `Project.objects.get(pk=project_id, workspace__slug=slug)`, so a project
+    // outside the workspace is a 404 there — even for an admin of the
+    // workspace the client claims
+    appApi.setOptions({
+      user: USER,
+      access: {
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: {} } },
+        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: ROLE_ADMIN } },
+      },
+      projects: { [SECRET_PROJECT_ID]: { workspaceSlug: OTHER_WORKSPACE_SLUG, network: NETWORK_SECRET } },
+    });
+
+    await expect(
+      service().authorize({ workspaceSlug: WORKSPACE_SLUG, projectId: SECRET_PROJECT_ID, cookie: USER.cookie })
+    ).rejects.toMatchObject({ code: "ISSUE_EVENTS_FORBIDDEN" });
+
+    expect(appApi.requests.map((request) => request.url)).toEqual([
+      `/api/workspaces/${WORKSPACE_SLUG}/projects/${SECRET_PROJECT_ID}/project-members/me/`,
+      `/api/workspaces/${WORKSPACE_SLUG}/workspace-members/me/`,
+      `/api/workspaces/${WORKSPACE_SLUG}/projects/${SECRET_PROJECT_ID}/`,
+    ]);
+  });
+
+  it("denies when the membership lookup answers something else than 404", async () => {
+    // the app API answers 404 for "not a member" — any other status is a
+    // refusal of the lookup and must not fall through to the admin branch
+    appApi.setOptions({
+      user: USER,
+      access: {
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: {} } },
+        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: ROLE_ADMIN } },
+      },
+      projects: { [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: NETWORK_PUBLIC } },
+      membershipStatus: 403,
+    });
+
+    await expect(
+      service().authorize({ workspaceSlug: WORKSPACE_SLUG, projectId: PROJECT_ID, cookie: USER.cookie })
+    ).rejects.toMatchObject({ code: "ISSUE_EVENTS_FORBIDDEN" });
+
+    // the workspace-admin branch was not taken
+    expect(appApi.requests.map((request) => request.url)).toEqual([
+      `/api/workspaces/${WORKSPACE_SLUG}/projects/${PROJECT_ID}/project-members/me/`,
     ]);
   });
 
@@ -188,11 +282,13 @@ describe("IssueEventsAuthorizationService — human path", () => {
 });
 
 describe("IssueEventsAuthorizationService — service principal path", () => {
-  it("allows a service principal with an active grant on the project", async () => {
+  it("allows a service principal with the scope and an active grant on the project", async () => {
     appApi.setOptions({
       user: USER,
-      access: { projectRoles: {}, workspaceRoles: {} },
-      serviceTokens: { [SERVICE_TOKEN]: [PROJECT_ID] },
+      access: {},
+      servicePrincipals: {
+        [SERVICE_TOKEN]: { grants: [PROJECT_ID], scopes: ["work_item:read"] },
+      },
     });
 
     await expect(
@@ -212,8 +308,30 @@ describe("IssueEventsAuthorizationService — service principal path", () => {
   it("denies a service principal without a grant on the project", async () => {
     appApi.setOptions({
       user: USER,
-      access: { projectRoles: {}, workspaceRoles: {} },
-      serviceTokens: { [SERVICE_TOKEN]: [SECRET_PROJECT_ID] },
+      access: {},
+      servicePrincipals: {
+        [SERVICE_TOKEN]: { grants: [SECRET_PROJECT_ID], scopes: ["work_item:read"] },
+      },
+    });
+
+    await expect(
+      service().authorize({
+        workspaceSlug: WORKSPACE_SLUG,
+        projectId: PROJECT_ID,
+        serviceToken: SERVICE_TOKEN,
+      })
+    ).rejects.toMatchObject({ code: "ISSUE_EVENTS_FORBIDDEN" });
+  });
+
+  it("denies a service principal with a grant but without the work_item:read scope", async () => {
+    // the authz engine needs the scope first and the grant second
+    // (plane.core.authz.engine.authorize: scope → grant → role cap → owner)
+    appApi.setOptions({
+      user: USER,
+      access: {},
+      servicePrincipals: {
+        [SERVICE_TOKEN]: { grants: [PROJECT_ID], scopes: [] },
+      },
     });
 
     await expect(
@@ -228,7 +346,7 @@ describe("IssueEventsAuthorizationService — service principal path", () => {
 
 describe("assertIssueEventsChannelAccess", () => {
   it("does nothing for documents outside the issue-events namespace", async () => {
-    appApi.setOptions({ user: USER, access: { projectRoles: {}, workspaceRoles: {} } });
+    appApi.setOptions({ user: USER, access: {} });
 
     await expect(
       assertIssueEventsChannelAccess({ context: context(), documentName: `page:${PROJECT_ID}` })
@@ -249,9 +367,10 @@ describe("assertIssueEventsChannelAccess", () => {
     appApi.setOptions({
       user: USER,
       access: {
-        projectRoles: { [USER.id]: { [PROJECT_ID]: 15 } },
-        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: 15 } },
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: { [PROJECT_ID]: ROLE_MEMBER } } },
+        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: ROLE_MEMBER } },
       },
+      projects: { [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG, network: NETWORK_PUBLIC } },
     });
 
     // the context carries another project id (the client supplied query

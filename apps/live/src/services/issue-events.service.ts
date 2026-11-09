@@ -72,7 +72,10 @@ export type TIssueEventsAuthorizationParams = {
  * 2. workspace admins own the workspace and may read every project under
  *    it, including the ones they are not a member of
  *    (``plane.app.permissions.base.allow_permission`` — the SAFE_METHODS
- *    workspace-admin bypass).
+ *    workspace-admin bypass).  The project still has to live in that
+ *    workspace: the app API binds the two (``IssueViewSet.list`` does
+ *    ``Project.objects.get(pk=project_id, workspace__slug=slug)``), so the
+ *    admin branch additionally asks for the project itself.
  *
  * **Service principals** — the v1 API runs the authz engine for the
  * work-item collection of that project, so the service principal needs the
@@ -127,24 +130,45 @@ export class IssueEventsAuthorizationService extends APIService {
       });
       return;
     } catch (error) {
+      // The app API answers **404** when the caller is not a member of the
+      // project (`ProjectMember.DoesNotExist` → `BaseAPIView.handle_exception`
+      // → 404, `plane.app.views.project.member.ProjectMemberUserEndpoint`).
+      // Every other answer (401/403/5xx/network) is a denial and must not
+      // fall through to the workspace-admin branch below.
       if ((error as AppError).statusCode !== 404) {
-        // anything but "not a member" (401, 403, 5xx, network) is a denial
         throw this.denied(projectId, workspaceSlug, error);
       }
     }
 
-    // 2. workspace admins may read every project of their workspace
+    // 2. workspace admins may read every project of their workspace — but the
+    //    project has to live in that workspace. The app API binds the two
+    //    (`IssueViewSet.list` does `Project.objects.get(pk=project_id,
+    //    workspace__slug=slug)`, so a foreign project is a 404 there, even
+    //    for an admin of the workspace the client claims). A caller that is
+    //    neither a member nor an admin stops here.
+    let isWorkspaceAdmin = false;
     try {
       const response = await this.get(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/workspace-members/me/`, {
         headers,
       });
-      const role = (response?.data as { role?: number } | undefined)?.role;
-      if (role === WORKSPACE_ADMIN_ROLE) return;
+      isWorkspaceAdmin = (response?.data as { role?: number } | undefined)?.role === WORKSPACE_ADMIN_ROLE;
     } catch (error) {
       throw this.denied(projectId, workspaceSlug, error);
     }
+    if (!isWorkspaceAdmin) {
+      throw this.denied(projectId, workspaceSlug);
+    }
 
-    throw this.denied(projectId, workspaceSlug);
+    // 3. admin branch: bind the project to the workspace. The project
+    //    endpoint's queryset filters `workspace__slug`, so a project outside
+    //    the workspace answers 404 and the subscription is refused. (It also
+    //    records the admin in the "recently visited" list — the same entry
+    //    the web client writes when it opens the project.)
+    try {
+      await this.get(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/projects/${projectId}/`, { headers });
+    } catch (error) {
+      throw this.denied(projectId, workspaceSlug, error);
+    }
   }
 
   /**
