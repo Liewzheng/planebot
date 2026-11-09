@@ -414,4 +414,70 @@ describe("page channel — subscription authorization", () => {
 
     client.destroy();
   });
+
+  it("refuses a blank document name without asking the app API for a page", async () => {
+    appApi.setOptions({
+      user: USER,
+      access: {
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: { [PROJECT_ID]: ROLE_MEMBER } } },
+        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: ROLE_MEMBER } },
+      },
+      projects: { [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG } },
+      pages: {
+        [PAGE_ID]: {
+          workspaceSlug: WORKSPACE_SLUG,
+          projectId: PROJECT_ID,
+          access: PAGE_ACCESS_PUBLIC,
+          ownedBy: USER.id,
+          binary: pageBinary(SECRET_BODY),
+        },
+      },
+    });
+
+    // a blank name is not "outside the page namespace" — it is an invalid
+    // document, and the gate has to fail closed on it
+    const client = await connect("", memberToken(USER));
+
+    // the session lookup is the only app API call — the gate must not fall
+    // through to a page lookup with an empty page id
+    expect(appApi.requests.map((request) => request.url)).toEqual(["/api/users/me/"]);
+
+    expect(client.permissionDenied).toBe(true);
+    expect(client.authenticated).toBe(false);
+    await client.settle(300);
+    expect(client.documentBody()).not.toContain(SECRET_BODY);
+
+    client.destroy();
+  });
+
+  it("refuses a malformed document name without asking the app API for a page", async () => {
+    appApi.setOptions({
+      user: USER,
+      access: {
+        projectRoles: { [USER.id]: { [WORKSPACE_SLUG]: { [PROJECT_ID]: ROLE_MEMBER } } },
+        workspaceRoles: { [USER.id]: { [WORKSPACE_SLUG]: ROLE_MEMBER } },
+      },
+      projects: { [PROJECT_ID]: { workspaceSlug: WORKSPACE_SLUG } },
+      pages: {
+        [PAGE_ID]: {
+          workspaceSlug: WORKSPACE_SLUG,
+          projectId: PROJECT_ID,
+          access: PAGE_ACCESS_PUBLIC,
+          ownedBy: USER.id,
+          binary: pageBinary(SECRET_BODY),
+        },
+      },
+    });
+
+    const client = await connect("not-a-page-id", memberToken(USER));
+
+    expect(client.permissionDenied).toBe(true);
+    expect(client.authenticated).toBe(false);
+    await client.settle(300);
+    expect(client.documentBody()).not.toContain(SECRET_BODY);
+
+    expect(appApi.requests.map((request) => request.url)).toEqual(["/api/users/me/"]);
+
+    client.destroy();
+  });
 });

@@ -443,6 +443,24 @@ describe("assertPageDocumentAccess", () => {
     expect(appApi.requests).toHaveLength(0);
   });
 
+  it("rejects a blank page document name", async () => {
+    // a blank name is not "outside the page namespace" — it is an invalid
+    // document, and the gate fails closed on it
+    await expect(assertPageDocumentAccess({ context: context(), documentName: "" })).rejects.toMatchObject({
+      code: "PAGE_INVALID_DOCUMENT",
+    });
+
+    expect(appApi.requests).toHaveLength(0);
+  });
+
+  it("rejects a missing page document name", async () => {
+    await expect(assertPageDocumentAccess({ context: context() })).rejects.toMatchObject({
+      code: "PAGE_INVALID_DOCUMENT",
+    });
+
+    expect(appApi.requests).toHaveLength(0);
+  });
+
   it("uses the page id of the document name, not one of the context", async () => {
     appApi.setOptions({
       user: USER,

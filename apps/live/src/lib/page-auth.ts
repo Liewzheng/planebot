@@ -39,9 +39,13 @@ export const assertPageDocumentAccess = async ({
 }): Promise<void> => {
   // The issue-events channel is a broadcast bus, not a page document — it
   // has its own gate (see assertIssueEventsChannelAccess).
-  if (!documentName || documentName.startsWith(ISSUE_EVENTS_DOCUMENT_PREFIX)) return;
+  if (documentName?.startsWith(ISSUE_EVENTS_DOCUMENT_PREFIX)) return;
 
-  const pageId = parsePageId(documentName);
+  // Every other document name must be a page id. A missing or blank name is
+  // not "outside the page namespace" — it is an invalid document, and the
+  // gate fails closed on it. (Hocuspocus always sends a name, but an empty
+  // one would otherwise reach the content fetch as `pages//description/`.)
+  const pageId = documentName ? parsePageId(documentName) : null;
   if (!pageId) {
     logger.warn("PAGE_AUTH: rejecting malformed page document name", { documentName });
     throw new AppError("Invalid page document", { code: "PAGE_INVALID_DOCUMENT" });
