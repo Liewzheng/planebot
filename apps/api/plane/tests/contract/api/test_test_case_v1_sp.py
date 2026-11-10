@@ -45,15 +45,15 @@ from plane.db.models import (
     Project,
     ProjectMember,
 )
-# The model rows are imported under an alias: a class whose name starts
-# with ``Test`` is collected by pytest as a test class, and the warning
-# it produces would drown the report of this file.
+# The model rows are imported under an alias: pytest collects every class
+# whose name starts with ``Test`` as a test class, and the warning it
+# produces for a model would drown the report of this file.
 from plane.db.models.test_case import (
-    TestCase as TestCaseModel,
-    TestCaseModule as TestCaseModuleModel,
-    TestRun as TestRunModel,
-    TestRunCase as TestRunCaseModel,
-    TestRunStepRecord as TestRunStepRecordModel,
+    TestCase as CaseRow,
+    TestCaseModule as ModuleRow,
+    TestRun as RunRow,
+    TestRunCase as RunCaseRow,
+    TestRunStepRecord as RunStepRecordRow,
 )
 from plane.db.models.api import APIToken
 from plane.service_principals.constants import PrincipalType
@@ -348,11 +348,11 @@ class TestSPWritesTheFeature:
         run = _build_run(sp_client, workspace, project, bot)
         run_case = _add_case(sp_client, workspace, project, run["id"], case["id"])
 
-        assert TestCaseModuleModel.objects.get(pk=_module["id"]).created_by_id == bot.pk
-        assert TestCaseModel.objects.get(pk=case["id"]).created_by_id == bot.pk
-        assert TestRunModel.objects.get(pk=run["id"]).created_by_id == bot.pk
-        assert TestRunCaseModel.objects.get(pk=run_case["id"]).created_by_id == bot.pk
-        step = TestRunStepRecordModel.objects.get(
+        assert ModuleRow.objects.get(pk=_module["id"]).created_by_id == bot.pk
+        assert CaseRow.objects.get(pk=case["id"]).created_by_id == bot.pk
+        assert RunRow.objects.get(pk=run["id"]).created_by_id == bot.pk
+        assert RunCaseRow.objects.get(pk=run_case["id"]).created_by_id == bot.pk
+        step = RunStepRecordRow.objects.get(
             test_run_case_id=run_case["id"], sequence_id=1
         )
         assert step.created_by_id == bot.pk
@@ -398,7 +398,7 @@ class TestSPCannotWriteForeignRows:
         assert "role cap" in detail, detail
 
         # And the row is untouched.
-        assert TestCaseModel.objects.get(pk=case["id"]).title == case["title"]
+        assert CaseRow.objects.get(pk=case["id"]).title == case["title"]
 
     def test_sp_cannot_mark_a_step_of_a_case_a_human_created(
         self, workspace, create_user, project, granted_sp, sp_client, human_client
@@ -447,9 +447,9 @@ class TestHumanUsesTheSameEndpoints:
         # The attribution of a human write is the user the token belongs
         # to — the same column the service principal writes its shadow
         # bot into.
-        assert TestCaseModel.objects.get(pk=case["id"]).created_by_id == create_user.pk
-        assert TestRunModel.objects.get(pk=run["id"]).created_by_id == create_user.pk
-        assert TestRunCaseModel.objects.get(pk=run_case["id"]).created_by_id == create_user.pk
+        assert CaseRow.objects.get(pk=case["id"]).created_by_id == create_user.pk
+        assert RunRow.objects.get(pk=run["id"]).created_by_id == create_user.pk
+        assert RunCaseRow.objects.get(pk=run_case["id"]).created_by_id == create_user.pk
 
     def test_a_human_token_lists_the_cases(self, workspace, create_user, project, human_client):
         _module, case = _build_case(human_client, workspace, project)
@@ -613,7 +613,7 @@ class TestSPUploadsAndBindsAnAttachment:
         run = _build_run(sp_client, workspace, project, bot)
         run_case = _add_case(sp_client, workspace, project, run["id"], case["id"])
 
-        step = TestRunStepRecordModel.objects.get(
+        step = RunStepRecordRow.objects.get(
             test_run_case_id=run_case["id"], sequence_id=1
         )
 
