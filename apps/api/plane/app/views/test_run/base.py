@@ -75,6 +75,7 @@ from ..base import BaseAPIView, BaseViewSet
 from ..test_case.base import (
     APP_REASON_MESSAGES_ZH,
     error_entry,
+    object_body,
     serializer_error_response,
     stale_record_response,
     validation_error_response,
@@ -162,7 +163,11 @@ def bindable_asset(request, slug, record):
 
     Returns the asset, or a :class:`Response` carrying the reason.
     """
-    asset_id = request.data.get("asset_id")
+    body = object_body(request)
+    if isinstance(body, Response):
+        return body
+
+    asset_id = body.get("asset_id")
     if not asset_id or not _is_uuid(asset_id):
         return Response(
             {
@@ -330,6 +335,10 @@ class TestRunViewSet(BaseViewSet):
         if run.status == RUN_STATUS_COMPLETED:
             return run_conflict_response("A completed batch is frozen.")
 
+        body = object_body(request)
+        if isinstance(body, Response):
+            return body
+
         stale = stale_record_response(request, run, TestRunSerializer(run).data)
         if stale is not None:
             return stale
@@ -338,7 +347,7 @@ class TestRunViewSet(BaseViewSet):
         # frozen once they are recorded. The model refuses the change
         # too; the check here names the field on the wire.
         for field in ("version_number", "build_number", "commit_hash"):
-            if field in request.data and request.data.get(field) != getattr(run, field):
+            if field in body and body.get(field) != getattr(run, field):
                 return Response(
                     {
                         "error": "The tested version of a batch cannot be changed.",
@@ -355,9 +364,7 @@ class TestRunViewSet(BaseViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        if "run_date" in request.data and not _same_date(
-            request.data.get("run_date"), run.run_date
-        ):
+        if "run_date" in body and not _same_date(body.get("run_date"), run.run_date):
             return Response(
                 {
                     "error": "The execution date of a batch cannot be changed.",
@@ -467,9 +474,13 @@ class TestRunCaseEndpoint(BaseAPIView):
         if run.status == RUN_STATUS_COMPLETED:
             return run_conflict_response("A completed batch is frozen.")
 
-        case_ids = request.data.get("test_case_ids")
+        body = object_body(request)
+        if isinstance(body, Response):
+            return body
+
+        case_ids = body.get("test_case_ids")
         if case_ids is None:
-            case_ids = request.data.get("test_cases")
+            case_ids = body.get("test_cases")
         if not isinstance(case_ids, list) or not case_ids:
             return Response(
                 {

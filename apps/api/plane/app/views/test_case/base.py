@@ -82,6 +82,38 @@ APP_REASON_MESSAGES_ZH = {
 }
 
 
+def object_body(request):
+    """The body of the request as a mapping — or the refusal response.
+
+    The writes of this feature read the body directly
+    (``request.data.get(...)``). A body that is not a JSON object — a
+    list, a string, a number — has no ``get``; the read would raise an
+    ``AttributeError`` and the endpoint would answer 500 where the
+    contract promises a 400. Such a body is a refused payload, exactly
+    as it is on the endpoints that go through a serializer.
+
+    Returns the body (a ``dict``) or a :class:`Response` carrying the
+    refusal; the caller answers the response when it gets one.
+    """
+    data = request.data
+    if isinstance(data, dict):
+        return data
+    return Response(
+        {
+            "error": "The payload is not valid.",
+            "code": "invalid_payload",
+            "errors": [
+                error_entry(
+                    "invalid_payload",
+                    "",
+                    "The body of the request must be a JSON object.",
+                )
+            ],
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
 def error_entry(code: str, path: str = "", message: str = "") -> dict:
     """One entry of the ``errors`` list of a 400 body.
 
@@ -196,7 +228,11 @@ def stale_record_response(request, record, current: dict):
     ``None`` when the client sent no ``updated_at`` (the write is then a
     plain last-write-wins) or when the value still matches.
     """
-    client_value = request.data.get("updated_at")
+    body = object_body(request)
+    if isinstance(body, Response):
+        return body
+
+    client_value = body.get("updated_at")
     if not client_value:
         return None
     parsed = parse_datetime(str(client_value))
@@ -566,7 +602,11 @@ class TestCaseStepEndpoint(BaseAPIView):
         if case is None:
             return Response({"error": "Test case not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        steps = request.data.get("steps")
+        body = object_body(request)
+        if isinstance(body, Response):
+            return body
+
+        steps = body.get("steps")
         if steps is None:
             steps = []
 
@@ -669,7 +709,11 @@ class TestCaseIssueEndpoint(BaseAPIView):
         if case is None:
             return Response({"error": "Test case not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        issue_id = request.data.get("issue_id")
+        body = object_body(request)
+        if isinstance(body, Response):
+            return body
+
+        issue_id = body.get("issue_id")
         if not issue_id:
             return Response(
                 {
