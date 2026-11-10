@@ -11,6 +11,7 @@ import { useParams, usePathname } from "next/navigation";
 import { EUserPermissionsLevel, EUserPermissions } from "@plane/constants";
 import { useTranslation } from "@plane/i18n";
 import {
+  CheckSquareOutline,
   CyclesOutline,
   IntakeOutline,
   ModuleOutline,
@@ -37,6 +38,9 @@ export type TNavigationItem = {
   sortOrder: number;
   i18n_key: string;
   key: string;
+  // The paths that light the entry up besides its own href — an entry
+  // that carries more than one page.
+  activePaths?: string[];
 };
 
 type TProjectItemsProps = {
@@ -76,6 +80,7 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
   };
 
   const baseNavigation = useCallback(
+    // oxlint-disable-next-line no-shadow
     (workspaceSlug: string, projectId: string): TNavigationItem[] => [
       {
         i18n_key: "sidebar.work_items",
@@ -137,12 +142,25 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
         shouldRender: project?.inbox_view ?? false,
         sortOrder: 6,
       },
+      {
+        i18n_key: "sidebar.test",
+        key: "test",
+        name: "Test",
+        href: `/${workspaceSlug}/projects/${projectId}/test-cases`,
+        // The entry carries two pages: the cases and the batches.
+        activePaths: [`/${workspaceSlug}/projects/${projectId}/test-runs`],
+        icon: CheckSquareOutline,
+        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+        shouldRender: true,
+        sortOrder: 7,
+      },
     ],
     [project]
   );
 
   // memoized navigation items and adding additional navigation items
   const navigationItemsMemo = useMemo(() => {
+    // oxlint-disable-next-line no-shadow
     const navigationItems = (workspaceSlug: string, projectId: string): TNavigationItem[] => {
       const navItems = baseNavigation(workspaceSlug, projectId);
 
@@ -154,6 +172,7 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
     };
 
     // sort navigation items by sortOrder
+    // oxlint-disable-next-line unicorn/no-array-sort
     const sortedNavigationItems = navigationItems(workspaceSlug, projectId).sort(
       (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)
     );
@@ -171,7 +190,8 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
       const isWorkItemActive = item.key === "work_items" && workItemCondition;
       const isEpicActive = item.key === "epics" && epicCondition;
       // pathname condition
-      const isPathnameActive = pathname.includes(item.href);
+      const isPathnameActive =
+        pathname.includes(item.href) || !!item.activePaths?.some((activePath) => pathname.includes(activePath));
       // return
       return isWorkItemActive || isEpicActive || isPathnameActive;
     },
