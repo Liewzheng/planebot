@@ -36,6 +36,8 @@ type Props = {
   runCase: ITestRunCase;
   /** A completed batch is frozen — the server refuses every write on it. */
   disabled: boolean;
+  /** The batch is completed: no conclusion is offered, only the frozen note. */
+  frozen: boolean;
   /** The reasons of a refused finalize, addressed to this case. */
   errors?: TRunCaseErrors;
   /** The batch changed on the server — the caller refreshes it. */
@@ -68,7 +70,7 @@ const conclusionKey = (conclusion: TTestRunConclusion): string =>
  * invalid record) — and it is the step row that owns it.
  */
 export function TestCaseRunCaseForm(props: Props) {
-  const { workspaceSlug, projectId, testRunId, runCase, disabled, errors, onChanged, footer } = props;
+  const { workspaceSlug, projectId, testRunId, runCase, disabled, frozen, errors, onChanged, footer } = props;
   const { t } = useTranslation();
   // states
   const [draft, setDraft] = useState<TRunCaseDraft>(() => draftFromRunCase(runCase));
@@ -336,6 +338,7 @@ export function TestCaseRunCaseForm(props: Props) {
                 caseNumber={runCase.case_number}
                 step={step}
                 disabled={disabled}
+                frozen={frozen}
                 errors={errors?.steps?.[step.sequence_id]}
                 onChanged={onChanged}
               />
@@ -357,6 +360,14 @@ export function TestCaseRunCaseForm(props: Props) {
         {isConcluded ? (
           <>
             <p className="text-11 text-tertiary">{t("project_test_case.execution.case.conclusion_locked")}</p>
+            {renderErrors("conclusion")}
+          </>
+        ) : frozen ? (
+          /* A frozen batch offers no batch-level act at all: the conclusion
+             control is absent, exactly like 完成批次, 加入 and 从批次移除 —
+             one rule for every control that acts on a batch. */
+          <>
+            <p className="text-11 text-tertiary">{t("project_test_case.execution.case.conclusion_frozen")}</p>
             {renderErrors("conclusion")}
           </>
         ) : (

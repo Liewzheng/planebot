@@ -318,6 +318,18 @@ export const withRefusalSentence = (
 };
 
 /**
+ * True when a refusal says the batch is already frozen.
+ *
+ * `finalize` answers 409 on exactly one condition of its own — a batch that
+ * was completed before the request reached the server
+ * (`run_conflict_response("A completed batch is frozen.")` in
+ * `apps/api/plane/app/views/test_run/base.py`). The status is read rather
+ * than the sentence, because the sentence is prose that may be reworded
+ * while the status is the contract.
+ */
+export const refusalIsFrozenBatch = (refusal?: TRunRefusal | null): boolean => refusal?.status === 409;
+
+/**
  * The hint of a ✔/✘ attempt that has nothing to record. §4.4 rule 1: a ✘
  * with no measured value is an invalid record — the measured value may be
  * the text or an attached screenshot. §6.1 rule 1: a step with neither box

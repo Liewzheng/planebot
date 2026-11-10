@@ -25,6 +25,8 @@ type Props = {
   testRunId: string;
   runCase: ITestRunCase;
   disabled: boolean;
+  /** The batch is completed — its record is frozen, so no batch-level act is offered. */
+  frozen: boolean;
   /** The reader may take the case out of the batch (a member and above). */
   canRemove: boolean;
   errors?: TRunCaseErrors;
@@ -43,7 +45,7 @@ type Props = {
  * not hidden behind a fold.
  */
 export function TestCaseRunCaseCard(props: Props) {
-  const { workspaceSlug, projectId, testRunId, runCase, disabled, canRemove, errors, onChanged } = props;
+  const { workspaceSlug, projectId, testRunId, runCase, disabled, frozen, canRemove, errors, onChanged } = props;
   const { t } = useTranslation();
   // states
   const [isOpen, setIsOpen] = useState(false);
@@ -135,6 +137,7 @@ export function TestCaseRunCaseCard(props: Props) {
               testRunId={testRunId}
               runCase={runCase}
               disabled={disabled}
+              frozen={frozen}
               errors={errors}
               onChanged={onChanged}
               footer={
