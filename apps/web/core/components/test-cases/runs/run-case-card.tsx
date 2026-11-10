@@ -9,12 +9,13 @@ import { useTranslation } from "@plane/i18n";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import { AlertModalCore, Collapsible } from "@plane/ui";
 import { ChevronDownIcon, ChevronRightIcon } from "@plane/propel/icons";
-import type { ITestCaseErrorResponse, ITestRunCase } from "@plane/types";
+import type { ITestRunCase } from "@plane/types";
 // components
 import { TestCaseResultBadge } from "../shared/badges";
 import { TestCaseRunCaseForm } from "./run-case-form";
 // helpers
-import type { TRunCaseErrors } from "./types";
+import { refusalFallback, refusalText } from "./types";
+import type { TRunCaseErrors, TRunRefusal } from "./types";
 // services
 import { testCaseService } from "@/services/test-cases/test-case.service";
 
@@ -71,16 +72,19 @@ export function TestCaseRunCaseCard(props: Props) {
       // not a failure worth a toast. Every other refusal (a frozen batch, a
       // record that already carries a verdict, a missing permission) carries
       // its own sentence, and that sentence is what the toast shows.
-      const envelope = error as (ITestCaseErrorResponse & { status?: number }) | undefined;
-      if (envelope?.status === 404) {
+      const refusal = error as TRunRefusal | undefined;
+      if (refusal?.status === 404) {
         setIsRemoveOpen(false);
         onChanged();
         return;
       }
+      // The server's sentence, DRF's `detail`, or — for a body that carries
+      // neither — the status-derived one; the generic title is the last
+      // resort only when there is no status either.
       const sentence =
-        envelope?.errors?.find((entry) => entry?.message)?.message ||
-        envelope?.error ||
-        t("project_test_case.execution.case.remove_failed");
+        refusal?.errors?.find((entry) => entry?.message)?.message ||
+        refusalText(refusal) ||
+        refusalFallback(refusal, t, "project_test_case.execution.errors.write_not_saved");
       setToast({
         type: TOAST_TYPE.ERROR,
         title: t("project_test_case.execution.case.remove_failed"),

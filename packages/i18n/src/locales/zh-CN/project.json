@@ -600,6 +600,12 @@
         "success_message": "记录已冻结；重跑请新建补测批次。",
         "refused_title": "还不能完成这个批次",
         "refused_hint": "每条原因都标在它对应的字段或步骤旁边。"
+      },
+      "errors": {
+        "no_status": "没有状态码",
+        "conclusion_not_written": "服务端拒绝（{status}），结论未写入，请重试。",
+        "verdict_not_written": "服务端拒绝（{status}），步骤结论未写入，请重试。",
+        "write_not_saved": "服务端拒绝（{status}），未保存，请重试。"
       }
     },
     "issue_block": {

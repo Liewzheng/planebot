@@ -120,7 +120,7 @@ const addTo = (target: TRunFieldErrors, field: string, message: string) => {
  * repeats it in `case_number` / `step_sequence`. Both are read: an entry
  * without a path still lands on the right case and step.
  */
-export const parseRunErrors = (envelope?: ITestCaseErrorResponse | null): TParsedRunErrors => {
+export const parseRunErrors = (envelope?: TRunRefusal | null): TParsedRunErrors => {
   const parsed: TParsedRunErrors = { run: {}, cases: {}, form: [] };
   const entries: ITestCaseErrorEntry[] = Array.isArray(envelope?.errors) ? envelope.errors : [];
 
@@ -168,11 +168,53 @@ export const parseRunErrors = (envelope?: ITestCaseErrorResponse | null): TParse
 export const stepsWithErrors = (errors?: TRunCaseErrors): number[] =>
   errors ? Object.keys(errors.steps).map(Number) : [];
 
-/** The sentence of a refusal, when the envelope carries one. */
-const envelopeSentence = (envelope?: ITestCaseErrorResponse | null): string | undefined => {
-  const sentence = (envelope?.error ?? "").trim();
-  return sentence.length > 0 ? sentence : undefined;
+/**
+ * A refusal as the service hands it over: the body of the feature's envelope
+ * plus the HTTP status, which the body itself does not carry. A body that is
+ * not the envelope (a proxy's plain text or HTML error page, a dropped
+ * request) arrives with the status only.
+ */
+export type TRunRefusal = Partial<ITestCaseErrorResponse> & {
+  status?: number;
+  /** DRF's own body for an exception the feature's views do not build. */
+  detail?: string;
 };
+
+/**
+ * The sentence a refusal carries **by itself**: the envelope's `error`, then
+ * DRF's `detail`. A body with neither contributes nothing — that is why every
+ * caller has a `refusalFallback` behind this.
+ */
+export const refusalText = (refusal?: TRunRefusal | null): string | undefined => {
+  const error = typeof refusal?.error === "string" ? refusal.error.trim() : "";
+  if (error) return error;
+
+  const detail = typeof refusal?.detail === "string" ? refusal.detail.trim() : "";
+  return detail || undefined;
+};
+
+/** `HTTP 502`, or the caller's word for a response that carried no status. */
+const statusLabel = (refusal: TRunRefusal | null | undefined, unknownLabel: string): string =>
+  typeof refusal?.status === "number" ? `HTTP ${refusal.status}` : unknownLabel;
+
+/**
+ * The last resort of a refusal: a sentence built from what the response
+ * proves — its HTTP status.
+ *
+ * A 502 from the proxy between the browser and the API answers with an HTML
+ * page, and a dropped request answers with nothing at all: neither carries an
+ * `error`, an `errors[]` or a `detail`, so every earlier step of the chain is
+ * empty. Without this sentence the user would see the confirmation dialog
+ * close exactly as it does on success, while nothing was written.
+ *
+ * `key` is the sentence of the surface that was refused; `{status}` is
+ * `HTTP 502` (or the word the caller passes for "no status").
+ */
+export const refusalFallback = (
+  refusal: TRunRefusal | null | undefined,
+  t: (key: string, params?: Record<string, unknown>) => string,
+  key: string
+): string => t(key, { status: statusLabel(refusal, t("project_test_case.execution.errors.no_status")) });
 
 /**
  * The reasons of a refused write that belong to one case record, as the
@@ -196,8 +238,9 @@ const envelopeSentence = (envelope?: ITestCaseErrorResponse | null): string | un
  */
 export const collectCaseErrors = (
   parsed: TParsedRunErrors,
-  envelope?: ITestCaseErrorResponse | null,
-  caseNumber?: string
+  refusal?: TRunRefusal | null,
+  caseNumber?: string,
+  fallback?: string
 ): TRunFieldErrors => {
   const merged: TRunFieldErrors = {};
 
@@ -216,7 +259,7 @@ export const collectCaseErrors = (
   for (const message of unplaced) addTo(merged, "__form__", message);
 
   if (Object.keys(merged).length === 0) {
-    const sentence = envelopeSentence(envelope);
+    const sentence = refusalText(refusal) ?? fallback;
     if (sentence) addTo(merged, "__form__", sentence);
   }
 
@@ -234,9 +277,10 @@ export const collectCaseErrors = (
  */
 export const firstStepReason = (
   parsed: TParsedRunErrors,
-  envelope?: ITestCaseErrorResponse | null,
+  refusal?: TRunRefusal | null,
   caseNumber?: string,
-  stepSequence?: number
+  stepSequence?: number,
+  fallback?: string
 ): string | undefined => {
   const stepErrors =
     caseNumber && typeof stepSequence === "number" ? parsed.cases[caseNumber]?.steps[stepSequence] : undefined;
@@ -248,7 +292,7 @@ export const firstStepReason = (
 
   if (parsed.form[0]) return parsed.form[0];
 
-  return envelopeSentence(envelope);
+  return refusalText(refusal) ?? fallback;
 };
 
 /**
@@ -262,13 +306,14 @@ export const firstStepReason = (
  */
 export const withRefusalSentence = (
   parsed: TParsedRunErrors,
-  envelope?: ITestCaseErrorResponse | null
+  refusal?: TRunRefusal | null,
+  fallback?: string
 ): TParsedRunErrors => {
   if (parsed.form.length > 0) return parsed;
   if (Object.keys(parsed.run).length > 0) return parsed;
   if (Object.keys(parsed.cases).length > 0) return parsed;
 
-  const sentence = envelopeSentence(envelope);
+  const sentence = refusalText(refusal) ?? fallback;
   return sentence ? { ...parsed, form: [sentence] } : parsed;
 };
 

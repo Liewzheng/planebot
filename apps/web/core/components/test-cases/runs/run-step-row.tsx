@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "@plane/i18n";
 import { AlertModalCore } from "@plane/ui";
 import { EFileAssetType } from "@plane/types";
-import type { ITestCaseErrorResponse, ITestRunStepRecord } from "@plane/types";
+import type { ITestRunStepRecord } from "@plane/types";
 // components
 import { TestCaseSaveIndicator } from "../shared/save-indicator";
 import type { TTestCaseSaveState } from "../shared/save-indicator";
@@ -20,8 +20,8 @@ import type { TTestCaseMarkdownEditorHandle } from "./markdown-editor";
 // constants
 import { TEST_RUN_AUTOSAVE_DEBOUNCE_MS } from "./constants";
 // helpers
-import { firstStepReason, missingMeasurement, parseRunErrors } from "./types";
-import type { TRunFieldErrors } from "./types";
+import { firstStepReason, missingMeasurement, parseRunErrors, refusalFallback } from "./types";
+import type { TRunFieldErrors, TRunRefusal } from "./types";
 // services
 import { testCaseService } from "@/services/test-cases/test-case.service";
 
@@ -66,6 +66,7 @@ export function TestCaseRunStepRow(props: Props) {
   const [localError, setLocalError] = useState<string | null>(null);
   const [pendingVerdict, setPendingVerdict] = useState<TVerdict | null>(null);
   const [isWritingVerdict, setIsWritingVerdict] = useState(false);
+  const [verdictError, setVerdictError] = useState<string | null>(null);
   // refs
   const savedRef = useRef(step.actual_value ?? "");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -118,12 +119,14 @@ export function TestCaseRunStepRow(props: Props) {
         } catch (error) {
           if (unmountedRef.current) return;
           // The refusal names the field, not the step, so the batch-level
-          // entries and the envelope's sentence are read as well.
+          // entries, DRF's `detail` and — last — the HTTP status are read too.
+          const refusal = error as TRunRefusal;
           const reason = firstStepReason(
-            parseRunErrors(error as ITestCaseErrorResponse),
-            error as ITestCaseErrorResponse,
+            parseRunErrors(refusal),
+            refusal,
             caseNumber,
-            step.sequence_id
+            step.sequence_id,
+            refusalFallback(refusal, t, "project_test_case.execution.errors.write_not_saved")
           );
           setLocalError(reason ?? t("project_test_case.execution.step.save_failed"));
           setSaveState("error");
@@ -185,6 +188,7 @@ export function TestCaseRunStepRow(props: Props) {
 
   const askVerdict = (next: TVerdict) => {
     setLocalError(null);
+    setVerdictError(null);
 
     // §4.4 rule 1 / §6.1 rule 1: a failed step with nothing observed is an
     // invalid record — the measured value is its text or its screenshot.
@@ -212,18 +216,22 @@ export function TestCaseRunStepRow(props: Props) {
       setPendingVerdict(null);
       onChanged();
     } catch (error) {
-      // The refusal of `_assert_verdict_is_final` names the field only, so the
-      // batch-level entries and the envelope's own sentence are read as well.
+      // `_assert_verdict_is_final` names the field only; DRF's `detail` and
+      // the HTTP status close the chain. A verdict that was not written must
+      // never close the dialog as if it had been.
+      const refusal = error as TRunRefusal;
       const reason = firstStepReason(
-        parseRunErrors(error as ITestCaseErrorResponse),
-        error as ITestCaseErrorResponse,
+        parseRunErrors(refusal),
+        refusal,
         caseNumber,
-        step.sequence_id
+        step.sequence_id,
+        refusalFallback(refusal, t, "project_test_case.execution.errors.verdict_not_written")
       );
-      setLocalError(reason ?? t("project_test_case.execution.step.verdict_failed"));
-      // Close the dialog so the sentence, which stands next to the measured
-      // value, is not hidden behind it.
-      setPendingVerdict(null);
+      const sentence = reason ?? t("project_test_case.execution.step.verdict_failed");
+      setLocalError(sentence);
+      // The dialog stays open and carries the reason itself; the sentence also
+      // stays next to the verdict once it is closed.
+      setVerdictError(sentence);
     } finally {
       setIsWritingVerdict(false);
     }
@@ -306,6 +314,15 @@ export function TestCaseRunStepRow(props: Props) {
             <span className="text-11 text-tertiary">{t("project_test_case.execution.step.verdict_hint")}</span>
           </div>
         )}
+
+        {/* The reason of a refused verdict stands with the verdict: it used to
+            sit at the bottom of the row, below the editor and the uploader,
+            where a phone viewport can hide it. */}
+        {localError && (
+          <p className="text-11 text-danger-primary" role="alert">
+            {localError}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-2">
@@ -359,7 +376,7 @@ export function TestCaseRunStepRow(props: Props) {
 
       {fieldErrors.length > 0 && (
         <ul className="flex flex-col gap-0.5">
-          {fieldErrors.map((message) => (
+          {[...new Set(fieldErrors)].map((message) => (
             <li key={message} className="text-11 text-danger-primary">
               {message}
             </li>
@@ -367,22 +384,28 @@ export function TestCaseRunStepRow(props: Props) {
         </ul>
       )}
 
-      {localError && (
-        <p className="text-11 text-danger-primary" role="alert">
-          {localError}
-        </p>
-      )}
-
       <AlertModalCore
         isOpen={pendingVerdict !== null}
-        handleClose={() => setPendingVerdict(null)}
+        handleClose={() => {
+          setPendingVerdict(null);
+          setVerdictError(null);
+        }}
         handleSubmit={() => void writeVerdict()}
         isSubmitting={isWritingVerdict}
         title={t("project_test_case.execution.step.confirm_verdict_title", { number: step.sequence_id })}
         content={
-          pendingVerdict === "pass"
-            ? t("project_test_case.execution.step.confirm_verdict_pass")
-            : t("project_test_case.execution.step.confirm_verdict_fail")
+          <div className="flex flex-col gap-2">
+            <p>
+              {pendingVerdict === "pass"
+                ? t("project_test_case.execution.step.confirm_verdict_pass")
+                : t("project_test_case.execution.step.confirm_verdict_fail")}
+            </p>
+            {verdictError && (
+              <p className="text-12 font-medium text-danger-primary" role="alert">
+                {verdictError}
+              </p>
+            )}
+          </div>
         }
         primaryButtonText={{
           default: t("project_test_case.execution.step.confirm_verdict_submit"),

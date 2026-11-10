@@ -10,7 +10,6 @@ import { Button } from "@plane/propel/button";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import { AlertModalCore } from "@plane/ui";
 import useSWR from "swr";
-import type { ITestCaseErrorResponse } from "@plane/types";
 // components
 import { TestCaseRunAddCases } from "./run-add-cases";
 import { TestCaseRunCaseCard } from "./run-case-card";
@@ -18,8 +17,8 @@ import { TestCaseRunSummaryPanel } from "./run-summary-panel";
 // constants
 import { TEST_RUN_DETAIL, TEST_RUN_SUMMARY_REPORT } from "./constants";
 // helpers
-import { parseRunErrors, withRefusalSentence } from "./types";
-import type { TParsedRunErrors } from "./types";
+import { parseRunErrors, refusalFallback, withRefusalSentence } from "./types";
+import type { TParsedRunErrors, TRunRefusal } from "./types";
 // services
 import { testCaseService } from "@/services/test-cases/test-case.service";
 
@@ -100,11 +99,18 @@ export function TestRunDetailView(props: Props) {
         message: t("project_test_case.execution.finalize.success_message"),
       });
     } catch (finalizeError) {
-      const envelope = finalizeError as ITestCaseErrorResponse | undefined;
+      const refusal = finalizeError as TRunRefusal;
       // A 403/404/409 body carries a sentence but often no entry the parser
       // can place; without the fallback the page would only say "each reason
-      // is shown next to its field" while showing none.
-      setErrors(withRefusalSentence(parseRunErrors(envelope), envelope));
+      // is shown next to its field" while showing none. A body with no
+      // sentence at all (a proxy's 502) still gets the status sentence.
+      setErrors(
+        withRefusalSentence(
+          parseRunErrors(refusal),
+          refusal,
+          refusalFallback(refusal, t, "project_test_case.execution.errors.write_not_saved")
+        )
+      );
       setHasFinalizeErrors(true);
       setIsConfirmingFinalize(false);
     } finally {

@@ -8,9 +8,10 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "@plane/i18n";
 import { Button } from "@plane/propel/button";
 import { EModalPosition, EModalWidth, Input, ModalCore, TextArea } from "@plane/ui";
-import type { ITestCaseErrorResponse, ITestRun, ITestRunSummary } from "@plane/types";
+import type { ITestRun, ITestRunSummary } from "@plane/types";
 // helpers
-import { parseRunErrors } from "./types";
+import { parseRunErrors, refusalFallback, refusalText } from "./types";
+import type { TRunRefusal } from "./types";
 // services
 import { testCaseService } from "@/services/test-cases/test-case.service";
 
@@ -95,10 +96,15 @@ export function TestCaseRunCreateModal(props: Props) {
       });
       onCreated(created);
     } catch (error) {
-      const envelope = error as ITestCaseErrorResponse | undefined;
-      const parsed = parseRunErrors(envelope);
+      const refusal = error as TRunRefusal;
+      const parsed = parseRunErrors(refusal);
       setErrors(parsed.run);
-      setFormError(parsed.form[0] ?? (Object.keys(parsed.run).length === 0 ? (envelope?.error ?? null) : null));
+      // Nothing placed and no sentence in the body: the status still says the
+      // batch was not created.
+      const fallback = refusalFallback(refusal, t, "project_test_case.execution.errors.write_not_saved");
+      setFormError(
+        parsed.form[0] ?? (Object.keys(parsed.run).length === 0 ? (refusalText(refusal) ?? fallback) : null)
+      );
     } finally {
       setIsCreating(false);
     }

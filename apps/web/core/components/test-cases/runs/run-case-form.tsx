@@ -10,7 +10,7 @@ import { useTranslation } from "@plane/i18n";
 import { Button } from "@plane/propel/button";
 import { AlertModalCore } from "@plane/ui";
 import { EFileAssetType } from "@plane/types";
-import type { ITestCaseErrorResponse, ITestRunCase, TTestRunConclusion } from "@plane/types";
+import type { ITestRunCase, TTestRunConclusion } from "@plane/types";
 // components
 import { TestCaseResultBadge, TestCasePriorityBadge } from "../shared/badges";
 import { TestCaseSaveIndicator } from "../shared/save-indicator";
@@ -24,8 +24,8 @@ import { TestCaseRunStepRow } from "./run-step-row";
 // constants
 import { TEST_RUN_AUTOSAVE_DEBOUNCE_MS, TEST_RUN_CONCLUSIONS } from "./constants";
 // helpers
-import { changedCaseFields, collectCaseErrors, draftFromRunCase, parseRunErrors } from "./types";
-import type { TRunCaseDraft, TRunCaseErrors, TRunCaseTextField } from "./types";
+import { changedCaseFields, collectCaseErrors, draftFromRunCase, parseRunErrors, refusalFallback } from "./types";
+import type { TRunCaseDraft, TRunCaseErrors, TRunCaseTextField, TRunRefusal } from "./types";
 // services
 import { testCaseService } from "@/services/test-cases/test-case.service";
 
@@ -43,6 +43,9 @@ type Props = {
   /** Extra control rendered in the footer (the removal of the case). */
   footer?: ReactNode;
 };
+
+/** The first sentence of a collected reason map — what a dialog shows. */
+const firstReason = (errors: Record<string, string[]>): string | undefined => Object.values(errors).flat()[0];
 
 /** The label key of one conclusion. */
 const conclusionKey = (conclusion: TTestRunConclusion): string =>
@@ -73,6 +76,7 @@ export function TestCaseRunCaseForm(props: Props) {
   const [localErrors, setLocalErrors] = useState<Record<string, string[]>>({});
   const [chosenConclusion, setChosenConclusion] = useState<TTestRunConclusion>(runCase.conclusion ?? "");
   const [isConfirmingConclusion, setIsConfirmingConclusion] = useState(false);
+  const [conclusionError, setConclusionError] = useState<string | null>(null);
   const [isWritingConclusion, setIsWritingConclusion] = useState(false);
   // refs
   const savedRef = useRef<TRunCaseDraft>(draftFromRunCase(runCase));
@@ -121,12 +125,15 @@ export function TestCaseRunCaseForm(props: Props) {
       } catch (error) {
         if (unmountedRef.current) return;
         // A refusal of this row names only the field (`path: "conclusion"`),
-        // not the case — collectCaseErrors reads both shapes.
+        // not the case — collectCaseErrors reads both shapes, and the status
+        // sentence is the last resort when the body says nothing at all.
+        const refusal = error as TRunRefusal;
         setLocalErrors(
           collectCaseErrors(
-            parseRunErrors(error as ITestCaseErrorResponse),
-            error as ITestCaseErrorResponse,
-            runCase.case_number
+            parseRunErrors(refusal),
+            refusal,
+            runCase.case_number,
+            refusalFallback(refusal, t, "project_test_case.execution.errors.write_not_saved")
           )
         );
         setSaveState("error");
@@ -138,7 +145,7 @@ export function TestCaseRunCaseForm(props: Props) {
     });
     inFlightPromiseRef.current = tracked;
     await tracked;
-  }, [disabled, onChanged, projectId, runCase.case_number, runCase.id, testRunId, workspaceSlug]);
+  }, [disabled, onChanged, projectId, runCase.case_number, runCase.id, t, testRunId, workspaceSlug]);
 
   const saveRef = useRef(save);
   saveRef.current = save;
@@ -206,20 +213,20 @@ export function TestCaseRunCaseForm(props: Props) {
       setIsConfirmingConclusion(false);
       onChanged();
     } catch (error) {
-      // The row refusal of this endpoint names the field but not the case
-      // (`{"path": "conclusion", "field": "conclusion"}`), so the reasons of
-      // the batch header and the envelope's own sentence are merged too — a
-      // refused conclusion must never leave the dialog silent.
-      setLocalErrors(
-        collectCaseErrors(
-          parseRunErrors(error as ITestCaseErrorResponse),
-          error as ITestCaseErrorResponse,
-          runCase.case_number
-        )
+      // The chain ends at the HTTP status: the body may be DRF's `{detail}`,
+      // or — behind a proxy — an HTML page or nothing at all. A conclusion
+      // that was not written must never close the dialog as if it had been.
+      const refusal = error as TRunRefusal;
+      const collected = collectCaseErrors(
+        parseRunErrors(refusal),
+        refusal,
+        runCase.case_number,
+        refusalFallback(refusal, t, "project_test_case.execution.errors.conclusion_not_written")
       );
-      // Close the dialog: the reason stands next to the conclusion block, and
-      // a dialog that stays open would hide it.
-      setIsConfirmingConclusion(false);
+      setLocalErrors(collected);
+      // The dialog stays open and carries the reason itself; the same
+      // sentences stay inline once it is closed.
+      setConclusionError(firstReason(collected) ?? null);
     } finally {
       setIsWritingConclusion(false);
     }
@@ -255,7 +262,7 @@ export function TestCaseRunCaseForm(props: Props) {
   const renderErrors = (field: string) =>
     fieldErrors[field]?.length > 0 ? (
       <ul className="flex flex-col gap-0.5">
-        {fieldErrors[field].map((message) => (
+        {[...new Set(fieldErrors[field])].map((message) => (
           <li key={message} className="text-11 text-danger-primary">
             {message}
           </li>
@@ -379,7 +386,10 @@ export function TestCaseRunCaseForm(props: Props) {
                 variant="primary"
                 size="lg"
                 disabled={disabled || !chosenConclusion}
-                onClick={() => setIsConfirmingConclusion(true)}
+                onClick={() => {
+                  setConclusionError(null);
+                  setIsConfirmingConclusion(true);
+                }}
               >
                 {t("project_test_case.execution.case.conclude")}
               </Button>
@@ -519,7 +529,7 @@ export function TestCaseRunCaseForm(props: Props) {
 
       {orphanErrors.length > 0 && (
         <ul className="flex flex-col gap-0.5">
-          {orphanErrors.map((message) => (
+          {[...new Set(orphanErrors)].map((message) => (
             <li key={message} className="text-11 text-danger-primary">
               {message}
             </li>
@@ -535,9 +545,22 @@ export function TestCaseRunCaseForm(props: Props) {
         handleSubmit={() => void writeConclusion()}
         isSubmitting={isWritingConclusion}
         title={t("project_test_case.execution.case.confirm_conclusion_title")}
-        content={t("project_test_case.execution.case.confirm_conclusion_content", {
-          conclusion: chosenConclusion ? t(`project_test_case.last_result.${conclusionKey(chosenConclusion)}`) : "",
-        })}
+        content={
+          <div className="flex flex-col gap-2">
+            <p>
+              {t("project_test_case.execution.case.confirm_conclusion_content", {
+                conclusion: chosenConclusion
+                  ? t(`project_test_case.last_result.${conclusionKey(chosenConclusion)}`)
+                  : "",
+              })}
+            </p>
+            {conclusionError && (
+              <p className="text-12 font-medium text-danger-primary" role="alert">
+                {conclusionError}
+              </p>
+            )}
+          </div>
+        }
         primaryButtonText={{
           default: t("project_test_case.execution.case.conclude"),
           loading: t("project_test_case.execution.case.concluding"),

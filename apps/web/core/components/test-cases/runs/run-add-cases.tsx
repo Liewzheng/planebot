@@ -11,11 +11,13 @@ import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import { AddOutline } from "@makeplane/propel/icons";
 import { SearchIcon } from "@plane/propel/icons";
 import useSWR from "swr";
-import type { ITestCase, ITestCaseErrorResponse } from "@plane/types";
+import type { ITestCase } from "@plane/types";
 // components
 import { TestCasePriorityBadge } from "../shared/badges";
 // constants
 import { TEST_RUN_ADDABLE_CASES } from "./constants";
+import { refusalFallback, refusalText } from "./types";
+import type { TRunRefusal } from "./types";
 // services
 import { testCaseService } from "@/services/test-cases/test-case.service";
 
@@ -83,16 +85,19 @@ export function TestCaseRunAddCases(props: Props) {
       setSelected([]);
       onAdded();
     } catch (addError) {
-      const envelope = addError as ITestCaseErrorResponse | undefined;
-      const reason = envelope?.errors?.find((entry) => entry.message)?.message;
+      const refusal = addError as TRunRefusal;
+      const reason =
+        refusal?.errors?.find((entry) => entry.message)?.message ||
+        refusalText(refusal) ||
+        refusalFallback(refusal, t, "project_test_case.execution.errors.write_not_saved");
       setToast({
         type: TOAST_TYPE.ERROR,
         title: t("project_test_case.execution.add_cases.failed"),
-        message: reason || envelope?.error || t("project_test_case.execution.add_cases.failed"),
+        message: reason,
       });
       // The batch on the server is the truth: a case that was added by
       // somebody else in the meantime disappears from the offer list.
-      if (envelope?.code === "duplicate_case_number") onAdded();
+      if (refusal?.code === "duplicate_case_number") onAdded();
     } finally {
       setIsAdding(false);
     }

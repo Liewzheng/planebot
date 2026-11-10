@@ -231,6 +231,25 @@ export class TestCaseService extends APIService {
     return `${this.runPath(workspaceSlug, projectId, testRunId)}/cases/${runCaseId}`;
   }
 
+  /**
+   * The refusal of a write on the execution surface: the body the server sent
+   * plus the HTTP status, which the body does not carry.
+   *
+   * The surfaces above need both. A refusal of this feature carries
+   * `{error, code, errors[]}`; DRF's own exceptions carry `{detail}`; and a
+   * proxy in between answers 502/504 with an HTML page or nothing at all. The
+   * last kind has no sentence to quote, so only the status is kept — the
+   * caller turns it into `HTTP 502` instead of printing a page of markup.
+   */
+  private refusal(error: unknown): { status?: number; [key: string]: unknown } {
+    const response = (error as { response?: { data?: unknown; status?: number } })?.response;
+    const body = response?.data;
+    const status = response?.status;
+
+    if (body && typeof body === "object") return { ...(body as Record<string, unknown>), status };
+    return { status };
+  }
+
   async getRun(workspaceSlug: string, projectId: string, testRunId: string): Promise<ITestRun> {
     return this.get(`${this.runPath(workspaceSlug, projectId, testRunId)}/`)
       .then((response) => response?.data)
@@ -244,7 +263,7 @@ export class TestCaseService extends APIService {
     return this.post(`${this.basePath(workspaceSlug, projectId)}/test-runs/`, data)
       .then((response) => response?.data)
       .catch((error) => {
-        throw error?.response?.data;
+        throw this.refusal(error);
       });
   }
 
@@ -274,7 +293,7 @@ export class TestCaseService extends APIService {
     return this.post(`${this.runPath(workspaceSlug, projectId, testRunId)}/finalize/`, {})
       .then((response) => response?.data)
       .catch((error) => {
-        throw error?.response?.data;
+        throw this.refusal(error);
       });
   }
 
@@ -306,7 +325,7 @@ export class TestCaseService extends APIService {
     })
       .then((response) => response?.data)
       .catch((error) => {
-        throw error?.response?.data;
+        throw this.refusal(error);
       });
   }
 
@@ -324,9 +343,7 @@ export class TestCaseService extends APIService {
     return this.delete(`${this.runCasePath(workspaceSlug, projectId, testRunId, runCaseId)}/`)
       .then(() => undefined)
       .catch((error) => {
-        const body = error?.response?.data;
-        const status = error?.response?.status;
-        throw typeof body === "object" && body !== null ? { ...body, status } : { error: body, status };
+        throw this.refusal(error);
       });
   }
 
@@ -341,7 +358,7 @@ export class TestCaseService extends APIService {
     return this.patch(`${this.runCasePath(workspaceSlug, projectId, testRunId, runCaseId)}/`, data)
       .then((response) => response?.data)
       .catch((error) => {
-        throw error?.response?.data;
+        throw this.refusal(error);
       });
   }
 
@@ -361,7 +378,7 @@ export class TestCaseService extends APIService {
     return this.patch(`${this.runCasePath(workspaceSlug, projectId, testRunId, runCaseId)}/steps/${sequenceId}/`, data)
       .then((response) => response?.data)
       .catch((error) => {
-        throw error?.response?.data;
+        throw this.refusal(error);
       });
   }
 

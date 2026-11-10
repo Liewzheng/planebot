@@ -600,6 +600,12 @@
         "success_message": "The record is frozen; a re-run opens a new batch.",
         "refused_title": "The batch cannot be completed yet",
         "refused_hint": "Each reason is shown next to the field or the step it names."
+      },
+      "errors": {
+        "no_status": "no status code",
+        "conclusion_not_written": "The server refused the write ({status}); the conclusion was not written. Try again.",
+        "verdict_not_written": "The server refused the write ({status}); the step verdict was not written. Try again.",
+        "write_not_saved": "The server refused the write ({status}); nothing was saved. Try again."
       }
     },
     "issue_block": {
