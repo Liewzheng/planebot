@@ -37,6 +37,12 @@ sample's 判定 line says 「步骤 7 两框未勾、实测值写明未执行的
   A case concluded ``N/A`` is not counted twice that way — an N/A case
   does not run its steps, and its blank boxes are the conclusion.
 
+The executor rules of :mod:`plane.db.testcase_validity` accept that shape
+too: a ``FAIL`` case may carry an unexecuted step (the retired
+``conclusion_fail_with_unset_step`` used to refuse it and contradicted the
+sample), so a batch of this shape validates and then summarises to the
+numbers above.
+
 A caller that wants a partition asks for the case conclusions alone (they
 are in :class:`RunCaseData`); the summary answers the question the
 standard asks, and that question allows the overlap.

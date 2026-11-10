@@ -167,6 +167,11 @@ CONCLUSION_INVALID = "conclusion_invalid"
 CONCLUSION_PASS_WITH_FAILED_STEP = "conclusion_pass_with_failed_step"
 CONCLUSION_PASS_WITH_UNSET_STEP = "conclusion_pass_with_unset_step"
 CONCLUSION_FAIL_WITHOUT_FAILED_STEP = "conclusion_fail_without_failed_step"
+#: Retired: a ``FAIL`` conclusion may hold steps that were never executed
+#: — they are the 需人工 steps of the batch. REC-SW-001's own sample has
+#: one (step 7, both boxes blank, 「按 `需人工` 记，不影响 `FAIL` 判定」), so
+#: the rule that refused the shape was dropped. The name stays defined
+#: because the app-side maps still reference it; no rule emits it.
 CONCLUSION_FAIL_WITH_UNSET_STEP = "conclusion_fail_with_unset_step"
 CONCLUSION_NA_WITHOUT_REASON = "conclusion_na_without_reason"
 CONCLUSION_NA_WITHOUT_CRITERIA_SOURCE = "conclusion_na_without_criteria_source"
@@ -212,7 +217,7 @@ REASON_MESSAGES = {
     ACTION_EMPTY: "The step action is required.",
     EXPECTED_EMPTY: "The step expected result is required.",
     STEP_CONCLUSION_INVALID: "The step verdict must be pass, fail or unset.",
-    STEP_CONCLUSION_UNSET: "The step verdict must be marked, it may not be left blank.",
+    STEP_CONCLUSION_UNSET: "A PASS conclusion means every box was ticked ✔; a blank step contradicts it.",
     FAIL_WITHOUT_ACTUAL_VALUE: "A failed step must carry the measured value — as text or as an attached file.",
     ACTUAL_VALUE_IS_EVALUATION: "The measured value must be the observed original, not an evaluation word.",
     EXPECTED_IS_UNJUDGEABLE: (
@@ -226,7 +231,6 @@ REASON_MESSAGES = {
     CONCLUSION_PASS_WITH_FAILED_STEP: "A PASS conclusion must not have a failed step.",
     CONCLUSION_PASS_WITH_UNSET_STEP: "A PASS conclusion must not have a step with a blank verdict.",
     CONCLUSION_FAIL_WITHOUT_FAILED_STEP: "A FAIL conclusion needs at least one failed step.",
-    CONCLUSION_FAIL_WITH_UNSET_STEP: "A FAIL conclusion must not have a step with a blank verdict.",
     CONCLUSION_NA_WITHOUT_REASON: "An N/A conclusion needs a reason.",
     CONCLUSION_NA_WITHOUT_CRITERIA_SOURCE: "An N/A conclusion needs the source of its criteria.",
     CONCLUSION_NA_WITH_FAILED_STEP: "An N/A conclusion must not have a failed step.",
@@ -880,13 +884,14 @@ def validate_run_case(case: RunCaseData) -> list[str]:
 
         if step.conclusion == STEP_VERDICT_UNSET:
             unset_steps.append(step)
-            if case.conclusion in (
-                RUN_CASE_CONCLUSION_PASS,
-                RUN_CASE_CONCLUSION_FAIL,
-            ):
-                # The verdict box of an executed step may not stay blank.
-                # A case that has not reached a conclusion yet may leave
-                # its steps open.
+            if case.conclusion == RUN_CASE_CONCLUSION_PASS:
+                # A PASS conclusion means every box was ticked ✔, so a
+                # blank box contradicts it. Under FAIL the standard allows
+                # the blank box: it is a step that was not executed and is
+                # recorded as 需人工 (REC-SW-001, step 7: 「两个框都不勾，
+                # 在实测值写「未准备环境」」, 「按 `需人工` 记，不影响
+                # `FAIL` 判定」). A case that has not reached a conclusion
+                # yet may leave its steps open as well.
                 reasons.append(label + STEP_CONCLUSION_UNSET)
         if step.conclusion == STEP_VERDICT_FAIL:
             failed_steps.append(step)
@@ -899,7 +904,16 @@ def validate_run_case(case: RunCaseData) -> list[str]:
 
         if step_has_text and _is_evaluation_text(step_text):
             reasons.append(label + ACTUAL_VALUE_IS_EVALUATION)
-        if step_has_measurement and step.conclusion == STEP_VERDICT_UNSET:
+        if (
+            step_has_measurement
+            and step.conclusion == STEP_VERDICT_UNSET
+            and case.conclusion != RUN_CASE_CONCLUSION_FAIL
+        ):
+            # A measured value with no box ticked is an unfinished record.
+            # The exception is the 需人工 step of a FAIL case: §6.1 rule 1
+            # asks for the reason in the measured value exactly that way
+            # (「未准备环境时两个框都不勾，在实测值写「未准备环境」」), and the
+            # sample of REC-SW-001 records it in a FAIL case.
             reasons.append(label + ACTUAL_VALUE_WITHOUT_CONCLUSION)
 
     # --- conclusion --------------------------------------------------------
@@ -911,10 +925,12 @@ def validate_run_case(case: RunCaseData) -> list[str]:
         if unset_steps:
             reasons.append(CONCLUSION_PASS_WITH_UNSET_STEP)
     elif case.conclusion == RUN_CASE_CONCLUSION_FAIL:
+        # One ✘ step decides the FAIL. The remaining steps may be unset —
+        # they are the 需人工 steps of the batch, and REC-SW-001's own
+        # sample records them exactly that way (「按 `需人工` 记，不影响
+        # `FAIL` 判定」, and the summary counts 需人工 1 next to FAIL 1).
         if not failed_steps:
             reasons.append(CONCLUSION_FAIL_WITHOUT_FAILED_STEP)
-        if unset_steps:
-            reasons.append(CONCLUSION_FAIL_WITH_UNSET_STEP)
     elif case.conclusion == RUN_CASE_CONCLUSION_NA:
         if not _is_filled(case.na_reason):
             reasons.append(CONCLUSION_NA_WITHOUT_REASON)

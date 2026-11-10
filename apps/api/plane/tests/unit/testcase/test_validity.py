@@ -23,7 +23,6 @@ from plane.db.testcase_validity import (
     CASE_NUMBER_FORMAT,
     CASE_NUMBER_MODULE_MISMATCH,
     CONCLUSION_FAIL_WITHOUT_FAILED_STEP,
-    CONCLUSION_FAIL_WITH_UNSET_STEP,
     CONCLUSION_INVALID,
     CONCLUSION_IS_FINAL,
     CONCLUSION_MANUAL_WITHOUT_CONDITION,
@@ -259,7 +258,35 @@ class TestStepTable:
         assert "step_1:" + STEP_CONCLUSION_UNSET in reasons
         assert CONCLUSION_PASS_WITH_UNSET_STEP in reasons
 
-    def test_a_blank_step_verdict_is_rejected_under_fail(self):
+    def test_a_measured_value_on_a_blank_step_is_still_rejected_under_pass(self):
+        """The 需人工 exemption is scoped to FAIL: under PASS a measured
+        value with no box ticked is both an unfinished record and a
+        contradiction of the conclusion."""
+        reasons = validate_run_case(
+            _case(steps=(_step(conclusion=STEP_VERDICT_UNSET, actual_value="error 42"),))
+        )
+        assert "step_1:" + STEP_CONCLUSION_UNSET in reasons
+        assert "step_1:" + ACTUAL_VALUE_WITHOUT_CONCLUSION in reasons
+
+    def test_a_blank_step_verdict_is_accepted_under_fail(self):
+        """The standard allows it: a blank box is a step that was not
+        executed and is recorded as 需人工. REC-SW-001's own sample ends a
+        case `FAIL` with exactly such a step (「按 `需人工` 记，不影响
+        `FAIL` 判定」)."""
+        reasons = validate_run_case(
+            _case(
+                steps=(
+                    _step(1, conclusion=STEP_VERDICT_FAIL, actual_value="error 42"),
+                    _step(2, conclusion=STEP_VERDICT_UNSET, actual_value="未准备环境，本步未执行"),
+                ),
+                conclusion=RUN_CASE_CONCLUSION_FAIL,
+            )
+        )
+        assert reasons == []
+
+    def test_a_blank_step_verdict_without_a_note_is_accepted_under_fail(self):
+        """A blank box is not the FAIL's problem even when the tester wrote
+        no reason for it; the case-level FAIL is decided by the ✘ steps."""
         reasons = validate_run_case(
             _case(
                 steps=(
@@ -269,8 +296,7 @@ class TestStepTable:
                 conclusion=RUN_CASE_CONCLUSION_FAIL,
             )
         )
-        assert "step_2:" + STEP_CONCLUSION_UNSET in reasons
-        assert CONCLUSION_FAIL_WITH_UNSET_STEP in reasons
+        assert reasons == []
 
     def test_a_failed_step_without_a_measured_value_is_rejected(self):
         reasons = validate_run_case(

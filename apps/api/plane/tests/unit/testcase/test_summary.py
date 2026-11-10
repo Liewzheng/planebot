@@ -38,6 +38,8 @@ from plane.db.testcase_validity import (
     RunCaseData,
     RunData,
     StepRecordData,
+    validate_run,
+    validate_run_case,
 )
 
 pytestmark = pytest.mark.unit
@@ -164,6 +166,32 @@ SAMPLE_RUN = RunData(
 
 
 class TestTheSampleRecord:
+    def test_the_case_of_the_sample_is_a_valid_record(self):
+        """The standard's own filled case passes the executor rules.
+
+        It ends `FAIL` (step 4 ✘) and keeps step 7 with both boxes blank,
+        the reason written in the measured value — REC-SW-001's 判定 line:
+        「步骤 7 两框未勾、实测值写明未执行的，按 `需人工` 记，不影响 `FAIL`
+        判定」. A ``FAIL`` conclusion therefore may carry unexecuted steps;
+        ``conclusion_fail_with_unset_step`` used to refuse the shape and
+        was dropped for contradicting the sample.
+        """
+        assert validate_run_case(SAMPLE_CASE) == []
+
+    def test_the_batch_of_the_sample_is_a_valid_batch(self):
+        assert validate_run(SAMPLE_RUN) == []
+
+    def test_the_sample_runs_through_the_rules_and_the_summary(self):
+        """End to end: the record validates and still summarises to
+        `FAIL 1 / 需人工 1`."""
+        assert validate_run_case(SAMPLE_CASE) == []
+        assert validate_run(SAMPLE_RUN) == []
+
+        summary = summarize_run(SAMPLE_RUN)
+        assert summary["total"] == 1
+        assert summary["fail"] == 1
+        assert summary["manual"] == 1
+
     def test_the_counts_are_the_four_items_of_the_sample_table(self):
         """REC-SW-001 §五: ``PASS 0 | FAIL 1 | N/A 0 | 需人工 1 | 用例总数 1``."""
         summary = summarize_run(SAMPLE_RUN)
