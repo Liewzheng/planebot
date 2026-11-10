@@ -129,8 +129,13 @@ class TestRunSerializer(BaseSerializer):
         read_only_fields = fields
 
     def get_retest_of_number(self, run):
-        # ``SET_NULL``: an original that was deleted leaves the link empty,
-        # and the answer says so instead of failing.
+        # The only delete path of a batch is a **soft** delete
+        # (``TestRunViewSet.destroy`` → ``SoftDeleteModel.delete(soft=True)``),
+        # which keeps the row and therefore keeps the link and the number:
+        # a re-test keeps its historical reference after the original is
+        # removed. ``SET_NULL`` fires only on a hard delete, which no
+        # endpoint performs, so the ``null`` below means "no original" —
+        # not "the original was deleted".
         return run.retest_of.number if run.retest_of_id else None
 
 

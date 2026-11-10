@@ -561,6 +561,34 @@ class TestRetestOf:
         assert retest["retest_of"] == original["id"]
         assert retest["retest_of_number"] == original["number"]
 
+    def test_a_soft_deleted_original_still_reports_its_number(
+        self, session_client, workspace, project, create_user
+    ):
+        """The API's only delete path is a soft delete: it keeps the row,
+        so the link and the number survive it and a re-test keeps its
+        historical reference. An **open** original is the only reachable
+        case here — a completed batch refuses the delete with 409 — which
+        is why this test deletes an open batch."""
+        original = create_run(session_client, workspace, project, create_user)
+        retest = create_run(
+            session_client, workspace, project, create_user, retest_of=str(original["id"])
+        )
+
+        response = session_client.delete(
+            f"{runs_url(workspace.slug, project.id)}{original['id']}/"
+        )
+        assert response.status_code == status.HTTP_204_NO_CONTENT, response.content
+        # Soft delete: gone from the default manager, the row is still there.
+        assert not TestRun.objects.filter(pk=original["id"]).exists()
+        assert TestRun.all_objects.get(pk=original["id"]).deleted_at is not None
+
+        response = session_client.get(
+            f"{runs_url(workspace.slug, project.id)}{retest['id']}/"
+        )
+        assert response.status_code == status.HTTP_200_OK, response.content
+        assert response.json()["retest_of"] == original["id"]
+        assert response.json()["retest_of_number"] == original["number"]
+
     def test_a_link_across_projects_is_refused(
         self,
         session_client,

@@ -121,6 +121,11 @@ class TestRunListCreateEndpoint(BaseAPIView):
             )
             .select_related(
                 "executed_by",
+                # The serializer of this surface is the app's (one contract,
+                # not two), so the re-test link it hands out has to be
+                # joined here as well — otherwise every linked row costs one
+                # query.
+                "retest_of",
                 "created_by",
                 "created_by__avatar_asset__workspace",
             )
@@ -189,7 +194,14 @@ class TestRunDetailEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
         return TestRun.objects.filter(
             project_id=self.kwargs.get("project_id"),
             workspace__slug=self.kwargs.get("slug"),
-        ).select_related("executed_by", "created_by", "created_by__avatar_asset__workspace")
+        ).select_related(
+            "executed_by",
+            # Same serializer, same join as the app surface (see the list
+            # endpoint above).
+            "retest_of",
+            "created_by",
+            "created_by__avatar_asset__workspace",
+        )
 
     def get(self, request, slug, project_id, pk):
         run = self.get_queryset().filter(pk=pk).first()
