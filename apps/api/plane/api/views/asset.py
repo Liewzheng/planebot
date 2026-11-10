@@ -19,6 +19,8 @@ from plane.bgtasks.storage_metadata_task import get_asset_object_metadata
 from plane.settings.storage import S3Storage
 from plane.utils.path_validator import sanitize_filename
 from plane.db.models import FileAsset, Page, ProjectPage, User, Workspace
+from plane.db.models.test_case import TestRunCase, TestRunStepRecord
+from plane.db.testcase_validity import RUN_STATUS_COMPLETED
 from plane.app.permissions import WorkspaceUserPermission
 from plane.api.views.base import BaseAPIView
 from plane.api.serializers import (
@@ -45,6 +47,7 @@ from plane.utils.openapi import (
     asset_docs,
 )
 from plane.utils.exception_logger import log_exception
+from plane.utils.testcase_api import run_conflict_response
 from plane.service_principals.attribution import actor_for_request
 
 
@@ -421,6 +424,16 @@ class GenericAssetEndpoint(BaseAPIView):
 
     resource_type = "asset"
 
+    # The entity types a file may carry when it belongs to a record of a
+    # batch: the measured value of one step or the evidence of one case.
+    # A file that belongs to a whole entity as such (the cover of a
+    # project, the logo of a workspace, an avatar) is not a file of a
+    # record — binding it would take it away from that entity.
+    TEST_RUN_ENTITY_TYPES = (
+        FileAsset.EntityTypeContext.TEST_RUN_STEP_RECORD,
+        FileAsset.EntityTypeContext.TEST_RUN_CASE_EVIDENCE,
+    )
+
     # A member-tier asset PATCH is ownership-scoped, so the row is needed.
     authz_resource_model = FileAsset
     authz_resource_lookup = "asset_id"
@@ -441,6 +454,39 @@ class GenericAssetEndpoint(BaseAPIView):
     # workspace-scoped branch covers that case (USER_AVATAR etc.).
     _AUTHZ_PROJECT_ID_UNSET = object()
 
+    def _test_run_record(self, entity_type, entity_identifier):
+        """The record of a batch a file of this entity type hangs on.
+
+        ``None`` for every other entity type — those are not bound to a
+        record of a batch — and for an identifier that names no record
+        (or one that is not a uuid at all: the lookup would raise).
+        """
+        try:
+            record_id = uuid.UUID(str(entity_identifier))
+        except (ValueError, TypeError, AttributeError):
+            return None
+        if entity_type == FileAsset.EntityTypeContext.TEST_RUN_STEP_RECORD:
+            return (
+                TestRunStepRecord.objects.filter(pk=record_id)
+                .select_related("test_run_case__test_run")
+                .first()
+            )
+        if entity_type == FileAsset.EntityTypeContext.TEST_RUN_CASE_EVIDENCE:
+            return (
+                TestRunCase.objects.filter(pk=record_id)
+                .select_related("test_run")
+                .first()
+            )
+        return None
+
+    def _test_run_status(self, record):
+        """The status of the batch a record of a batch belongs to."""
+        if record is None:
+            return None
+        if isinstance(record, TestRunStepRecord):
+            return record.test_run_case.test_run.status
+        return record.test_run.status
+
     def _resolve_post_body_project_id(self, request):
         """Project id the posted asset should be bound to, or ``None``.
 
@@ -448,11 +494,13 @@ class GenericAssetEndpoint(BaseAPIView):
         ``entity_type=PAGE_DESCRIPTION`` is set, the page reference wins
         and the project is derived from the page's ``ProjectPage`` row
         scoped to the URL's workspace (the body's ``project_id`` is only
-        checked for consistency in the view body). For the plain
-        attachment path (no entity_type) the body's ``project_id`` is
-        the only source. Anything else — workspace-level pages, unknown
-        entity types, missing or malformed identifiers — leaves the asset
-        project-less, so the engine treats the request as workspace-scoped.
+        checked for consistency in the view body). The two entity types
+        of a batch work the same way: the record decides the project of
+        the file. For the plain attachment path (no entity_type) the
+        body's ``project_id`` is the only source. Anything else —
+        workspace-level pages, unknown entity types, missing or malformed
+        identifiers — leaves the asset project-less, so the engine treats
+        the request as workspace-scoped.
 
         Returns ``None`` (not a string) when nothing resolves so the
         caller can tell "no project" from "project id could not be
@@ -482,6 +530,19 @@ class GenericAssetEndpoint(BaseAPIView):
                 .first()
             )
             return str(resolved) if resolved else None
+
+        if entity_type in self.TEST_RUN_ENTITY_TYPES:
+            entity_identifier = request.data.get("entity_identifier")
+            if not entity_identifier:
+                # A file of a batch attachment that carries no record yet
+                # (the bind endpoint attaches it later): the project comes
+                # from the body, like on the plain attachment path.
+                project_id = request.data.get("project_id")
+                return str(project_id) if project_id else None
+            record = self._test_run_record(entity_type, entity_identifier)
+            if record is None:
+                return None
+            return str(record.project_id) if record.project_id else None
 
         # Plain attachment path — no entity binding, only a body project_id.
         project_id = request.data.get("project_id")
@@ -708,48 +769,90 @@ class GenericAssetEndpoint(BaseAPIView):
         # Get the workspace
         workspace = Workspace.objects.get(slug=slug)
 
-        # Optional entity binding — only PAGE_DESCRIPTION is open for now.
+        # Optional entity binding — PAGE_DESCRIPTION and the two entity
+        # types of a batch are open for now.
         binding = {}
         if entity_type:
-            if not is_page_image:
+            if entity_type == FileAsset.EntityTypeContext.PAGE_DESCRIPTION:
+                try:
+                    page_id = uuid.UUID(str(entity_identifier))
+                except (ValueError, TypeError, AttributeError):
+                    return Response(
+                        {"error": "entity_identifier must be the id of an existing page."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                page = Page.objects.filter(id=page_id, workspace_id=workspace.id, deleted_at__isnull=True).first()
+                if not page:
+                    return Response(
+                        {"error": "Page not found in this workspace."},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+                # A project page pins the asset to that project: the web editor
+                # resolves a page image through the project-scoped v2 URL. A
+                # workspace-level page has no project, so project_id must stay empty.
+                project_page = (
+                    ProjectPage.objects.filter(page_id=page.id, workspace_id=workspace.id, deleted_at__isnull=True)
+                    .only("project_id")
+                    .first()
+                )
+                if project_page:
+                    if project_id and str(project_id) != str(project_page.project_id):
+                        return Response(
+                            {"error": "project_id does not match the project this page belongs to."},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    project_id = project_page.project_id
+                elif project_id:
+                    return Response(
+                        {"error": "project_id must be omitted for a workspace-level page."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                binding = {"page": page}
+            elif entity_type in self.TEST_RUN_ENTITY_TYPES:
+                # The files of a batch hang on a record of that batch: the
+                # measured value of one step or the evidence of one case.
+                # The record decides the project of the file (a file
+                # without a project is readable by every member of the
+                # workspace), and a completed batch is frozen — the
+                # verdict of a finished batch may not change any more.
+                if not entity_identifier:
+                    # No record: the file is of the kind of a batch
+                    # attachment but carries no foreign key yet — the
+                    # bind endpoint attaches it to a record later. The
+                    # project comes from the body.
+                    if not project_id:
+                        return Response(
+                            {"error": "project_id is required for an unbound batch attachment."},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                else:
+                    record = self._test_run_record(entity_type, entity_identifier)
+                    if record is None or record.workspace_id != workspace.id:
+                        return Response(
+                            {"error": "The requested record could not be found."},
+                            status=status.HTTP_404_NOT_FOUND,
+                        )
+                    if self._test_run_status(record) == RUN_STATUS_COMPLETED:
+                        # The bind and the unbind of a record answer this
+                        # refusal with the same envelope — the CLI keys
+                        # on ``errors[].code``, not on the sentence.
+                        return run_conflict_response("A completed batch is frozen.")
+                    if project_id and str(project_id) != str(record.project_id):
+                        return Response(
+                            {"error": "project_id does not match the project this record belongs to."},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    project_id = record.project_id
+                    binding = (
+                        {"test_run_step_record": record}
+                        if entity_type == FileAsset.EntityTypeContext.TEST_RUN_STEP_RECORD
+                        else {"test_run_case": record}
+                    )
+            else:
                 return Response(
                     {"error": f"Unsupported entity type '{entity_type}'."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            try:
-                page_id = uuid.UUID(str(entity_identifier))
-            except (ValueError, TypeError, AttributeError):
-                return Response(
-                    {"error": "entity_identifier must be the id of an existing page."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            page = Page.objects.filter(id=page_id, workspace_id=workspace.id, deleted_at__isnull=True).first()
-            if not page:
-                return Response(
-                    {"error": "Page not found in this workspace."},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
-            # A project page pins the asset to that project: the web editor
-            # resolves a page image through the project-scoped v2 URL. A
-            # workspace-level page has no project, so project_id must stay empty.
-            project_page = (
-                ProjectPage.objects.filter(page_id=page.id, workspace_id=workspace.id, deleted_at__isnull=True)
-                .only("project_id")
-                .first()
-            )
-            if project_page:
-                if project_id and str(project_id) != str(project_page.project_id):
-                    return Response(
-                        {"error": "project_id does not match the project this page belongs to."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                project_id = project_page.project_id
-            elif project_id:
-                return Response(
-                    {"error": "project_id must be omitted for a workspace-level page."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            binding = {"page": page}
 
         # asset key
         asset_key = f"{workspace.id}/{uuid.uuid4().hex}-{name}"

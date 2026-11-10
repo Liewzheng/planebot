@@ -69,3 +69,18 @@ from .member import (
 )
 from .sticky import StickySerializer
 from .page import PageSerializer, PageCreateSerializer, PageUpdateSerializer
+from .test_case import (
+    TestCaseIssueSerializer,
+    TestCaseModuleSerializer,
+    TestCaseSerializer,
+    TestCaseStepSerializer,
+    TestCaseWriteSerializer,
+)
+from .test_run import (
+    TestRunCaseSerializer,
+    TestRunCaseWriteSerializer,
+    TestRunSerializer,
+    TestRunStepRecordSerializer,
+    TestRunStepRecordWriteSerializer,
+    TestRunWriteSerializer,
+)

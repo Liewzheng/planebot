@@ -77,3 +77,23 @@ from .page import (
     PageListCreateAPIEndpoint,
     PageDetailAPIEndpoint,
 )
+
+from .test_case import (
+    TestCaseDetailEndpoint,
+    TestCaseIssueDetailEndpoint,
+    TestCaseIssueEndpoint,
+    TestCaseListCreateEndpoint,
+    TestCaseModuleEndpoint,
+    TestCaseStepEndpoint,
+)
+
+from .test_run import (
+    TestRunAttachmentEndpoint,
+    TestRunCaseDetailEndpoint,
+    TestRunCaseEndpoint,
+    TestRunDetailEndpoint,
+    TestRunFinalizeEndpoint,
+    TestRunListCreateEndpoint,
+    TestRunStepAttachmentEndpoint,
+    TestRunStepRecordEndpoint,
+)

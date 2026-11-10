@@ -21,7 +21,6 @@ would step over them.
 # Django imports
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Prefetch, Q
-from django.utils.dateparse import parse_datetime
 
 # Third party imports
 from rest_framework import status
@@ -37,16 +36,13 @@ from plane.app.serializers.test_case import (
     TestCaseWriteSerializer,
 )
 from plane.app.testcase_validity import (
-    REASON_MESSAGES_ZH,
     check_authoring,
     describe_reasons,
-    reason_code_of,
 )
 from plane.core.authz import Action as AuthzAction
 from plane.core.authz import ResourceType
 from plane.db.models import (
     Issue,
-    Project,
     TestCase,
     TestCaseIssue,
     TestCaseModule,
@@ -54,205 +50,16 @@ from plane.db.models import (
 )
 from plane.db.testcase_numbering import is_valid_module_code
 from plane.service_principals.attribution import actor_id_for_request
+from plane.utils.testcase_api import (
+    error_entry,
+    object_body,
+    project_or_404,
+    serializer_error_response,
+    stale_record_response,
+    validation_error_response,
+)
 
 from ..base import BaseAPIView, BaseViewSet
-
-
-#: Reason codes the app layer adds on top of the vocabulary of
-#: :mod:`plane.db.testcase_validity`. They are endpoint-level problems
-#: the rules do not know about.
-APP_REASON_MESSAGES_ZH = {
-    "conflict": "这条记录在你编辑期间被改过了，请重新载入后再保存。",
-    "module_code_taken": "该模块码已在本项目登记。",
-    "module_code_format": "模块码必须是 2 至 6 位大写字母。",
-    "module_description_missing": "模块说明不能为空。",
-    "module_not_in_project": "该模块不属于本项目。",
-    "issue_not_in_project": "该工作项不属于本项目。",
-    "issue_link_exists": "该工作项已经关联到这个用例。",
-    "case_not_in_project": "该用例不属于本项目。",
-    "invalid_updated_at": "updated_at 不是合法的时间戳。",
-    "duplicate_test_case": "同一个用例不能重复加入批次。",
-    "test_case_ids_missing": "请至少选择一个用例。",
-    "asset_not_found": "附件不存在。",
-    "asset_already_bound": "该附件已经绑定到其它记录。",
-    "asset_not_bindable": "该附件是其它用途的文件（封面、标识等），不能绑定到测试记录上。",
-    "asset_project_mismatch": "该附件属于其它项目，不能绑定到本项目的记录上。",
-    "run_version_fixed": "一个批次只对应一个被测版本，补测请新建批次。",
-    "run_date_fixed": "批次的执行日期在创建后不能修改。",
-}
-
-
-def object_body(request):
-    """The body of the request as a mapping — or the refusal response.
-
-    The writes of this feature read the body directly
-    (``request.data.get(...)``). A body that is not a JSON object — a
-    list, a string, a number — has no ``get``; the read would raise an
-    ``AttributeError`` and the endpoint would answer 500 where the
-    contract promises a 400. Such a body is a refused payload, exactly
-    as it is on the endpoints that go through a serializer.
-
-    Returns the body (a ``dict``) or a :class:`Response` carrying the
-    refusal; the caller answers the response when it gets one.
-    """
-    data = request.data
-    if isinstance(data, dict):
-        return data
-    return Response(
-        {
-            "error": "The payload is not valid.",
-            "code": "invalid_payload",
-            "errors": [
-                error_entry(
-                    "invalid_payload",
-                    "",
-                    "The body of the request must be a JSON object.",
-                )
-            ],
-        },
-        status=status.HTTP_400_BAD_REQUEST,
-    )
-
-
-def error_entry(code: str, path: str = "", message: str = "") -> dict:
-    """One entry of the ``errors`` list of a 400 body.
-
-    The sentence comes from the vocabulary of the rules
-    (:data:`REASON_MESSAGES_ZH`) or, for the codes the app layer adds on
-    top of it, from :data:`APP_REASON_MESSAGES_ZH`. Both are consulted:
-    an entry without a sentence would leave the front end with nothing
-    to show next to the offending field.
-    """
-    return {
-        "code": code,
-        "message": message
-        or REASON_MESSAGES_ZH.get(code)
-        or APP_REASON_MESSAGES_ZH.get(code, ""),
-        "path": path,
-        "field": path,
-    }
-
-
-def serializer_error_response(serializer, error: str = "The payload is not valid.") -> Response:
-    """Wrap the refusal of a serializer in the envelope of this feature.
-
-    A field the serializer refuses (an unknown priority, a date that is
-    not a date) is answered in the same shape as every other error of
-    the feature, so the front end and the CLI never have to parse a
-    second shape. The message of such an entry is the **detail of the
-    serializer** — it is not a localised sentence; the code and the
-    field are what a client keys on.
-    """
-    errors = []
-    raw_errors = serializer.errors
-    if isinstance(raw_errors, dict):
-        items = raw_errors.items()
-    else:
-        items = [("", raw_errors)]
-
-    for field, messages in items:
-        if not isinstance(messages, (list, tuple)):
-            messages = [messages]
-        for message in messages:
-            errors.append(
-                {
-                    "code": "invalid_payload",
-                    "message": str(message),
-                    "path": field,
-                    "field": field,
-                }
-            )
-
-    return Response(
-        {"error": error, "code": "invalid_payload", "errors": errors},
-        status=status.HTTP_400_BAD_REQUEST,
-    )
-
-
-def validation_error_response(exc, error: str = "The payload is not valid.") -> Response:
-    """Map a Django ``ValidationError`` onto the 400 body of this feature.
-
-    The model layer prefixes its messages with the stable reason code
-    (``"conclusion_is_final: …"``); the code is what the front end keys
-    on, the Chinese sentence is what it shows.
-    """
-    errors = []
-    message_dict = getattr(exc, "message_dict", None)
-    if message_dict:
-        for field, messages in message_dict.items():
-            for message in messages:
-                code = reason_code_of(message) or ""
-                errors.append(
-                    {
-                        "code": code,
-                        "message": REASON_MESSAGES_ZH.get(code, message),
-                        "detail": message,
-                        "path": field,
-                        "field": field,
-                    }
-                )
-    else:
-        for message in getattr(exc, "messages", [str(exc)]):
-            code = reason_code_of(message) or ""
-            errors.append(
-                {
-                    "code": code,
-                    "message": REASON_MESSAGES_ZH.get(code, message),
-                    "detail": message,
-                    "path": "",
-                    "field": "",
-                }
-            )
-    return Response(
-        {"error": error, "code": "invalid_payload", "errors": errors},
-        status=status.HTTP_400_BAD_REQUEST,
-    )
-
-
-def conflict_response(current: dict) -> Response:
-    """The 409 body of an optimistic-concurrency conflict."""
-    return Response(
-        {
-            "error": "The record was changed by somebody else. Reload it and try again.",
-            "code": "conflict",
-            "errors": [error_entry("conflict")],
-            "current": current,
-        },
-        status=status.HTTP_409_CONFLICT,
-    )
-
-
-def stale_record_response(request, record, current: dict):
-    """The 409 response when the client's ``updated_at`` no longer matches.
-
-    ``None`` when the client sent no ``updated_at`` (the write is then a
-    plain last-write-wins) or when the value still matches.
-    """
-    body = object_body(request)
-    if isinstance(body, Response):
-        return body
-
-    client_value = body.get("updated_at")
-    if not client_value:
-        return None
-    parsed = parse_datetime(str(client_value))
-    if parsed is None:
-        return Response(
-            {
-                "error": "updated_at is not a valid timestamp.",
-                "code": "invalid_updated_at",
-                "errors": [error_entry("invalid_updated_at", "updated_at")],
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-    if parsed != record.updated_at:
-        return conflict_response(current)
-    return None
-
-
-def project_or_404(slug, project_id):
-    """The project of the URL, or ``None``."""
-    return Project.objects.filter(pk=project_id, workspace__slug=slug).first()
 
 
 class TestCaseModuleEndpoint(BaseAPIView):
