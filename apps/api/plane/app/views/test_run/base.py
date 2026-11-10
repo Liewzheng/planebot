@@ -71,164 +71,19 @@ from plane.db.testcase_validity import (
     validate_run,
     validate_run_write,
 )
-from ..base import BaseAPIView, BaseViewSet
-from ..test_case.base import (
+from plane.utils.testcase_api import (
     APP_REASON_MESSAGES_ZH,
+    bindable_asset,
     error_entry,
     object_body,
+    run_conflict_response,
+    same_date,
     serializer_error_response,
     stale_record_response,
     validation_error_response,
 )
 
-
-def _is_uuid(value) -> bool:
-    """True when the value looks like a UUID."""
-    from uuid import UUID
-
-    try:
-        UUID(str(value))
-    except (ValueError, AttributeError, TypeError):
-        return False
-    return True
-
-
-def _same_date(value, other) -> bool:
-    """True when the client sent the day the batch carries.
-
-    The client may send the day as ``2026-11-09`` or as a full
-    timestamp; the batch stores the day.
-    """
-    from datetime import date
-
-    try:
-        sent = date.fromisoformat(str(value)[:10])
-    except (ValueError, TypeError):
-        return False
-    return sent == other
-
-
-def run_conflict_response(message: str, code: str = "run_completed") -> Response:
-    """The 409 body of a write that a completed batch refuses."""
-    return Response(
-        {
-            "error": message,
-            "code": code,
-            "errors": [error_entry(code)],
-        },
-        status=status.HTTP_409_CONFLICT,
-    )
-
-
-#: The foreign keys of ``FileAsset`` that name the entity a file hangs
-#: on. A file that already carries one of them may not get a second
-#: owner: the row would then belong to two entities at once, and the
-#: unbind of one of them would take the file away from the other.
-_ASSET_ENTITY_FIELDS = (
-    "issue_id",
-    "page_id",
-    "comment_id",
-    "draft_issue_id",
-    "user_id",
-    "test_run_case_id",
-    "test_run_step_record_id",
-)
-
-#: The entity types a file may carry when it is bound to a record of a
-#: batch. A file that belongs to a whole entity as such — the cover of a
-#: project, the logo of a workspace, an avatar — is not a file of a
-#: record: binding it would take it away from that entity, and the
-#: unbind would flag the row deleted. Only a file without an entity (or
-#: one that was already meant for a batch) may be attached to a record.
-_BINDABLE_ENTITY_TYPES = frozenset(
-    {
-        "",
-        None,
-        FileAsset.EntityTypeContext.TEST_RUN_STEP_RECORD,
-        FileAsset.EntityTypeContext.TEST_RUN_CASE_EVIDENCE,
-    }
-)
-
-
-def bindable_asset(request, slug, record):
-    """The asset the request wants to bind to ``record``, or the error.
-
-    The asset has to belong to the **project of the record**: a file of
-    another project may not be moved into this one — the bind would
-    silently re-home it, and the unbind would then soft-delete a row of a
-    project the caller has no rights in. A file that already hangs on
-    another entity may not get a second owner either, and a file that
-    belongs to a whole entity (the cover of a project, the logo of a
-    workspace) may not be attached to a record at all.
-
-    Returns the asset, or a :class:`Response` carrying the reason.
-    """
-    body = object_body(request)
-    if isinstance(body, Response):
-        return body
-
-    asset_id = body.get("asset_id")
-    if not asset_id or not _is_uuid(asset_id):
-        return Response(
-            {
-                "error": "asset_id is required.",
-                "code": "asset_not_found",
-                "errors": [error_entry("asset_not_found", "asset_id")],
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    asset = FileAsset.objects.filter(
-        id=asset_id, workspace__slug=slug, is_deleted=False
-    ).first()
-    if asset is None:
-        return Response(
-            {
-                "error": "The asset does not exist.",
-                "code": "asset_not_found",
-                "errors": [error_entry("asset_not_found", "asset_id")],
-            },
-            status=status.HTTP_404_NOT_FOUND,
-        )
-
-    if asset.project_id and asset.project_id != record.project_id:
-        return Response(
-            {
-                "error": "The asset belongs to another project.",
-                "code": "asset_project_mismatch",
-                "errors": [error_entry("asset_project_mismatch", "asset_id")],
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    if any(getattr(asset, field) for field in _ASSET_ENTITY_FIELDS):
-        # The file hangs on another entity (a work item, a page, a
-        # comment, a record of another batch). The check comes first: the
-        # answer names the entity the file already belongs to, not the
-        # kind of entity type it carries.
-        return Response(
-            {
-                "error": "The asset is already bound to a record.",
-                "code": "asset_already_bound",
-                "errors": [error_entry("asset_already_bound", "asset_id")],
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    if asset.entity_type not in _BINDABLE_ENTITY_TYPES:
-        # The file belongs to a whole entity — the cover of a project,
-        # the logo of a workspace, an avatar. It carries no entity
-        # foreign key, so the check above cannot see it.
-        return Response(
-            {
-                "error": "The asset belongs to another entity.",
-                "code": "asset_not_bindable",
-                "errors": [error_entry("asset_not_bindable", "asset_id")],
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    return asset
+from ..base import BaseAPIView, BaseViewSet
 
 
 class TestRunViewSet(BaseViewSet):
@@ -364,7 +219,7 @@ class TestRunViewSet(BaseViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        if "run_date" in body and not _same_date(body.get("run_date"), run.run_date):
+        if "run_date" in body and not same_date(body.get("run_date"), run.run_date):
             return Response(
                 {
                     "error": "The execution date of a batch cannot be changed.",

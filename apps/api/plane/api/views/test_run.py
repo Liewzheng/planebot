@@ -42,6 +42,7 @@ from django.utils import timezone
 
 # Third party imports
 from rest_framework import status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 # Module imports
@@ -60,14 +61,6 @@ from plane.api.views.test_case import (
     project_admin,
 )
 from plane.app.testcase_validity import build_run_data, describe_reasons
-from plane.app.views.test_case.base import (
-    error_entry,
-    object_body,
-    serializer_error_response,
-    stale_record_response,
-    validation_error_response,
-)
-from plane.app.views.test_run.base import bindable_asset, run_conflict_response
 from plane.db.models import (
     FileAsset,
     Project,
@@ -84,23 +77,18 @@ from plane.db.testcase_validity import (
 )
 from plane.service_principals.attribution import actor_id_for_request
 from plane.utils.permissions.project import ProjectEntityPermission
+from plane.utils.testcase_api import (
+    bindable_asset,
+    error_entry,
+    object_body,
+    run_conflict_response,
+    same_date,
+    serializer_error_response,
+    stale_record_response,
+    validation_error_response,
+)
 
 from .base import BaseAPIView
-
-
-def _same_date(value, other) -> bool:
-    """True when the client sent the day the batch carries.
-
-    The client may send the day as ``2026-11-09`` or as a full
-    timestamp; the batch stores the day.
-    """
-    from datetime import date
-
-    try:
-        sent = date.fromisoformat(str(value)[:10])
-    except (ValueError, TypeError):
-        return False
-    return sent == other
 
 
 def credit_rows(rows, actor_id):
@@ -246,7 +234,7 @@ class TestRunDetailEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        if "run_date" in body and not _same_date(body.get("run_date"), run.run_date):
+        if "run_date" in body and not same_date(body.get("run_date"), run.run_date):
             return Response(
                 {
                     "error": "The execution date of a batch cannot be changed.",
@@ -281,11 +269,8 @@ class TestRunDetailEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
         run = self.get_queryset().filter(pk=pk).first()
         if run is None:
             return Response({"error": "Test run not found"}, status=status.HTTP_404_NOT_FOUND)
-        if not project_admin(request, project_id):
-            return Response(
-                {"error": "Only a project admin can delete a test run."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        if not project_admin(request, slug, project_id):
+            raise PermissionDenied("Only a project admin can delete a test run.")
         # A completed batch is frozen: its verdict is the history of the
         # execution and may not disappear afterwards. Every other write on
         # a completed batch answers 409 as well.
@@ -635,6 +620,10 @@ class TestRunAttachmentEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixi
     (``POST /api/v1/workspaces/<slug>/assets/``), which a service
     principal may use; this endpoint binds an uploaded file to the
     record, lists the files of the record and unbinds one of them.
+
+    The unbind removes the file from the record, not the record itself,
+    so the authz chain judges it as an ``update`` of the record — what
+    the app surface asks for (ADMIN or MEMBER, ``update`` scope).
     """
 
     resource_type = "test_run"
@@ -644,6 +633,7 @@ class TestRunAttachmentEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixi
     # The write acts on the case record the file hangs on.
     authz_resource_model = TestRunCase
     authz_resource_lookup = "run_case_id"
+    authz_update_methods = ("POST", "DELETE")
 
     def _run_case(self, slug, project_id, test_run_id, run_case_id):
         return TestRunCase.objects.filter(
@@ -713,7 +703,12 @@ class TestRunAttachmentEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixi
 
 
 class TestRunStepAttachmentEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, BaseAPIView):
-    """The files of one step record of a batch case (its measured value)."""
+    """The files of one step record of a batch case (its measured value).
+
+    The unbind removes the file from the step, not the step itself, so
+    the authz chain judges it as an ``update`` of the record — what the
+    app surface asks for (ADMIN or MEMBER, ``update`` scope).
+    """
 
     resource_type = "test_run"
 
@@ -722,6 +717,7 @@ class TestRunStepAttachmentEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRow
     # The write acts on the case record the step belongs to.
     authz_resource_model = TestRunCase
     authz_resource_lookup = "run_case_id"
+    authz_update_methods = ("POST", "DELETE")
 
     def _step_record(self, slug, project_id, test_run_id, run_case_id, sequence_id):
         return TestRunStepRecord.objects.filter(

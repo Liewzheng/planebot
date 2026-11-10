@@ -11,9 +11,8 @@ second set of serializers would be a second contract, and the two would
 drift the first time a field is added to one of them.
 
 What the v1 surface adds on top of the app surface is the *transport*,
-not the shape: the pagination envelope of the public API, and the
-``fields`` / ``expand`` query parameters the other v1 resources carry.
-Neither changes a field name, so neither is a second contract.
+not the shape: the pagination envelope of the public API. The envelope
+changes no field name, so it is not a second contract.
 """
 
 # Module imports

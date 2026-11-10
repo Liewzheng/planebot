@@ -29,6 +29,7 @@ from django.db.models import Prefetch, Q
 
 # Third party imports
 from rest_framework import status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 # Module imports
@@ -40,17 +41,10 @@ from plane.api.serializers.test_case import (
     TestCaseWriteSerializer,
 )
 from plane.app.testcase_validity import check_authoring, describe_reasons
-from plane.app.views.test_case.base import (
-    error_entry,
-    object_body,
-    project_or_404,
-    serializer_error_response,
-    stale_record_response,
-    validation_error_response,
-)
 from plane.core.authz import Action as AuthzAction
 from plane.db.models import (
     Issue,
+    ProjectMember,
     TestCase,
     TestCaseIssue,
     TestCaseModule,
@@ -59,22 +53,20 @@ from plane.db.models import (
 from plane.db.testcase_numbering import is_valid_module_code
 from plane.service_principals.attribution import actor_id_for_request
 from plane.utils.permissions.project import ProjectEntityPermission
+from plane.utils.testcase_api import (
+    error_entry,
+    is_uuid,
+    object_body,
+    project_or_404,
+    serializer_error_response,
+    stale_record_response,
+    validation_error_response,
+)
 
 from .base import BaseAPIView
 
 
-def _is_uuid(value) -> bool:
-    """True when the value looks like a UUID."""
-    from uuid import UUID
-
-    try:
-        UUID(str(value))
-    except (ValueError, AttributeError, TypeError):
-        return False
-    return True
-
-
-def project_admin(request, project_id) -> bool:
+def project_admin(request, slug, project_id) -> bool:
     """True when the caller may remove a row of the project.
 
     A human caller has to be an admin of the project. A service
@@ -84,14 +76,17 @@ def project_admin(request, project_id) -> bool:
     grant. ``request.user`` of a service-principal request is the human
     the token is filed under, so the membership of that human says
     nothing about the authority of the principal.
+
+    The workspace slug is handed in explicitly: it is a property of the
+    **view** (:attr:`plane.api.views.base.BaseAPIView.workspace_slug`),
+    not an attribute of the request, and reading it off the request
+    raises for a human caller.
     """
     if getattr(request, "_sp_principal", None) is not None:
         return True
 
-    from plane.db.models import ProjectMember
-
     return ProjectMember.objects.filter(
-        workspace__slug=request.workspace_slug,
+        workspace__slug=slug,
         member=request.user,
         project_id=project_id,
         role=20,
@@ -124,17 +119,31 @@ class ProjectScopedAuthzMixin:
 
 
 class UpdateOnExistingRowMixin:
-    """A POST that acts on an existing row is an update, not a create.
+    """A write that acts on an existing row is an update, not a create.
 
     The engine derives the action from the HTTP method, and ``create``
     skips the per-resource ownership step — a POST that links a work item
     to a case, that adds a case to a batch, that attaches a file to a
     record or that closes a batch acts on a row that already exists, so
     it has to be judged as an update.
+
+    The same holds for the two **unlinks** (the work item of a case, the
+    file of a record): a DELETE of a link removes a row that is part of
+    an entity which keeps existing, and the app surface judges it as an
+    ``update`` of that entity (:data:`plane.core.authz.Action.UPDATE`,
+    ADMIN or MEMBER). Judging it as ``delete`` would demand the delete
+    scope and an admin-tier grant the app never asks for. The views whose
+    DELETE removes the entity itself (a case, a batch) keep the action of
+    the method.
+
+    ``authz_update_methods`` names the methods of the view that are
+    judged as an update of the row ``authz_resource_model`` resolves.
     """
 
+    authz_update_methods = ("POST",)
+
     def get_authz_action(self, request, action):
-        if request.method == "POST":
+        if request.method in self.authz_update_methods:
             return AuthzAction.UPDATE
         return action
 
@@ -152,18 +161,20 @@ def replace_steps(case, steps, project, actor_id=None):
     a service principal, the user of a human. The attribution is pinned
     through ``created_by_id``, the kwarg ``BaseModel.save`` honours: the
     write of an ORM helper does not know the actor of the request.
+    ``objects.create`` passes ``force_insert``, so a row whose pk already
+    carries a value is one INSERT and not an UPDATE followed by it.
     """
     TestCaseStep.all_objects.filter(test_case=case).delete()
     for index, step in enumerate(steps, start=1):
-        row = TestCaseStep(
+        TestCaseStep.objects.create(
             test_case=case,
             project=project,
             workspace=project.workspace,
             sequence_id=index,
             action=step.get("action", ""),
             expected_result=step.get("expected_result", ""),
+            created_by_id=actor_id,
         )
-        row.save(created_by_id=actor_id)
     # ``updated_at`` is ``auto_now``: the write moves it to now.
     case.save(created_by_id=actor_id, update_fields=["updated_at", "updated_by"])
 
@@ -274,7 +285,7 @@ class TestCaseListCreateEndpoint(BaseAPIView):
         module = request.GET.get("module")
         if module:
             queryset = queryset.filter(
-                Q(module_id=module) if _is_uuid(module) else Q(module__code=module.upper())
+                Q(module_id=module) if is_uuid(module) else Q(module__code=module.upper())
             )
 
         priority = request.GET.get("priority")
@@ -445,11 +456,8 @@ class TestCaseDetailEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
         case = self.get_queryset().filter(pk=pk).first()
         if case is None:
             return Response({"error": "Test case not found"}, status=status.HTTP_404_NOT_FOUND)
-        if not project_admin(request, project_id):
-            return Response(
-                {"error": "Only a project admin can delete a test case."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        if not project_admin(request, slug, project_id):
+            raise PermissionDenied("Only a project admin can delete a test case.")
         case.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -647,8 +655,13 @@ class TestCaseIssueEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, B
         )
 
 
-class TestCaseIssueDetailEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
-    """One link between a case and a work item."""
+class TestCaseIssueDetailEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, BaseAPIView):
+    """One link between a case and a work item.
+
+    The unlink removes a link, not the case, so the authz chain judges it
+    as an ``update`` of the case — what the app surface asks for
+    (ADMIN or MEMBER, ``update`` scope).
+    """
 
     resource_type = "test_case"
 
@@ -657,6 +670,7 @@ class TestCaseIssueDetailEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
     # The write acts on the case the link belongs to.
     authz_resource_model = TestCase
     authz_resource_lookup = "test_case_id"
+    authz_update_methods = ("DELETE",)
 
     def delete(self, request, slug, project_id, test_case_id, issue_id):
         case = TestCase.objects.filter(

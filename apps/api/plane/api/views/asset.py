@@ -47,6 +47,7 @@ from plane.utils.openapi import (
     asset_docs,
 )
 from plane.utils.exception_logger import log_exception
+from plane.utils.testcase_api import run_conflict_response
 from plane.service_principals.attribution import actor_for_request
 
 
@@ -832,10 +833,10 @@ class GenericAssetEndpoint(BaseAPIView):
                             status=status.HTTP_404_NOT_FOUND,
                         )
                     if self._test_run_status(record) == RUN_STATUS_COMPLETED:
-                        return Response(
-                            {"error": "A completed batch is frozen."},
-                            status=status.HTTP_409_CONFLICT,
-                        )
+                        # The bind and the unbind of a record answer this
+                        # refusal with the same envelope — the CLI keys
+                        # on ``errors[].code``, not on the sentence.
+                        return run_conflict_response("A completed batch is frozen.")
                     if project_id and str(project_id) != str(record.project_id):
                         return Response(
                             {"error": "project_id does not match the project this record belongs to."},
