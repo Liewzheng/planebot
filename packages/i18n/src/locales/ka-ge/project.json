@@ -437,5 +437,10 @@
       },
       "name_instruction": "Enter the project name {name} to continue:"
     }
+  },
+  "project_test_case": {
+    "list": {
+      "delete_error_title": "Delete failed"
+    }
   }
 }

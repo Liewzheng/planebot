@@ -4,149 +4,134 @@
  * See the LICENSE file for details.
  */
 
-import { useState } from "react";
 import { useTranslation } from "@plane/i18n";
-import { CustomSelect } from "@plane/ui";
-import type { ITestCaseModule } from "@plane/types";
-import { cn } from "@plane/utils";
+import { CloseOutline } from "@makeplane/propel/icons";
+import type { ISearchIssueResponse } from "@plane/types";
 // components
+import { FilterOption } from "@/components/issues/issue-layouts/filters";
 import { TestCaseWorkItemPicker } from "../shared/work-item-picker";
 // constants
-import { TEST_CASE_PRIORITIES, hasTestCaseFilters } from "../constants";
+import { TEST_CASE_PRIORITIES } from "../constants";
+// hooks
+import { useTestCaseListFilters } from "./test-case-list-filters";
 
-type Props = {
-  workspaceSlug: string;
-  projectId: string;
-  modules: ITestCaseModule[];
-  module: string;
-  priority: string;
-  issue: string;
-  status: string;
-  search: string;
-  onChange: (patch: { module?: string; priority?: string; issue?: string; status?: string; search?: string }) => void;
-  onClear: () => void;
-};
+/** The identifier of a work item — the part of its name the list shows. */
+const workItemLabel = (issue: ISearchIssueResponse) =>
+  issue.project__identifier ? `${issue.project__identifier}-${issue.sequence_id} · ${issue.name}` : issue.name;
+
+/** The three states the list filter offers — "all" is the unset one. */
+const STATUS_OPTIONS = ["active", "void", "all"] as const;
 
 /**
- * The filters of the list of the cases: the module, the priority, the
- * linked work item, the status and the search term.
+ * The filters of the list of the cases, as the body of the filter button:
+ * the module, the priority, the state and the linked work item.
  *
- * The bar wraps on a narrow screen — every filter keeps its own line
- * instead of the bar scrolling sideways.
+ * The panel mirrors the filter panel of the views page: one section per
+ * filter, one checkable row per value.
  */
-export function TestCaseFilters(props: Props) {
-  const { workspaceSlug, projectId, modules, module, priority, issue, status, search, onChange, onClear } = props;
+export function TestCaseFilterPanel() {
   const { t } = useTranslation();
-  // state — the work item filter is a picker of its own, it stays closed
-  // until the user asks for it.
-  const [isIssuePickerOpen, setIsIssuePickerOpen] = useState(false);
+  // store
+  const { workspaceSlug, projectId, modules, filters, workItem, hasFilters, updateFilters, setWorkItem, clearFilters } =
+    useTestCaseListFilters();
 
-  // The same definition the list uses — the bar offers "clear the
-  // filters" exactly when there is something to clear.
-  const hasFilters = hasTestCaseFilters({ module, priority, issue, status, search });
+  // derived values
+  const moduleId = filters.module ?? "";
+  const priority = filters.priority ?? "";
+  const status = filters.status ?? "active";
 
   return (
-    <div className="flex flex-col gap-3 border-b border-subtle-1 px-4 py-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="text"
-          value={search}
-          onChange={(event) => onChange({ search: event.target.value })}
-          placeholder={t("project_test_case.list.search_placeholder")}
-          className="placeholder-tertiary min-w-40 flex-1 rounded-md border border-subtle-1 bg-layer-2 px-3 py-1.5 text-13 text-primary focus:ring-1 focus:ring-accent-strong focus:outline-none"
-        />
-
-        <CustomSelect
-          value={module}
-          onChange={(value: string) => onChange({ module: value })}
-          label={
-            <span className={module ? "text-primary" : "text-tertiary"}>
-              {module
-                ? (modules.find((entry) => entry.id === module)?.code ?? t("project_test_case.list.all_modules"))
-                : t("project_test_case.list.filter_module")}
-            </span>
-          }
-          className="w-40"
-        >
-          <CustomSelect.Option value="">{t("project_test_case.list.all_modules")}</CustomSelect.Option>
-          {modules.map((entry) => (
-            <CustomSelect.Option key={entry.id} value={entry.id}>
-              {entry.code}
-            </CustomSelect.Option>
-          ))}
-        </CustomSelect>
-
-        <CustomSelect
-          value={priority}
-          onChange={(value: string) => onChange({ priority: value })}
-          label={
-            <span className={priority ? "text-primary" : "text-tertiary"}>
-              {priority || t("project_test_case.list.filter_priority")}
-            </span>
-          }
-          className="w-36"
-        >
-          <CustomSelect.Option value="">{t("project_test_case.list.all_priorities")}</CustomSelect.Option>
-          {TEST_CASE_PRIORITIES.map((entry) => (
-            <CustomSelect.Option key={entry} value={entry}>
-              {entry}
-            </CustomSelect.Option>
-          ))}
-        </CustomSelect>
-
-        <CustomSelect
-          value={status}
-          onChange={(value: string) => onChange({ status: value })}
-          label={
-            <span className={status && status !== "active" ? "text-primary" : "text-tertiary"}>
-              {status && status !== "active"
-                ? t(`project_test_case.status.${status}`)
-                : t("project_test_case.list.filter_status")}
-            </span>
-          }
-          className="w-36"
-        >
-          <CustomSelect.Option value="active">{t("project_test_case.status.active")}</CustomSelect.Option>
-          <CustomSelect.Option value="void">{t("project_test_case.status.void")}</CustomSelect.Option>
-          <CustomSelect.Option value="all">{t("project_test_case.list.all_statuses")}</CustomSelect.Option>
-        </CustomSelect>
-
-        <button
-          type="button"
-          onClick={() => setIsIssuePickerOpen((open) => !open)}
-          className={cn(
-            "rounded-md border border-subtle-1 px-3 py-1.5 text-13",
-            issue ? "text-primary" : "text-tertiary"
-          )}
-        >
-          {issue ? t("project_test_case.list.filter_issue") : t("project_test_case.list.select_work_item")}
-        </button>
-
+    <div className="flex h-full w-full flex-col overflow-hidden">
+      <div className="flex items-center justify-between gap-2 bg-surface-1 px-2.5 pt-2.5 pb-2">
+        <span className="text-11 text-tertiary">{t("common.filters")}</span>
         {hasFilters && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="rounded-md px-3 py-1.5 text-13 text-accent-primary hover:underline"
-          >
-            {t("project_test_case.list.clear_filters")}
+          <button type="button" className="text-11 text-accent-primary hover:underline" onClick={clearFilters}>
+            {t("common.clear_all")}
           </button>
         )}
       </div>
 
-      {isIssuePickerOpen && (
-        <div className="max-w-md">
+      <div className="vertical-scrollbar scrollbar-sm h-full w-full divide-y divide-subtle-1 overflow-y-auto px-2.5">
+        <section className="py-2">
+          <h6 className="px-1.5 pb-1 text-11 text-tertiary">{t("project_test_case.list.filter_module")}</h6>
+          <FilterOption
+            isChecked={!moduleId}
+            multiple={false}
+            onClick={() => updateFilters({ module: "" })}
+            title={t("project_test_case.list.all_modules")}
+          />
+          {modules.map((module) => (
+            <FilterOption
+              key={module.id}
+              isChecked={moduleId === module.id}
+              multiple={false}
+              onClick={() => updateFilters({ module: moduleId === module.id ? "" : module.id })}
+              title={module.code}
+            />
+          ))}
+        </section>
+
+        <section className="py-2">
+          <h6 className="px-1.5 pb-1 text-11 text-tertiary">{t("project_test_case.list.filter_priority")}</h6>
+          <FilterOption
+            isChecked={!priority}
+            multiple={false}
+            onClick={() => updateFilters({ priority: "" })}
+            title={t("project_test_case.list.all_priorities")}
+          />
+          {TEST_CASE_PRIORITIES.map((option) => (
+            <FilterOption
+              key={option}
+              isChecked={priority === option}
+              multiple={false}
+              onClick={() => updateFilters({ priority: priority === option ? "" : option })}
+              title={option}
+            />
+          ))}
+        </section>
+
+        <section className="py-2">
+          <h6 className="px-1.5 pb-1 text-11 text-tertiary">{t("project_test_case.list.filter_status")}</h6>
+          {STATUS_OPTIONS.map((option) => (
+            <FilterOption
+              key={option}
+              isChecked={status === option}
+              multiple={false}
+              onClick={() => updateFilters({ status: option })}
+              title={
+                option === "all" ? t("project_test_case.list.all_statuses") : t(`project_test_case.status.${option}`)
+              }
+            />
+          ))}
+        </section>
+
+        <section className="flex flex-col gap-2 py-2">
+          <h6 className="px-1.5 text-11 text-tertiary">{t("project_test_case.list.filter_issue")}</h6>
+          {workItem && (
+            <div className="flex items-center justify-between gap-2 rounded-sm bg-layer-1 px-2 py-1.5 text-11 text-secondary">
+              <span className="truncate">{workItem.label}</span>
+              <button
+                type="button"
+                className="grid place-items-center text-tertiary hover:text-secondary"
+                aria-label={t("common.remove")}
+                onClick={() => setWorkItem(null)}
+              >
+                <CloseOutline height={10} width={10} />
+              </button>
+            </div>
+          )}
           <TestCaseWorkItemPicker
             workspaceSlug={workspaceSlug}
             projectId={projectId}
-            selectedIds={issue ? [issue] : []}
+            selectedIds={filters.issue ? [filters.issue] : []}
             multiple={false}
             onSelectionChange={(ids) => {
-              onChange({ issue: ids[0] ?? "" });
-              setIsIssuePickerOpen(false);
+              if (ids.length === 0) setWorkItem(null);
             }}
+            onPick={(issue) => setWorkItem(issue ? { id: issue.id, label: workItemLabel(issue) } : null)}
           />
-        </div>
-      )}
+        </section>
+      </div>
     </div>
   );
 }

@@ -29,6 +29,12 @@ type Props = {
   selectedIds: string[];
   /** Called with the whole selection whenever it changes. */
   onSelectionChange: (ids: string[]) => void;
+  /**
+   * Called with the work item that was picked (and with `null` when the
+   * picked one was un-picked). A single-choice caller needs it to keep the
+   * readable name of the item next to the id it stores.
+   */
+  onPick?: (issue: ISearchIssueResponse | null) => void;
   /** Several work items at a time (the editor) or only one (a filter). */
   multiple?: boolean;
   className?: string;
@@ -50,6 +56,7 @@ export function TestCaseWorkItemPicker(props: Props) {
     linkedIssueIds = [],
     selectedIds,
     onSelectionChange,
+    onPick,
     multiple = true,
     className,
   } = props;
@@ -89,16 +96,15 @@ export function TestCaseWorkItemPicker(props: Props) {
 
   const linkedIds = useMemo(() => new Set(linkedIssueIds), [linkedIssueIds]);
 
-  const toggle = (issueId: string) => {
+  const toggle = (issue: ISearchIssueResponse) => {
+    const isSelected = selectedIds.includes(issue.id);
+
     if (!multiple) {
-      onSelectionChange(selectedIds.includes(issueId) ? [] : [issueId]);
+      onSelectionChange(isSelected ? [] : [issue.id]);
+      onPick?.(isSelected ? null : issue);
       return;
     }
-    if (selectedIds.includes(issueId)) {
-      onSelectionChange(selectedIds.filter((id) => id !== issueId));
-      return;
-    }
-    onSelectionChange([...selectedIds, issueId]);
+    onSelectionChange(isSelected ? selectedIds.filter((id) => id !== issue.id) : [...selectedIds, issue.id]);
   };
 
   return (
@@ -131,7 +137,7 @@ export function TestCaseWorkItemPicker(props: Props) {
                 <button
                   type="button"
                   disabled={isLinked}
-                  onClick={() => toggle(issue.id)}
+                  onClick={() => toggle(issue)}
                   className={cn(
                     "flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left transition-colors",
                     isLinked ? "cursor-not-allowed opacity-60" : "hover:bg-layer-2",
@@ -168,7 +174,14 @@ export function TestCaseWorkItemPicker(props: Props) {
           <span className="text-11 text-tertiary">
             {t("project_test_case.picker.selected")}: {selectedIds.length}
           </span>
-          <Button variant="ghost" size="sm" onClick={() => onSelectionChange([])}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              onSelectionChange([]);
+              onPick?.(null);
+            }}
+          >
             {t("project_test_case.picker.clear")}
           </Button>
         </div>

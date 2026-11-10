@@ -12,7 +12,10 @@ export * from "./shared/markdown-renderer";
 export * from "./shared/save-indicator";
 export * from "./shared/work-item-picker";
 // list
+export * from "./list/test-case-applied-filters";
 export * from "./list/test-case-filters";
+export * from "./list/test-case-list-filters";
+export * from "./list/test-case-list-header";
 export * from "./list/test-case-list-view";
 export * from "./list/test-case-row";
 // editor

@@ -32,11 +32,19 @@ function ProjectTestCasesPage({ params }: Route.ComponentProps) {
     workspaceSlug,
     projectId
   );
+  // The delete endpoint is admin-only, so the row must not offer the action
+  // to a member — the guard here is the one the server applies.
+  const canDelete = allowPermissions([EUserPermissions.ADMIN], EUserPermissionsLevel.PROJECT, workspaceSlug, projectId);
 
   return (
     <>
       <PageHead title={pageTitle} />
-      <TestCaseListView workspaceSlug={workspaceSlug} projectId={projectId} canCreate={canCreate} />
+      <TestCaseListView
+        workspaceSlug={workspaceSlug}
+        projectId={projectId}
+        canCreate={canCreate}
+        canDelete={canDelete}
+      />
     </>
   );
 }
