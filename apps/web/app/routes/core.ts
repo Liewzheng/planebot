@@ -251,13 +251,24 @@ export const coreRoutes: RouteConfigEntry[] = [
             ]
           ),
 
-          // Test Runs List — the batches are not part of this version yet
+          // Test Runs List — one batch per execution (STD-SW-003 §6.2)
           layout("./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/test-runs/(list)/layout.tsx", [
             route(
               ":workspaceSlug/projects/:projectId/test-runs",
               "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/test-runs/(list)/page.tsx"
             ),
           ]),
+
+          // Test Run Detail — the execution form of one batch
+          layout(
+            "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/test-runs/(detail)/[testRunId]/layout.tsx",
+            [
+              route(
+                ":workspaceSlug/projects/:projectId/test-runs/:testRunId",
+                "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/test-runs/(detail)/[testRunId]/page.tsx"
+              ),
+            ]
+          ),
         ]),
 
         // Project Archives - Issues, Cycles, Modules

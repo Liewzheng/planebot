@@ -11,10 +11,17 @@ import type {
   ITestCase,
   ITestCaseIssueLink,
   ITestCaseModule,
+  ITestRun,
+  ITestRunCase,
+  ITestRunStepRecord,
   ITestRunSummary,
+  ITestRunSummaryReport,
   TTestCaseFilters,
   TTestCaseWrite,
   TPaginatedResponse,
+  TTestRunCaseWrite,
+  TTestRunStepWrite,
+  TTestRunWrite,
 } from "@plane/types";
 // services
 import { APIService } from "@/services/api.service";
@@ -195,15 +202,189 @@ export class TestCaseService extends APIService {
   async getRuns(
     workspaceSlug: string,
     projectId: string,
-    config?: { per_page?: number; cursor?: string }
+    config?: { per_page?: number; cursor?: string; status?: string }
   ): Promise<TPaginatedResponse<ITestRunSummary[]>> {
     const params: Record<string, string | number> = {};
 
     if (config?.per_page) params.per_page = config.per_page;
     if (config?.cursor) params.cursor = config.cursor;
+    if (config?.status) params.status = config.status;
 
     return this.get(`${this.basePath(workspaceSlug, projectId)}/test-runs/`, { params })
       .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  // ------------------------------------------------------------------
+  // One batch, its records and its summary
+  // ------------------------------------------------------------------
+
+  /** The path of one batch of the project. */
+  private runPath(workspaceSlug: string, projectId: string, testRunId: string): string {
+    return `${this.basePath(workspaceSlug, projectId)}/test-runs/${testRunId}`;
+  }
+
+  /** The path of one case record inside a batch. */
+  private runCasePath(workspaceSlug: string, projectId: string, testRunId: string, runCaseId: string): string {
+    return `${this.runPath(workspaceSlug, projectId, testRunId)}/cases/${runCaseId}`;
+  }
+
+  async getRun(workspaceSlug: string, projectId: string, testRunId: string): Promise<ITestRun> {
+    return this.get(`${this.runPath(workspaceSlug, projectId, testRunId)}/`)
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /** Create a batch. The number is assigned by the server. */
+  async createRun(workspaceSlug: string, projectId: string, data: TTestRunWrite): Promise<ITestRun> {
+    return this.post(`${this.basePath(workspaceSlug, projectId)}/test-runs/`, data)
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * The header of a batch. The version fields and the execution date are
+   * frozen once recorded, and a completed batch refuses every write.
+   */
+  async updateRun(
+    workspaceSlug: string,
+    projectId: string,
+    testRunId: string,
+    data: Partial<TTestRunWrite>
+  ): Promise<ITestRun> {
+    return this.patch(`${this.runPath(workspaceSlug, projectId, testRunId)}/`, data)
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * Close the batch. The server runs the validity rules first and answers
+   * one entry per problem — `errors[].path` says which field or step it
+   * belongs to.
+   */
+  async finalizeRun(workspaceSlug: string, projectId: string, testRunId: string): Promise<ITestRun> {
+    return this.post(`${this.runPath(workspaceSlug, projectId, testRunId)}/finalize/`, {})
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * The four counts and the deviation list of the batch (STD-SW-003 §6.2
+   * rule 3), computed by the server. The client never re-counts.
+   */
+  async getRunSummary(workspaceSlug: string, projectId: string, testRunId: string): Promise<ITestRunSummaryReport> {
+    return this.get(`${this.runPath(workspaceSlug, projectId, testRunId)}/summary/`)
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * Add cases to a batch. Every added case is snapshotted by the server; a
+   * case that is already in the batch refuses the whole add (409
+   * `duplicate_case_number`).
+   */
+  async addRunCases(
+    workspaceSlug: string,
+    projectId: string,
+    testRunId: string,
+    testCaseIds: string[]
+  ): Promise<ITestRunCase[]> {
+    return this.post(`${this.runPath(workspaceSlug, projectId, testRunId)}/cases/`, {
+      test_case_ids: testCaseIds,
+    })
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * Take a case out of a batch. A case record that is already gone answers
+   * 404 — the caller treats that as "removed" and refreshes.
+   */
+  async removeRunCase(workspaceSlug: string, projectId: string, testRunId: string, runCaseId: string): Promise<void> {
+    return this.delete(`${this.runCasePath(workspaceSlug, projectId, testRunId, runCaseId)}/`)
+      .then(() => undefined)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /** The outcome of one case inside a batch (conclusion and its fields). */
+  async updateRunCase(
+    workspaceSlug: string,
+    projectId: string,
+    testRunId: string,
+    runCaseId: string,
+    data: TTestRunCaseWrite
+  ): Promise<ITestRunCase> {
+    return this.patch(`${this.runCasePath(workspaceSlug, projectId, testRunId, runCaseId)}/`, data)
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * The verdict and the measured value of one step. The verdict is written
+   * once; the measured value stays writable. The update is atomic for the
+   * step and the last write wins.
+   */
+  async updateRunStep(
+    workspaceSlug: string,
+    projectId: string,
+    testRunId: string,
+    runCaseId: string,
+    sequenceId: number,
+    data: TTestRunStepWrite
+  ): Promise<ITestRunStepRecord> {
+    return this.patch(`${this.runCasePath(workspaceSlug, projectId, testRunId, runCaseId)}/steps/${sequenceId}/`, data)
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /** Unbind (soft-delete) one file of a case record's evidence. */
+  async deleteRunCaseAttachment(
+    workspaceSlug: string,
+    projectId: string,
+    testRunId: string,
+    runCaseId: string,
+    assetId: string
+  ): Promise<void> {
+    return this.delete(`${this.runCasePath(workspaceSlug, projectId, testRunId, runCaseId)}/attachments/${assetId}/`)
+      .then(() => undefined)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /** Unbind (soft-delete) one file of a step record's measured value. */
+  async deleteRunStepAttachment(
+    workspaceSlug: string,
+    projectId: string,
+    testRunId: string,
+    runCaseId: string,
+    sequenceId: number,
+    assetId: string
+  ): Promise<void> {
+    return this.delete(
+      `${this.runCasePath(workspaceSlug, projectId, testRunId, runCaseId)}/steps/${sequenceId}/attachments/${assetId}/`
+    )
+      .then(() => undefined)
       .catch((error) => {
         throw error?.response?.data;
       });
