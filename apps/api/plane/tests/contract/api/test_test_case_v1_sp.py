@@ -25,7 +25,19 @@ The tests pin the behaviour the mission asks for:
   and binds it to a step — and a failed step whose measured value is
   nothing but that picture is a valid step (the picture *is* the
   measured value);
-* a service principal without the grant may not upload into the project.
+* a service principal without the grant may not upload into the project;
+* a human project admin removes a case and a batch (204) and a plain
+  project member is refused (403, ``detail``) — the removal is the one
+  write the chain does not decide for a human;
+* the two unlinks (a work item of a case, a file of a record) are
+  judged as ``update`` — a member-tier principal without a single
+  ``delete`` scope may perform them, while the removal of the case or
+  the batch itself keeps the ``delete`` action and its admin tier;
+* a completed batch refuses the upload with the same 409 envelope
+  (``code`` / ``errors``) the bind path uses;
+* the field set of every answer is pinned (sorted key lists), so a
+  refactor of the app serializers turns this branch red instead of
+  changing the public v1 API silently.
 
 The reason codes the tests pin are the ones of the authz chain
 (:mod:`plane.core.authz.decision`) and of the validity rules
@@ -42,8 +54,12 @@ from rest_framework.test import APIClient
 
 from plane.db.models import (
     FileAsset,
+    Issue,
     Project,
     ProjectMember,
+    State,
+    User,
+    WorkspaceMember,
 )
 # The model rows are imported under an alias: pytest collects every class
 # whose name starts with ``Test`` as a test class, and the warning it
@@ -242,6 +258,70 @@ def granted_sp(sp, project):
     return sp
 
 
+@pytest.fixture
+def member_tier_sp(sp, project):
+    """A member-tier principal without a single ``delete`` scope.
+
+    The app surface asks an ``update`` (ADMIN or MEMBER) for the two
+    unlinks and a ``delete`` (ADMIN) only for the removal of a case or a
+    batch. A principal that holds read/create/update and a role-15 grant
+    is therefore able to unlink a work item and unbind a file, and is
+    refused when it removes the entity itself.
+    """
+    for resource_type in ("test_case", "test_run"):
+        for action in ("read", "create", "update"):
+            _scope(sp, project, resource_type, action)
+    _scope(sp, project, "asset", "create")
+    _grant(sp, project, role_cap=15)
+    return sp
+
+
+@pytest.fixture
+def member_client(workspace, project):
+    """A human client of a project **member** (role 15).
+
+    ``create_user`` — the user of ``human_client`` — is the admin of the
+    project; this user is a plain member, so the removal of a case or of
+    a batch has to refuse it.
+    """
+    member = User.objects.create(
+        email=f"member-{uuid4().hex}@plane.so",
+        username=f"member_{uuid4().hex}",
+        first_name="Project",
+        last_name="Member",
+    )
+    WorkspaceMember.objects.create(workspace=workspace, member=member, role=15)
+    ProjectMember.objects.create(
+        project=project, member=member, role=15, is_active=True
+    )
+    token = APIToken.objects.create(
+        user=member,
+        label="Test API Token",
+        token=f"plane_api_case-member-{uuid4().hex}",
+    )
+    client = APIClient()
+    client.credentials(HTTP_X_API_KEY=token.token)
+    return client
+
+
+def _issue(workspace, project, create_user):
+    """A work item of the project, to link a case to."""
+    state = State.objects.create(
+        name="Todo",
+        project=project,
+        workspace=workspace,
+        group="backlog",
+        default=True,
+    )
+    return Issue.objects.create(
+        name="The requirement of the login path",
+        workspace=workspace,
+        project=project,
+        state=state,
+        created_by=create_user,
+    )
+
+
 def _build_case(client, workspace, project, **overrides):
     """A module and a case, written through the v1 surface."""
     response = client.post(
@@ -405,7 +485,7 @@ class TestSPCannotWriteForeignRows:
     ):
         """The step record of a human's batch is out of reach as well:
         the ownership is judged on the case record the step belongs to."""
-        bot = granted_sp.ensure_bot_user()
+        granted_sp.ensure_bot_user()
         _module, case = _build_case(human_client, workspace, project)
         run = _build_run(human_client, workspace, project, create_user)
         run_case = _add_case(human_client, workspace, project, run["id"], case["id"])
@@ -715,3 +795,370 @@ class TestSPUploadsAndBindsAnAttachment:
         )
         assert response.status_code == status.HTTP_200_OK, response.content
         assert len(response.json()) == 1
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestHumanDeletes:
+    """A case and a batch are removed by a project admin only.
+
+    The removal is the one write whose authority the authz chain cannot
+    decide for a human (it judges service principals): the view asks for
+    a project admin itself, and the refusal is a 403 with DRF's
+    ``detail`` — the shape every other 403 of this surface carries. The
+    app surface asks for exactly the same role.
+    """
+
+    def test_a_project_admin_deletes_a_case_and_a_batch(
+        self, workspace, create_user, project, human_client
+    ):
+        _module, case = _build_case(human_client, workspace, project)
+        run = _build_run(human_client, workspace, project, create_user)
+
+        response = human_client.delete(
+            f"{cases_url(workspace.slug, project.id)}{case['id']}/"
+        )
+        assert response.status_code == status.HTTP_204_NO_CONTENT, response.content
+        assert CaseRow.objects.filter(pk=case["id"]).count() == 0
+
+        response = human_client.delete(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/"
+        )
+        assert response.status_code == status.HTTP_204_NO_CONTENT, response.content
+        assert RunRow.objects.filter(pk=run["id"]).count() == 0
+
+    def test_a_project_member_may_not_delete_a_case(
+        self, workspace, create_user, project, human_client, member_client
+    ):
+        _module, case = _build_case(human_client, workspace, project)
+
+        response = member_client.delete(
+            f"{cases_url(workspace.slug, project.id)}{case['id']}/"
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN, response.content
+        detail = response.json()["detail"]
+        assert "Only a project admin can delete a test case." in detail, detail
+        # The row survives the refused removal.
+        assert CaseRow.objects.filter(pk=case["id"]).count() == 1
+
+    def test_a_project_member_may_not_delete_a_batch(
+        self, workspace, create_user, project, human_client, member_client
+    ):
+        run = _build_run(human_client, workspace, project, create_user)
+
+        response = member_client.delete(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/"
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN, response.content
+        detail = response.json()["detail"]
+        assert "Only a project admin can delete a test run." in detail, detail
+        assert RunRow.objects.filter(pk=run["id"]).count() == 1
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestUnlinkIsAnUpdate:
+    """The unlinks are updates of the entity they act on.
+
+    Unbinding a file of a record and unlinking a work item from a case
+    remove a link, not the case or the batch: the chain judges them as
+    ``update`` (ADMIN or MEMBER, ``update`` scope), exactly as the app
+    surface does. The removal of the entity itself keeps the ``delete``
+    action and its admin tier.
+    """
+
+    def test_a_member_tier_sp_unbinds_a_file_and_unlinks_a_work_item(
+        self, workspace, create_user, project, member_tier_sp, sp_client
+    ):
+        bot = member_tier_sp.ensure_bot_user()
+        _module, case = _build_case(sp_client, workspace, project)
+        run = _build_run(sp_client, workspace, project, bot)
+        run_case = _add_case(sp_client, workspace, project, run["id"], case["id"])
+
+        with mock.patch("plane.api.views.asset.S3Storage", side_effect=storage_stub):
+            response = sp_client.post(
+                assets_url(workspace.slug),
+                {
+                    "name": "shot.png",
+                    "type": "image/png",
+                    "size": 4096,
+                    "entity_type": FileAsset.EntityTypeContext.TEST_RUN_STEP_RECORD,
+                    "project_id": str(project.id),
+                },
+                format="json",
+            )
+        assert response.status_code == status.HTTP_200_OK, response.content
+        asset_id = response.json()["asset_id"]
+
+        step_attachments = (
+            f"{runs_url(workspace.slug, project.id)}{run['id']}"
+            f"/cases/{run_case['id']}/steps/1/attachments/"
+        )
+        response = sp_client.post(
+            step_attachments, {"asset_id": asset_id}, format="json"
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.content
+
+        # The unbind needs ``update test_run`` — the principal holds no
+        # ``delete`` scope at all.
+        response = sp_client.delete(f"{step_attachments}{asset_id}/")
+        assert response.status_code == status.HTTP_204_NO_CONTENT, response.content
+
+        # The same for the link of a case and a work item.
+        issue = _issue(workspace, project, create_user)
+        response = sp_client.post(
+            f"{cases_url(workspace.slug, project.id)}{case['id']}/issues/",
+            {"issue_id": str(issue.id)},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.content
+
+        response = sp_client.delete(
+            f"{cases_url(workspace.slug, project.id)}{case['id']}/issues/{issue.id}/"
+        )
+        assert response.status_code == status.HTTP_204_NO_CONTENT, response.content
+
+    def test_the_removal_of_the_entity_keeps_the_admin_tier(
+        self, workspace, create_user, project, member_tier_sp, sp_client
+    ):
+        """A case and a batch are not links: removing them is a
+        ``delete``, which the matrix reserves to an admin-tier grant —
+        even for a row the principal created itself."""
+        bot = member_tier_sp.ensure_bot_user()
+        _module, case = _build_case(sp_client, workspace, project)
+        run = _build_run(sp_client, workspace, project, bot)
+
+        # The delete scope is granted here so the refusal names the tier
+        # and not the scope: without it the scope step answers first.
+        for resource_type in ("test_case", "test_run"):
+            _scope(member_tier_sp, project, resource_type, "delete")
+
+        response = sp_client.delete(
+            f"{cases_url(workspace.slug, project.id)}{case['id']}/"
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN, response.content
+        detail = response.json()["detail"]
+        assert "delete test_case" in detail, detail
+        assert "role_cap (15) is below the required role (20)" in detail, detail
+        assert CaseRow.objects.filter(pk=case["id"]).count() == 1
+
+        response = sp_client.delete(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/"
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN, response.content
+        detail = response.json()["detail"]
+        assert "delete test_run" in detail, detail
+        assert RunRow.objects.filter(pk=run["id"]).count() == 1
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestTheFrozenBatchEnvelope:
+    """A completed batch refuses every write with the same 409 body.
+
+    The CLI branches on ``errors[].code``, so the upload path answers the
+    refusal in the envelope of the bind path — a bare ``{"error": …}``
+    would leave the client without a code to key on.
+    """
+
+    def test_the_upload_of_a_frozen_batch_carries_the_reason_code(
+        self, workspace, create_user, project, granted_sp, sp_client
+    ):
+        bot = granted_sp.ensure_bot_user()
+        _module, case = _build_case(sp_client, workspace, project)
+        run = _build_run(sp_client, workspace, project, bot)
+        run_case = _add_case(sp_client, workspace, project, run["id"], case["id"])
+
+        run_url = f"{runs_url(workspace.slug, project.id)}{run['id']}"
+        response = sp_client.patch(
+            f"{run_url}/cases/{run_case['id']}/steps/1/",
+            {"conclusion": "pass", "actual_value": "the form was shown"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK, response.content
+        response = sp_client.patch(
+            f"{run_url}/cases/{run_case['id']}/",
+            {"conclusion": "PASS", "evidence": "the form was shown"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK, response.content
+        response = sp_client.post(f"{run_url}/finalize/", {}, format="json")
+        assert response.status_code == status.HTTP_200_OK, response.content
+        assert response.json()["status"] == "completed"
+
+        step = RunStepRecordRow.objects.get(
+            test_run_case_id=run_case["id"], sequence_id=1
+        )
+
+        with mock.patch("plane.api.views.asset.S3Storage", side_effect=storage_stub):
+            response = sp_client.post(
+                assets_url(workspace.slug),
+                {
+                    "name": "shot.png",
+                    "type": "image/png",
+                    "size": 4096,
+                    "entity_type": FileAsset.EntityTypeContext.TEST_RUN_STEP_RECORD,
+                    "entity_identifier": str(step.id),
+                },
+                format="json",
+            )
+
+        assert response.status_code == status.HTTP_409_CONFLICT, response.content
+        body = response.json()
+        assert body["code"] == "run_completed", body
+        assert error_codes(response) == {"run_completed"}, body
+        assert body["errors"][0]["path"] == "", body
+        # No file row was left behind.
+        assert not FileAsset.objects.filter(workspace=workspace).exists()
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestTheWireFormatIsPinned:
+    """The field set of every answer is part of the contract.
+
+    The serializers are the app's — one contract, not two — so a refactor
+    of the app serializers reaches this surface too. These assertions
+    make such a change turn *this* branch red instead of changing the
+    public v1 API silently under a CLI that implements from the contract
+    table.
+    """
+
+    def test_every_answer_carries_exactly_the_documented_fields(
+        self, workspace, create_user, project, granted_sp, sp_client
+    ):
+        bot = granted_sp.ensure_bot_user()
+
+        response = sp_client.post(
+            modules_url(workspace.slug, project.id), module_payload(), format="json"
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.content
+        module = response.json()
+        assert sorted(module.keys()) == sorted(
+            ["id", "code", "description", "created_at", "updated_at"]
+        )
+
+        response = sp_client.post(
+            cases_url(workspace.slug, project.id), case_payload(module), format="json"
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.content
+        case = response.json()
+        assert sorted(case.keys()) == sorted(
+            [
+                "id",
+                "number",
+                "module",
+                "module_code",
+                "title",
+                "purpose",
+                "object_overview",
+                "priority",
+                "preconditions",
+                "environment",
+                "status",
+                "steps",
+                "issue_links",
+                "created_at",
+                "updated_at",
+                "created_by",
+            ]
+        )
+        assert sorted(case["steps"][0].keys()) == sorted(
+            [
+                "id",
+                "sequence_id",
+                "action",
+                "expected_result",
+                "created_at",
+                "updated_at",
+            ]
+        )
+
+        run = _build_run(sp_client, workspace, project, bot)
+        assert sorted(run.keys()) == sorted(
+            [
+                "id",
+                "number",
+                "run_date",
+                "version_number",
+                "build_number",
+                "commit_hash",
+                "environment",
+                "executed_by",
+                "executed_by_name",
+                "status",
+                "cases",
+                "created_at",
+                "updated_at",
+                "created_by",
+            ]
+        )
+
+        run_case = _add_case(sp_client, workspace, project, run["id"], case["id"])
+        assert sorted(run_case.keys()) == sorted(
+            [
+                "id",
+                "test_case",
+                "case_number",
+                "case_module_code",
+                "case_title",
+                "case_purpose",
+                "case_object_overview",
+                "case_priority",
+                "case_preconditions",
+                "case_environment",
+                "conclusion",
+                "evidence",
+                "remarks",
+                "actual_result_summary",
+                "na_reason",
+                "na_criteria_source",
+                "manual_executor",
+                "manual_condition",
+                "steps",
+                "attachments",
+                "created_at",
+                "updated_at",
+            ]
+        )
+        assert sorted(run_case["steps"][0].keys()) == sorted(
+            [
+                "id",
+                "sequence_id",
+                "action_snapshot",
+                "expected_result_snapshot",
+                "conclusion",
+                "actual_value",
+                "attachments",
+                "created_at",
+                "updated_at",
+            ]
+        )
+
+        # The attachment, in the shape the bind returns it.
+        with mock.patch("plane.api.views.asset.S3Storage", side_effect=storage_stub):
+            response = sp_client.post(
+                assets_url(workspace.slug),
+                {
+                    "name": "shot.png",
+                    "type": "image/png",
+                    "size": 4096,
+                    "entity_type": FileAsset.EntityTypeContext.TEST_RUN_STEP_RECORD,
+                    "project_id": str(project.id),
+                },
+                format="json",
+            )
+        assert response.status_code == status.HTTP_200_OK, response.content
+        asset_id = response.json()["asset_id"]
+
+        response = sp_client.post(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}"
+            f"/cases/{run_case['id']}/steps/1/attachments/",
+            {"asset_id": asset_id},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.content
+        assert sorted(response.json().keys()) == sorted(
+            ["id", "asset_id", "name", "size", "url"]
+        )
