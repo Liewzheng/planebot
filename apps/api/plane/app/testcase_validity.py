@@ -16,7 +16,8 @@ codes they return into the wire format the front end consumes:
   each with a **field path**, the stable **reason code** and a Chinese
   sentence;
 * :func:`check_authoring` runs the *authoring* subset of the rules — the
-  mandatory header items, the number format and the step table — for the
+  mandatory header items, the number format and the step table (the
+  §5.6 ban on unverifiable expected results included) — for the
   create/update surface, where no verdict and no measured value exist
   yet.
 
@@ -37,7 +38,6 @@ from plane.db.testcase_validity import (
     CASE_NUMBER_FORMAT,
     CASE_NUMBER_MODULE_MISMATCH,
     CONCLUSION_FAIL_WITHOUT_FAILED_STEP,
-    CONCLUSION_FAIL_WITH_UNSET_STEP,
     CONCLUSION_INVALID,
     CONCLUSION_IS_FINAL,
     CONCLUSION_MANUAL_WITH_FAILED_STEP,
@@ -52,6 +52,7 @@ from plane.db.testcase_validity import (
     ENVIRONMENT_MISSING,
     EVIDENCE_MISSING,
     EXPECTED_EMPTY,
+    EXPECTED_IS_UNJUDGEABLE,
     ACTION_EMPTY,
     FAIL_WITHOUT_ACTUAL_VALUE,
     MODULE_CODE_FORMAT,
@@ -59,6 +60,9 @@ from plane.db.testcase_validity import (
     PRECONDITIONS_MISSING,
     PRIORITY_INVALID,
     PURPOSE_MISSING,
+    RETEST_OF_CYCLE,
+    RETEST_OF_PROJECT_MISMATCH,
+    RETEST_OF_SELF,
     RUN_BUILD_NUMBER_MISSING,
     RUN_COMMIT_HASH_MISSING,
     RUN_COMPLETED,
@@ -95,16 +99,19 @@ REASON_MESSAGES_ZH = {
     ACTION_EMPTY: "步骤的操作不能为空。",
     EXPECTED_EMPTY: "步骤的预期结果不能为空。",
     STEP_CONCLUSION_INVALID: "步骤结论只能是 pass、fail 或未填写。",
-    STEP_CONCLUSION_UNSET: "步骤结论必须勾选，不能留空。",
+    STEP_CONCLUSION_UNSET: "结论为 PASS 时，每一步都必须勾选结论，不能留空。",
     FAIL_WITHOUT_ACTUAL_VALUE: "勾选 ✘ 的步骤必须填写实测值（文字或附件）。",
     ACTUAL_VALUE_IS_EVALUATION: "实测值必须是观察到的原文，不能只写评价词。",
     ACTUAL_VALUE_IS_IMAGE_ONLY: "实测值只有一个内嵌图片，请把文件作为附件挂到该步骤。",
     ACTUAL_VALUE_WITHOUT_CONCLUSION: "填写了实测值却没有勾选步骤结论。",
+    EXPECTED_IS_UNJUDGEABLE: (
+        "预期结果必须可观测；正常、正确、无异常、友好、流畅、美观、符合设计、"
+        "应该、大概、一般 这类写法无法判定（STD-SW-003 §5.6）。"
+    ),
     CONCLUSION_INVALID: "结论必须是 PASS、FAIL、N/A 或需人工。",
     CONCLUSION_PASS_WITH_FAILED_STEP: "结论为 PASS 时不允许存在 ✘ 的步骤。",
     CONCLUSION_PASS_WITH_UNSET_STEP: "结论为 PASS 时不允许存在未勾选的步骤。",
     CONCLUSION_FAIL_WITHOUT_FAILED_STEP: "结论为 FAIL 时至少要有一个 ✘ 的步骤。",
-    CONCLUSION_FAIL_WITH_UNSET_STEP: "结论为 FAIL 时不允许存在未勾选的步骤。",
     CONCLUSION_NA_WITHOUT_REASON: "结论为 N/A 时必须写明理由。",
     CONCLUSION_NA_WITHOUT_CRITERIA_SOURCE: "结论为 N/A 时必须写明判据来源。",
     CONCLUSION_NA_WITH_FAILED_STEP: "结论为 N/A 时不允许存在 ✘ 的步骤。",
@@ -112,6 +119,9 @@ REASON_MESSAGES_ZH = {
     CONCLUSION_MANUAL_WITHOUT_CONDITION: "结论为需人工时必须写明执行条件。",
     CONCLUSION_MANUAL_WITH_FAILED_STEP: "结论为需人工时不允许存在 ✘ 的步骤。",
     EVIDENCE_MISSING: "缺少必填项：证据。",
+    RETEST_OF_PROJECT_MISMATCH: "补测指向的批次必须属于本项目。",
+    RETEST_OF_SELF: "一个批次不能补测它自己。",
+    RETEST_OF_CYCLE: "补测链不能形成环。",
     RUN_NUMBER_FORMAT: "批次编号必须形如 RUN-<YYYYMMDD>-<两位序号>。",
     RUN_DATE_MISSING: "缺少必填项：执行日期。",
     RUN_VERSION_NUMBER_MISSING: "缺少必填项：被测版本号。",
@@ -146,11 +156,11 @@ REASON_FIELD_PATHS = {
     ACTUAL_VALUE_IS_EVALUATION: "actual_value",
     ACTUAL_VALUE_IS_IMAGE_ONLY: "actual_value",
     ACTUAL_VALUE_WITHOUT_CONCLUSION: "conclusion",
+    EXPECTED_IS_UNJUDGEABLE: "expected_result",
     CONCLUSION_INVALID: "conclusion",
     CONCLUSION_PASS_WITH_FAILED_STEP: "conclusion",
     CONCLUSION_PASS_WITH_UNSET_STEP: "conclusion",
     CONCLUSION_FAIL_WITHOUT_FAILED_STEP: "conclusion",
-    CONCLUSION_FAIL_WITH_UNSET_STEP: "conclusion",
     CONCLUSION_NA_WITHOUT_REASON: "na_reason",
     CONCLUSION_NA_WITHOUT_CRITERIA_SOURCE: "na_criteria_source",
     CONCLUSION_NA_WITH_FAILED_STEP: "conclusion",
@@ -158,6 +168,9 @@ REASON_FIELD_PATHS = {
     CONCLUSION_MANUAL_WITHOUT_CONDITION: "manual_condition",
     CONCLUSION_MANUAL_WITH_FAILED_STEP: "conclusion",
     EVIDENCE_MISSING: "evidence",
+    RETEST_OF_PROJECT_MISMATCH: "retest_of",
+    RETEST_OF_SELF: "retest_of",
+    RETEST_OF_CYCLE: "retest_of",
     RUN_NUMBER_FORMAT: "number",
     RUN_DATE_MISSING: "run_date",
     RUN_VERSION_NUMBER_MISSING: "version_number",
@@ -182,7 +195,6 @@ EXECUTION_ONLY_REASONS = frozenset(
         CONCLUSION_PASS_WITH_FAILED_STEP,
         CONCLUSION_PASS_WITH_UNSET_STEP,
         CONCLUSION_FAIL_WITHOUT_FAILED_STEP,
-        CONCLUSION_FAIL_WITH_UNSET_STEP,
         CONCLUSION_NA_WITHOUT_REASON,
         CONCLUSION_NA_WITHOUT_CRITERIA_SOURCE,
         CONCLUSION_NA_WITH_FAILED_STEP,

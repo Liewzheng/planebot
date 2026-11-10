@@ -11,6 +11,7 @@ from plane.app.views.test_run import (
     TestRunFinalizeEndpoint,
     TestRunStepAttachmentEndpoint,
     TestRunStepRecordEndpoint,
+    TestRunSummaryEndpoint,
     TestRunViewSet,
 )
 
@@ -71,5 +72,10 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/test-runs/<uuid:test_run_id>/finalize/",
         TestRunFinalizeEndpoint.as_view(),
         name="test-run-finalize",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/test-runs/<uuid:test_run_id>/summary/",
+        TestRunSummaryEndpoint.as_view(),
+        name="test-run-summary",
     ),
 ]

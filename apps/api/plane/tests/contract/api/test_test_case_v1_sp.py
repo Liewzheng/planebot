@@ -48,6 +48,9 @@ keys on.
 from unittest import mock
 from uuid import uuid4
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+
 import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -1056,6 +1059,10 @@ class TestTheWireFormatIsPinned:
                 "priority",
                 "preconditions",
                 "environment",
+                # STD-SW-003 §4.1 fields 10 and 11: the two recommended
+                # header items the case serializer carries (M82).
+                "related_feature",
+                "remarks",
                 "status",
                 "steps",
                 "issue_links",
@@ -1088,6 +1095,10 @@ class TestTheWireFormatIsPinned:
                 "executed_by",
                 "executed_by_name",
                 "status",
+                # STD-SW-003 §6.2 rule 2: the re-test link and the number of
+                # the batch it points at (M82).
+                "retest_of",
+                "retest_of_number",
                 "cases",
                 "created_at",
                 "updated_at",
@@ -1162,3 +1173,80 @@ class TestTheWireFormatIsPinned:
         assert sorted(response.json().keys()) == sorted(
             ["id", "asset_id", "name", "size", "url"]
         )
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestReTestReadCost:
+    """The v1 read endpoints hand out the app serializer (one contract, not
+    two), so the re-test link it carries has to be **joined** on this
+    surface too. Otherwise every linked row costs one extra query, and a
+    list grows with the number of re-tests rather than with a constant.
+
+    Each measurement is preceded by a warm-up request, so the two counts
+    compared below are both warm reads of the same process — the
+    comparison is about the link, not about caches filling up.
+    """
+
+    def _cost(self, client, url):
+        """The query count of ``url``, measured on a warm read."""
+        warmup = client.get(url)
+        assert warmup.status_code == status.HTTP_200_OK, warmup.content
+        with CaptureQueriesContext(connection) as captured:
+            response = client.get(url)
+        assert response.status_code == status.HTTP_200_OK, response.content
+        return len(captured.captured_queries), response.json()
+
+    def test_the_list_cost_does_not_grow_with_the_number_of_links(
+        self, workspace, create_user, project, granted_sp, sp_client
+    ):
+        bot = granted_sp.ensure_bot_user()
+        original = _build_run(sp_client, workspace, project, bot)
+        linked = [_build_run(sp_client, workspace, project, bot) for _ in range(2)]
+
+        without_links, body = self._cost(
+            sp_client, runs_url(workspace.slug, project.id)
+        )
+        assert len(body["results"]) == 3
+        assert all(row["retest_of_number"] is None for row in body["results"])
+
+        # The same three rows; two of them now name the original.
+        for run in linked:
+            response = sp_client.patch(
+                f"{runs_url(workspace.slug, project.id)}{run['id']}/",
+                {"retest_of": str(original["id"])},
+                format="json",
+            )
+            assert response.status_code == status.HTTP_200_OK, response.content
+
+        with_links, body = self._cost(
+            sp_client, runs_url(workspace.slug, project.id)
+        )
+        numbers = [row["retest_of_number"] for row in body["results"]]
+        assert numbers.count(original["number"]) == 2, numbers
+
+        # Two extra links, and not a single extra query.
+        assert with_links == without_links
+
+    def test_the_detail_cost_does_not_grow_when_the_row_gets_a_link(
+        self, workspace, create_user, project, granted_sp, sp_client
+    ):
+        bot = granted_sp.ensure_bot_user()
+        original = _build_run(sp_client, workspace, project, bot)
+        retest = _build_run(sp_client, workspace, project, bot)
+
+        url = f"{runs_url(workspace.slug, project.id)}{retest['id']}/"
+        unlinked, body = self._cost(sp_client, url)
+        assert body["retest_of_number"] is None
+
+        response = sp_client.patch(
+            url, {"retest_of": str(original["id"])}, format="json"
+        )
+        assert response.status_code == status.HTTP_200_OK, response.content
+
+        linked, body = self._cost(sp_client, url)
+        assert body["retest_of_number"] == original["number"]
+
+        # The link is a join: the detail read costs the same before and
+        # after the row names an original.
+        assert linked == unlinked

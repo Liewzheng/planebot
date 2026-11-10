@@ -191,6 +191,11 @@ class TestCaseSerializer(BaseSerializer):
             "priority",
             "preconditions",
             "environment",
+            # STD-SW-003 §4.1 fields 10 and 11 (推荐): the related feature
+            # and the remarks of the case. They sit next to the work-item
+            # links below, which are rows of their own.
+            "related_feature",
+            "remarks",
             "status",
             "steps",
             "issue_links",
@@ -223,6 +228,10 @@ class TestCaseWriteSerializer(BaseSerializer):
             "priority",
             "preconditions",
             "environment",
+            # The two recommended fields of §4.1 are written like the rest
+            # of the header: the client sends them, the server stores them.
+            "related_feature",
+            "remarks",
             "status",
             "steps",
         ]
