@@ -581,7 +581,9 @@
             "comment": "Коментар",
             "state": "Стан",
             "page": "Сторінка",
-            "invite": "Запрошення"
+            "invite": "Запрошення",
+            "test_case": "Test case",
+            "test_run": "Test run"
           },
           "actions": {
             "all": "Усі",

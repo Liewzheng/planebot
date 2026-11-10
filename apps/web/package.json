@@ -12,6 +12,8 @@
     "clean": "rm -rf .turbo && rm -rf .next && rm -rf .react-router && rm -rf node_modules && rm -rf dist && rm -rf build",
     "check:lint": "oxlint --max-warnings=11957 .",
     "check:types": "react-router typegen && tsc --noEmit",
+    "check:sp-caps": "node scripts/check-sp-caps.mjs",
+    "verify:sp-scopes": "node scripts/verify-sp-scope-derivation.mjs",
     "check:format": "oxfmt --check .",
     "fix:lint": "oxlint --fix .",
     "fix:format": "oxfmt ."

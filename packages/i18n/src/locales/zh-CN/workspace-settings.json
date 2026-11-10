@@ -587,7 +587,9 @@
             "comment": "评论",
             "state": "状态",
             "page": "页面",
-            "invite": "邀请"
+            "invite": "邀请",
+            "test_case": "测试用例",
+            "test_run": "测试批次"
           },
           "actions": {
             "all": "全部",

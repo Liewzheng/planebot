@@ -581,7 +581,9 @@
             "comment": "Komentář",
             "state": "Stav",
             "page": "Stránka",
-            "invite": "Pozvánka"
+            "invite": "Pozvánka",
+            "test_case": "Test case",
+            "test_run": "Test run"
           },
           "actions": {
             "all": "Vše",

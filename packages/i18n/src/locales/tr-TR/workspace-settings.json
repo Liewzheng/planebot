@@ -581,7 +581,9 @@
             "comment": "Yorum",
             "state": "Durum",
             "page": "Sayfa",
-            "invite": "Davet"
+            "invite": "Davet",
+            "test_case": "Test case",
+            "test_run": "Test run"
           },
           "actions": {
             "all": "Tümü",

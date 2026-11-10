@@ -37,6 +37,8 @@ export const SERVICE_PRINCIPAL_SCOPE_RESOURCE_TYPES: TServiceScopeResourceType[]
   "state",
   "page",
   "invite",
+  "test_case",
+  "test_run",
 ];
 
 export const SERVICE_PRINCIPAL_SCOPE_ACTIONS: TServiceScopeAction[] = ["all", "read", "create", "update", "delete"];

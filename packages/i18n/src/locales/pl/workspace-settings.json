@@ -581,7 +581,9 @@
             "comment": "Komentarz",
             "state": "Stan",
             "page": "Strona",
-            "invite": "Zaproszenie"
+            "invite": "Zaproszenie",
+            "test_case": "Test case",
+            "test_run": "Test run"
           },
           "actions": {
             "all": "Wszystko",

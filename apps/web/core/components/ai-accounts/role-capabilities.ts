@@ -110,6 +110,20 @@ export const ACTION_REQUIRED_ROLE: Record<string, number> = {
   "create:page": ROLE_MEMBER,
   "update:page": ROLE_MEMBER,
   "delete:page": ROLE_MEMBER,
+  // Test-case feature resources (M63). Same shape as every other project
+  // resource: reading is open to every project member, writing needs MEMBER,
+  // removing needs ADMIN. Both tables carry `created_by`, so the M40 ownership
+  // step narrows a member-tier principal to the cases / batches it created.
+  "read:test_case": ROLE_GUEST,
+  "list:test_case": ROLE_GUEST,
+  "create:test_case": ROLE_MEMBER,
+  "update:test_case": ROLE_MEMBER,
+  "delete:test_case": ROLE_ADMIN,
+  "read:test_run": ROLE_GUEST,
+  "list:test_run": ROLE_GUEST,
+  "create:test_run": ROLE_MEMBER,
+  "update:test_run": ROLE_MEMBER,
+  "delete:test_run": ROLE_ADMIN,
 };
 
 /**
@@ -126,6 +140,9 @@ export const WORKSPACE_LEVEL_RESOURCES: TServiceScopeResourceType[] = ["project"
  * The project-scoped counterparts. ``label`` and ``estimate`` are listed here
  * (their v1 surfaces live under ``…/projects/<project_id>/…``), even though a
  * write with no resolved project is refused as a workspace-level write.
+ * ``test_case`` / ``test_run`` are project-scoped on the API side too
+ * (``resources.py`` deliberately leaves them out of ``WORKSPACE_LEVEL_RESOURCES``),
+ * so a write on them is anchored on the same project grant as the rest.
  */
 export const PROJECT_SCOPED_RESOURCES: TServiceScopeResourceType[] = [
   "work_item",
@@ -139,6 +156,8 @@ export const PROJECT_SCOPED_RESOURCES: TServiceScopeResourceType[] = [
   "intake",
   "label",
   "estimate",
+  "test_case",
+  "test_run",
 ];
 
 /**

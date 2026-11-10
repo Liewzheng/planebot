@@ -581,7 +581,9 @@
             "comment": "コメント",
             "state": "状態",
             "page": "ページ",
-            "invite": "招待"
+            "invite": "招待",
+            "test_case": "Test case",
+            "test_run": "Test run"
           },
           "actions": {
             "all": "すべて",
