@@ -118,6 +118,79 @@ def run_conflict_response(message: str, code: str = "run_completed") -> Response
     )
 
 
+#: The foreign keys of ``FileAsset`` that name the entity a file hangs
+#: on. A file that already carries one of them may not get a second
+#: owner: the row would then belong to two entities at once, and the
+#: unbind of one of them would take the file away from the other.
+_ASSET_ENTITY_FIELDS = (
+    "issue_id",
+    "page_id",
+    "comment_id",
+    "draft_issue_id",
+    "user_id",
+    "test_run_case_id",
+    "test_run_step_record_id",
+)
+
+
+def bindable_asset(request, slug, record):
+    """The asset the request wants to bind to ``record``, or the error.
+
+    The asset has to belong to the **project of the record**: a file of
+    another project may not be moved into this one — the bind would
+    silently re-home it, and the unbind would then soft-delete a row of a
+    project the caller has no rights in. A file that already hangs on
+    another entity may not get a second owner either.
+
+    Returns the asset, or a :class:`Response` carrying the reason.
+    """
+    asset_id = request.data.get("asset_id")
+    if not asset_id or not _is_uuid(asset_id):
+        return Response(
+            {
+                "error": "asset_id is required.",
+                "code": "asset_not_found",
+                "errors": [error_entry("asset_not_found", "asset_id")],
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    asset = FileAsset.objects.filter(
+        id=asset_id, workspace__slug=slug, is_deleted=False
+    ).first()
+    if asset is None:
+        return Response(
+            {
+                "error": "The asset does not exist.",
+                "code": "asset_not_found",
+                "errors": [error_entry("asset_not_found", "asset_id")],
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if asset.project_id and asset.project_id != record.project_id:
+        return Response(
+            {
+                "error": "The asset belongs to another project.",
+                "code": "asset_project_mismatch",
+                "errors": [error_entry("asset_project_mismatch", "asset_id")],
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if any(getattr(asset, field) for field in _ASSET_ENTITY_FIELDS):
+        return Response(
+            {
+                "error": "The asset is already bound to a record.",
+                "code": "asset_already_bound",
+                "errors": [error_entry("asset_already_bound", "asset_id")],
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return asset
+
+
 class TestRunViewSet(BaseViewSet):
     """The batches of a project."""
 
@@ -130,7 +203,11 @@ class TestRunViewSet(BaseViewSet):
                 project_id=self.kwargs.get("project_id"),
                 workspace__slug=self.kwargs.get("slug"),
             )
-            .select_related("executed_by", "created_by")
+            .select_related(
+                "executed_by",
+                "created_by",
+                "created_by__avatar_asset__workspace",
+            )
             .prefetch_related(
                 Prefetch(
                     "run_cases",
@@ -288,6 +365,11 @@ class TestRunViewSet(BaseViewSet):
         run = self.get_queryset().filter(pk=pk).first()
         if run is None:
             return Response({"error": "Test run not found"}, status=status.HTTP_404_NOT_FOUND)
+        # A completed batch is frozen: its verdict is the history of the
+        # execution and may not disappear afterwards. Every other write on
+        # a completed batch answers 409 as well.
+        if run.status == RUN_STATUS_COMPLETED:
+            return run_conflict_response("A completed batch is frozen.")
         run.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -689,12 +771,11 @@ class TestRunAttachmentEndpoint(BaseAPIView):
         if run_case.test_run.status == RUN_STATUS_COMPLETED:
             return run_conflict_response("A completed batch is frozen.")
 
-        asset = self._bindable_asset(request, slug)
+        asset = bindable_asset(request, slug, run_case)
         if isinstance(asset, Response):
             return asset
 
         asset.test_run_case = run_case
-        asset.test_run_step_record = None
         asset.entity_type = FileAsset.EntityTypeContext.TEST_RUN_CASE_EVIDENCE
         asset.project_id = run_case.project_id
         asset.workspace_id = run_case.workspace_id
@@ -729,51 +810,14 @@ class TestRunAttachmentEndpoint(BaseAPIView):
 
         # Unbinding is a row operation: the file row is flagged deleted
         # and the record no longer holds it. The Markdown source of the
-        # evidence does not have to be edited along with it.
+        # evidence does not have to be edited along with it. Only the
+        # foreign key the record owns is cleared.
         asset.test_run_case = None
         asset.is_deleted = True
         asset.deleted_at = timezone.now()
         asset.save()
 
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-    def _bindable_asset(self, request, slug):
-        """The asset the request wants to bind, or the error response."""
-        asset_id = request.data.get("asset_id")
-        if not asset_id or not _is_uuid(asset_id):
-            return Response(
-                {
-                    "error": "asset_id is required.",
-                    "code": "asset_not_found",
-                    "errors": [error_entry("asset_not_found", "asset_id")],
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        asset = FileAsset.objects.filter(
-            id=asset_id, workspace__slug=slug, is_deleted=False
-        ).first()
-        if asset is None:
-            return Response(
-                {
-                    "error": "The asset does not exist.",
-                    "code": "asset_not_found",
-                    "errors": [error_entry("asset_not_found", "asset_id")],
-                },
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        if asset.test_run_case_id or asset.test_run_step_record_id:
-            return Response(
-                {
-                    "error": "The asset is already bound to a record.",
-                    "code": "asset_already_bound",
-                    "errors": [error_entry("asset_already_bound", "asset_id")],
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        return asset
 
 
 class TestRunStepAttachmentEndpoint(BaseAPIView):
@@ -821,42 +865,11 @@ class TestRunStepAttachmentEndpoint(BaseAPIView):
         if record.test_run_case.test_run.status == RUN_STATUS_COMPLETED:
             return run_conflict_response("A completed batch is frozen.")
 
-        asset_id = request.data.get("asset_id")
-        if not asset_id or not _is_uuid(asset_id):
-            return Response(
-                {
-                    "error": "asset_id is required.",
-                    "code": "asset_not_found",
-                    "errors": [error_entry("asset_not_found", "asset_id")],
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        asset = FileAsset.objects.filter(
-            id=asset_id, workspace__slug=slug, is_deleted=False
-        ).first()
-        if asset is None:
-            return Response(
-                {
-                    "error": "The asset does not exist.",
-                    "code": "asset_not_found",
-                    "errors": [error_entry("asset_not_found", "asset_id")],
-                },
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        if asset.test_run_case_id or asset.test_run_step_record_id:
-            return Response(
-                {
-                    "error": "The asset is already bound to a record.",
-                    "code": "asset_already_bound",
-                    "errors": [error_entry("asset_already_bound", "asset_id")],
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        asset = bindable_asset(request, slug, record)
+        if isinstance(asset, Response):
+            return asset
 
         asset.test_run_step_record = record
-        asset.test_run_case = None
         asset.entity_type = FileAsset.EntityTypeContext.TEST_RUN_STEP_RECORD
         asset.project_id = record.project_id
         asset.workspace_id = record.workspace_id

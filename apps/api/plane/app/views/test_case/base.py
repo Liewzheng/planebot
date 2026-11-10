@@ -75,6 +75,7 @@ APP_REASON_MESSAGES_ZH = {
     "test_case_ids_missing": "请至少选择一个用例。",
     "asset_not_found": "附件不存在。",
     "asset_already_bound": "该附件已经绑定到其它记录。",
+    "asset_project_mismatch": "该附件属于其它项目，不能绑定到本项目的记录上。",
     "run_version_fixed": "一个批次只对应一个被测版本，补测请新建批次。",
     "run_date_fixed": "批次的执行日期在创建后不能修改。",
 }
@@ -270,7 +271,7 @@ class TestCaseViewSet(BaseViewSet):
                 project_id=self.kwargs.get("project_id"),
                 workspace__slug=self.kwargs.get("slug"),
             )
-            .select_related("module", "created_by")
+            .select_related("module", "created_by", "created_by__avatar_asset__workspace")
             .prefetch_related(
                 "steps",
                 Prefetch(
@@ -543,9 +544,19 @@ class TestCaseStepEndpoint(BaseAPIView):
             )
 
         replace_steps(case, steps, case.project, actor_id_for_request(request))
+        case.refresh_from_db(fields=["updated_at"])
 
+        # The step table belongs to the case, so the replacement moves the
+        # ``updated_at`` of the case. The new value travels with the
+        # answer: the client keeps it for the next write, otherwise it
+        # would lock itself out with a stale version.
         return Response(
-            TestCaseStepSerializer(case.steps.all().order_by("sequence_id"), many=True).data,
+            {
+                "updated_at": case.updated_at,
+                "steps": TestCaseStepSerializer(
+                    case.steps.all().order_by("sequence_id"), many=True
+                ).data,
+            },
             status=status.HTTP_200_OK,
         )
 
@@ -696,6 +707,12 @@ def replace_steps(case, steps, project, actor_id=None):
     ``(test_case, sequence_id)`` does not ignore the soft-deleted rows,
     so a soft delete would keep the numbers reserved and the replacement
     could not be written at all.
+
+    The row of the case is touched as well (``updated_at`` only): the
+    step table belongs to the case, so a client that holds an older
+    ``updated_at`` has to learn that somebody else replaced the table —
+    otherwise the optimistic lock of the case header would not see the
+    replacement and the stale write would win.
     """
     TestCaseStep.all_objects.filter(test_case=case).delete()
     for index, step in enumerate(steps, start=1):
@@ -708,3 +725,5 @@ def replace_steps(case, steps, project, actor_id=None):
             expected_result=step.get("expected_result", ""),
             created_by_id=actor_id,
         )
+    # ``updated_at`` is ``auto_now``: the write moves it to now.
+    case.save(update_fields=["updated_at", "updated_by"])

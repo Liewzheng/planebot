@@ -24,15 +24,20 @@ behaviour the standard (STD-SW-003) demands:
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 from rest_framework import status
 
 from plane.db.models import (
     APIToken,
     FileAsset,
+    Issue,
     Project,
     ProjectMember,
+    State,
     TestCaseModule,
+    TestRun,
     TestRunCase,
     TestRunStepRecord,
 )
@@ -69,6 +74,20 @@ def module(db, project):
         workspace=project.workspace,
         code="CLI",
         description="The command line interface of pbot",
+    )
+
+
+@pytest.fixture
+def issue(db, project, workspace, create_user):
+    state = State.objects.create(
+        name="Todo", project=project, workspace=workspace, group="backlog", default=True
+    )
+    return Issue.objects.create(
+        name="The login of pbot does not work",
+        project=project,
+        workspace=workspace,
+        state=state,
+        created_by=create_user,
     )
 
 
@@ -856,6 +875,91 @@ class TestAttachments:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "asset_already_bound" in error_codes(response)
 
+    def test_a_file_of_another_project_is_refused(
+        self, session_client, workspace, project, module, create_user, db
+    ):
+        """A file of another project may not be moved into this one."""
+        case = create_case(session_client, workspace, project, module)
+        run = create_run(session_client, workspace, project, create_user)
+        run_case = add_case(session_client, workspace, project, run["id"], case["id"])
+
+        other_project = Project.objects.create(
+            name="Other Project",
+            identifier="OTH",
+            workspace=workspace,
+            created_by=create_user,
+            network=2,
+        )
+        foreign = make_asset(other_project, name="foreign.png")
+
+        response = session_client.post(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/{run_case['id']}/attachments/",
+            {"asset_id": str(foreign.id)},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "asset_project_mismatch" in error_codes(response)
+
+        # The file stayed where it was.
+        foreign.refresh_from_db()
+        assert foreign.project_id == other_project.id
+        assert foreign.test_run_case_id is None
+
+    def test_a_file_that_belongs_to_another_entity_is_refused(
+        self, session_client, workspace, project, module, create_user, issue
+    ):
+        """A file may not end up with two owners."""
+        case = create_case(session_client, workspace, project, module)
+        run = create_run(session_client, workspace, project, create_user)
+        run_case = add_case(session_client, workspace, project, run["id"], case["id"])
+
+        attached = make_asset(project, name="issue-shot.png")
+        attached.issue_id = issue.id
+        attached.save()
+
+        response = session_client.post(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/{run_case['id']}/attachments/",
+            {"asset_id": str(attached.id)},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "asset_already_bound" in error_codes(response)
+
+        # The file still belongs to the work item alone.
+        attached.refresh_from_db()
+        assert attached.issue_id == issue.id
+        assert attached.test_run_case_id is None
+
+    def test_an_unknown_file_is_a_404(
+        self, session_client, workspace, project, module, create_user
+    ):
+        case = create_case(session_client, workspace, project, module)
+        run = create_run(session_client, workspace, project, create_user)
+        run_case = add_case(session_client, workspace, project, run["id"], case["id"])
+
+        response = session_client.post(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/{run_case['id']}/attachments/",
+            {"asset_id": str(uuid4())},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "asset_not_found" in error_codes(response)
+
+    def test_a_malformed_asset_id_is_a_400(
+        self, session_client, workspace, project, module, create_user
+    ):
+        case = create_case(session_client, workspace, project, module)
+        run = create_run(session_client, workspace, project, create_user)
+        run_case = add_case(session_client, workspace, project, run["id"], case["id"])
+
+        response = session_client.post(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/{run_case['id']}/attachments/",
+            {"asset_id": "not-a-uuid"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "asset_not_found" in error_codes(response)
+
     def test_an_attachment_of_a_completed_batch_is_refused(
         self, session_client, workspace, project, module, create_user
     ):
@@ -902,6 +1006,24 @@ class TestAddCases:
         )
         assert response.status_code == status.HTTP_409_CONFLICT
         assert "duplicate_case_number" in error_codes(response)
+
+    def test_a_completed_batch_may_not_be_deleted(
+        self, session_client, workspace, project, module, create_user
+    ):
+        """A finished batch is the history of the execution — it stays."""
+        run, _ = make_valid_batch(session_client, workspace, project, module, create_user)
+        assert finalize(session_client, workspace, project, run["id"]).status_code == (
+            status.HTTP_200_OK
+        )
+
+        response = session_client.delete(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/"
+        )
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "run_completed" in error_codes(response)
+
+        # The batch is still there.
+        assert TestRun.objects.filter(pk=run["id"]).exists()
 
     def test_a_case_of_another_project_is_refused(
         self, session_client, workspace, project, module, create_user, db

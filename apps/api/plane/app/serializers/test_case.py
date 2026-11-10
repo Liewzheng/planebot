@@ -27,6 +27,7 @@ from plane.db.models import (
 )
 
 from .base import BaseSerializer
+from .user import UserLiteSerializer
 
 
 def actor_id(serializer):
@@ -163,6 +164,11 @@ class TestCaseSerializer(BaseSerializer):
     """A case as it is read."""
 
     module_code = serializers.CharField(source="module.code", read_only=True)
+    # The creator travels as the user itself: the front end renders the
+    # actor (a human or the shadow bot of a service principal) without
+    # a second request. The field is read-only, so the shape of the
+    # answer never reaches a write.
+    created_by = UserLiteSerializer(read_only=True)
     steps = TestCaseStepSerializer(many=True, read_only=True)
     issue_links = TestCaseIssueSerializer(many=True, read_only=True)
 

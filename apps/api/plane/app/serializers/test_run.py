@@ -25,6 +25,7 @@ from plane.db.testcase_validity import RUN_STATUS_COMPLETED
 
 from .base import BaseSerializer
 from .test_case import FileAssetAttachmentSerializer, actor_id, live_assets
+from .user import UserLiteSerializer
 
 
 class TestRunStepRecordSerializer(BaseSerializer):
@@ -93,6 +94,11 @@ class TestRunSerializer(BaseSerializer):
     """A batch: one continuous execution."""
 
     cases = TestRunCaseSerializer(many=True, read_only=True)
+    # The creator travels as the user itself (see the case serializer).
+    # ``executed_by`` stays the id of the user: it is a field that is
+    # written as well, and ``executed_by_name`` is the text snapshot the
+    # server keeps next to it.
+    created_by = UserLiteSerializer(read_only=True)
 
     class Meta:
         model = TestRun

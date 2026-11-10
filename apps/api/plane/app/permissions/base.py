@@ -90,6 +90,11 @@ def _method_to_action(method: str) -> str:
     return AuthzAction.READ
 
 
+#: The actions that change something. A verb that writes may only be
+#: judged as one of them.
+_WRITE_ACTIONS = frozenset({AuthzAction.CREATE, AuthzAction.UPDATE, AuthzAction.DELETE})
+
+
 def _authorize_sp(
     principal: ServicePrincipalAuthz,
     *,
@@ -110,6 +115,14 @@ def _authorize_sp(
     declares one explicitly (``action``); project_id is taken from the URL
     kwargs when the endpoint is project-scoped (``level`` or an explicit
     project id in kwargs).
+
+    A declared action may only make the request a **write** of the same
+    kind as the verb says. A write verb that is judged as a read would
+    slip past the role floor (GUEST instead of MEMBER) and past the
+    per-resource ownership step (which the engine applies to ``update``
+    and ``delete`` only); a write that acts on an existing row may not
+    be judged as a create either, because a create skips the ownership
+    step. Such a declaration is refused instead of honoured.
 
     ``resource`` is the row the action acts on. The engine's
     per-resource ownership step (M40) compares the row's creator with the
@@ -141,7 +154,23 @@ def _authorize_sp(
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    effective_action = action or _method_to_action(method)
+    verb_action = _method_to_action(method)
+    effective_action = action or verb_action
+
+    if method not in SAFE_METHODS:
+        if effective_action not in _WRITE_ACTIONS:
+            # A write that is judged as a read would slip past the role
+            # floor (GUEST instead of MEMBER) and past the ownership
+            # step (which the engine applies to ``update`` and
+            # ``delete`` only).
+            return Response(_DENY_BODY, status=status.HTTP_403_FORBIDDEN)
+        if effective_action == AuthzAction.CREATE and verb_action != AuthzAction.CREATE:
+            # A create skips the per-resource ownership step — the row it
+            # produces belongs to the creator by construction. A write
+            # that acts on an existing row may not be judged as a
+            # create, or the ownership of the row would never be checked.
+            return Response(_DENY_BODY, status=status.HTTP_403_FORBIDDEN)
+
     ctx = AuthzContext(workspace_slug=slug, project_id=project_id)
     try:
         decision = authorize(
@@ -195,7 +224,12 @@ def allow_permission(
             default derives it from the HTTP verb. An endpoint whose verb
             does not describe the write it performs (a ``POST`` that
             replaces the step table of a case, say) declares the action
-            it really is.
+            it really is. The declaration may not turn the write into
+            something weaker: a write verb judged as a read would slip
+            past the role floor and past the ownership step, and a write
+            that acts on an existing row may not be judged as a create
+            (a create skips the ownership step). Such a declaration is
+            refused.
         resource_model: Optional model of the row the action acts on. The
             row is loaded from the URL kwarg named by ``resource_lookup``
             and handed to :func:`authorize`, so the engine's per-resource

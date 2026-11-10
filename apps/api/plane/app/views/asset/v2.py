@@ -500,6 +500,23 @@ class WorkspaceFileAssetEndpoint(BaseAPIView):
             attributes["mermaid_source_hash"] = request.data.get("mermaid_source_hash")
 
         # Create a File Asset — resolve the SP proxy to its bot user.
+        # One kwargs dict: ``get_entity_id_field`` already answers with a
+        # ``project_id`` for the entity types that belong to a project
+        # (the cover of a project, a mermaid diagram), and handing that
+        # key in a second time raises "got multiple values for keyword
+        # argument 'project_id'". The project of a file of a test run is
+        # the project of the record it hangs on.
+        entity_fields = self.get_entity_id_field(
+            entity_type=entity_type, entity_id=entity_identifier
+        )
+        entity_project_id = entity_fields.pop("project_id", None)
+        project_id = (
+            self.get_entity_project_id(
+                entity_type=entity_type, entity_identifier=entity_identifier
+            )
+            or entity_project_id
+        )
+
         asset = FileAsset.objects.create(
             attributes=attributes,
             asset=asset_key,
@@ -507,10 +524,8 @@ class WorkspaceFileAssetEndpoint(BaseAPIView):
             workspace=workspace,
             created_by=actor_for_request(request),
             entity_type=entity_type,
-            project_id=self.get_entity_project_id(
-                entity_type=entity_type, entity_identifier=entity_identifier
-            ),
-            **self.get_entity_id_field(entity_type=entity_type, entity_id=entity_identifier),
+            project_id=project_id,
+            **entity_fields,
         )
 
         # Get the presigned URL

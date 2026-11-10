@@ -384,8 +384,11 @@ class TestStepsAndLinks:
             format="json",
         )
         assert response.status_code == status.HTTP_200_OK
-        assert len(response.json()) == 1
-        assert response.json()[0]["sequence_id"] == 1
+        # The answer carries the new version of the case: the step table
+        # belongs to the case, so replacing it moved its ``updated_at``.
+        assert len(response.json()["steps"]) == 1
+        assert response.json()["steps"][0]["sequence_id"] == 1
+        assert response.json()["updated_at"]
 
     def test_an_empty_step_table_is_rejected(
         self, session_client, workspace, project, module
@@ -538,6 +541,38 @@ class TestReadSide:
         assert response.json()["code"] == "conflict"
         # The current value travels with the conflict.
         assert response.json()["current"]["title"] == "A newer title"
+
+    def test_a_replaced_step_table_moves_the_version_of_the_case(
+        self, session_client, workspace, project, module
+    ):
+        """The step table belongs to the case, so replacing it moves its
+        ``updated_at`` — a client that holds the old value has to learn
+        that somebody else touched the case."""
+        body = create_case(session_client, workspace, project, module)
+        stale = body["updated_at"]
+
+        response = session_client.put(
+            f"{cases_url(workspace.slug, project.id)}{body['id']}/steps/",
+            {"steps": [{"action": "Another step", "expected_result": "It works"}]},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+        # The new version travels with the answer.
+        assert response.json()["updated_at"] != stale
+
+        # The stale client is told.
+        response = session_client.patch(
+            f"{cases_url(workspace.slug, project.id)}{body['id']}/",
+            {"title": "A title written with a stale version", "updated_at": stale},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["code"] == "conflict"
+        assert "current" in response.json()
+
+        # The row is untouched.
+        stored = TestCase.objects.get(pk=body["id"])
+        assert stored.title == "Log in with a valid account"
 
     def test_a_fresh_update_is_written(
         self, session_client, workspace, project, module
