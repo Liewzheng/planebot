@@ -54,7 +54,11 @@ from plane.api.serializers.test_run import (
     TestRunStepRecordWriteSerializer,
     TestRunWriteSerializer,
 )
-from plane.api.views.test_case import ProjectScopedAuthzMixin, project_admin
+from plane.api.views.test_case import (
+    ProjectScopedAuthzMixin,
+    UpdateOnExistingRowMixin,
+    project_admin,
+)
 from plane.app.testcase_validity import build_run_data, describe_reasons
 from plane.app.views.test_case.base import (
     error_entry,
@@ -291,7 +295,7 @@ class TestRunDetailEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class TestRunCaseEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
+class TestRunCaseEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, BaseAPIView):
     """The case records of a batch.
 
     ``POST`` adds cases to the batch. Every added case is **snapshotted**
@@ -306,17 +310,6 @@ class TestRunCaseEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
     # The write acts on the batch the case records belong to.
     authz_resource_model = TestRun
     authz_resource_lookup = "test_run_id"
-
-    def get_authz_action(self, request, action):
-        # A POST that adds a case acts on a batch that already exists: it
-        # is an update of that batch, not a create. The engine derives
-        # the action from the HTTP method, and ``create`` would skip the
-        # per-resource ownership step.
-        if request.method == "POST":
-            from plane.core.authz import Action as AuthzAction
-
-            return AuthzAction.UPDATE
-        return action
 
     def _run(self, slug, project_id, test_run_id):
         return TestRun.objects.filter(
@@ -551,7 +544,7 @@ class TestRunStepRecordEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
         return Response(TestRunStepRecordSerializer(record).data, status=status.HTTP_200_OK)
 
 
-class TestRunFinalizeEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
+class TestRunFinalizeEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, BaseAPIView):
     """Close a batch: the server runs the validity rules over it.
 
     Every problem is reported on its own — the field path of the
@@ -566,17 +559,6 @@ class TestRunFinalizeEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
     # The write acts on the batch that is closed.
     authz_resource_model = TestRun
     authz_resource_lookup = "test_run_id"
-
-    def get_authz_action(self, request, action):
-        # A POST that closes a batch acts on a batch that already exists:
-        # it is an update of that batch, not a create. The engine derives
-        # the action from the HTTP method, and ``create`` would skip the
-        # per-resource ownership step.
-        if request.method == "POST":
-            from plane.core.authz import Action as AuthzAction
-
-            return AuthzAction.UPDATE
-        return action
 
     def post(self, request, slug, project_id, test_run_id):
         run = (
@@ -646,7 +628,7 @@ class TestRunFinalizeEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
         return Response(TestRunSerializer(run).data, status=status.HTTP_200_OK)
 
 
-class TestRunAttachmentEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
+class TestRunAttachmentEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, BaseAPIView):
     """The files of one case record of a batch (its evidence).
 
     The upload itself goes through the v1 asset endpoint
@@ -662,17 +644,6 @@ class TestRunAttachmentEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
     # The write acts on the case record the file hangs on.
     authz_resource_model = TestRunCase
     authz_resource_lookup = "run_case_id"
-
-    def get_authz_action(self, request, action):
-        # A POST that binds a file acts on a case record that already
-        # exists: it is an update of that record, not a create. The
-        # engine derives the action from the HTTP method, and ``create``
-        # would skip the per-resource ownership step.
-        if request.method == "POST":
-            from plane.core.authz import Action as AuthzAction
-
-            return AuthzAction.UPDATE
-        return action
 
     def _run_case(self, slug, project_id, test_run_id, run_case_id):
         return TestRunCase.objects.filter(
@@ -741,7 +712,7 @@ class TestRunAttachmentEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class TestRunStepAttachmentEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
+class TestRunStepAttachmentEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, BaseAPIView):
     """The files of one step record of a batch case (its measured value)."""
 
     resource_type = "test_run"
@@ -751,17 +722,6 @@ class TestRunStepAttachmentEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
     # The write acts on the case record the step belongs to.
     authz_resource_model = TestRunCase
     authz_resource_lookup = "run_case_id"
-
-    def get_authz_action(self, request, action):
-        # A POST that binds a file acts on a step record that already
-        # exists: it is an update of that record, not a create. The
-        # engine derives the action from the HTTP method, and ``create``
-        # would skip the per-resource ownership step.
-        if request.method == "POST":
-            from plane.core.authz import Action as AuthzAction
-
-            return AuthzAction.UPDATE
-        return action
 
     def _step_record(self, slug, project_id, test_run_id, run_case_id, sequence_id):
         return TestRunStepRecord.objects.filter(

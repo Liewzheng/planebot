@@ -48,6 +48,7 @@ from plane.app.views.test_case.base import (
     stale_record_response,
     validation_error_response,
 )
+from plane.core.authz import Action as AuthzAction
 from plane.db.models import (
     Issue,
     TestCase,
@@ -120,6 +121,22 @@ class ProjectScopedAuthzMixin:
             project_id=self.kwargs.get("project_id"),
             workspace__slug=self.kwargs.get("slug"),
         ).first()
+
+
+class UpdateOnExistingRowMixin:
+    """A POST that acts on an existing row is an update, not a create.
+
+    The engine derives the action from the HTTP method, and ``create``
+    skips the per-resource ownership step — a POST that links a work item
+    to a case, that adds a case to a batch, that attaches a file to a
+    record or that closes a batch acts on a row that already exists, so
+    it has to be judged as an update.
+    """
+
+    def get_authz_action(self, request, action):
+        if request.method == "POST":
+            return AuthzAction.UPDATE
+        return action
 
 
 def replace_steps(case, steps, project, actor_id=None):
@@ -540,7 +557,7 @@ class TestCaseStepEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
         )
 
 
-class TestCaseIssueEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
+class TestCaseIssueEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, BaseAPIView):
     """The links between a case and the work items it belongs to."""
 
     resource_type = "test_case"
@@ -550,17 +567,6 @@ class TestCaseIssueEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
     # The write acts on the case the link belongs to.
     authz_resource_model = TestCase
     authz_resource_lookup = "test_case_id"
-
-    def get_authz_action(self, request, action):
-        # A POST that links a work item acts on a case that already
-        # exists: it is an update of that case, not a create. The engine
-        # derives the action from the HTTP method, and ``create`` would
-        # skip the per-resource ownership step.
-        if request.method == "POST":
-            from plane.core.authz import Action as AuthzAction
-
-            return AuthzAction.UPDATE
-        return action
 
     def _case(self, slug, project_id, test_case_id):
         return TestCase.objects.filter(
