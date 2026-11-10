@@ -14,7 +14,7 @@ import { Breadcrumbs, Header } from "@plane/ui";
 // components
 import { BreadcrumbLink } from "@/components/common/breadcrumb-link";
 import { CommonProjectBreadcrumbs } from "@/components/breadcrumbs/common";
-import { TestCaseTabs } from "@/components/test-cases";
+import { TestCaseListHeader, TestCaseTabs } from "@/components/test-cases";
 // hooks
 import { useProject } from "@/hooks/store/use-project";
 import { useUserPermissions } from "@/hooks/store/user";
@@ -60,6 +60,7 @@ export const TestCasesListHeader = function TestCasesListHeader() {
         </div>
       </Header.LeftItem>
       <Header.RightItem>
+        <TestCaseListHeader />
         {canUserCreateTestCase && (
           <Button
             variant="primary"

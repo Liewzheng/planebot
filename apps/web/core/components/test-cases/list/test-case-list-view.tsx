@@ -4,19 +4,20 @@
  * See the LICENSE file for details.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useTranslation } from "@plane/i18n";
-import { Button } from "@plane/propel/button";
-import { AddOutline } from "@makeplane/propel/icons";
-import useSWR from "swr";
-import type { ITestCase, TTestCaseFilters, ITestRunSummary } from "@plane/types";
+import { EmptyStateDetailed } from "@plane/propel/empty-state";
+import useSWR, { useSWRConfig } from "swr";
+import type { ITestCase, ITestRunSummary } from "@plane/types";
 // components
-import { TestCaseFilters } from "./test-case-filters";
-import { TestCaseCard, TestCaseTableRow, lastRunOfCase } from "./test-case-row";
+import { ListLayout } from "@/components/core/list";
+import { TestCaseAppliedFiltersList } from "./test-case-applied-filters";
+import { TestCaseRow, lastRunOfCase } from "./test-case-row";
 // constants
-import { TEST_CASE_LIST, TEST_CASE_MODULES, TEST_CASE_RUNS, hasTestCaseFilters } from "../constants";
+import { TEST_CASE_LIST, TEST_CASE_RUNS } from "../constants";
 // hooks
 import { useAppRouter } from "@/hooks/use-app-router";
+import { useTestCaseListFilters } from "./test-case-list-filters";
 // services
 import { testCaseService } from "@/services/test-cases/test-case.service";
 
@@ -32,17 +33,21 @@ type Props = {
  * The list shows the number, the title, the module, the priority, the
  * state and the result of the last execution of every case. The filters
  * are the ones the endpoint understands: the module, the priority, the
- * linked work item, the state and the search term.
+ * linked work item, the state and the search term — the controls of them
+ * sit in the header of the page and share their state with the list
+ * through `TestCaseListFiltersProvider`.
  */
 export function TestCaseListView(props: Props) {
   const { workspaceSlug, projectId, canCreate } = props;
   const { t } = useTranslation();
   const router = useAppRouter();
-  // states
-  const [filters, setFilters] = useState<TTestCaseFilters>({ status: "active" });
+  const { mutate } = useSWRConfig();
+  // store
+  const { filters, hasFilters, clearFilters } = useTestCaseListFilters();
 
-  // The filter of the work item keeps the identifier of the work item;
-  // the list shows the name of it next to the filter.
+  // The filter of the work item keeps the identifier of the work item
+  // inside the query of the endpoint — the key of the cache has to carry
+  // every value the endpoint is asked for, and nothing else.
   const filterKey = JSON.stringify([
     filters.module ?? "",
     filters.priority ?? "",
@@ -50,11 +55,6 @@ export function TestCaseListView(props: Props) {
     filters.status ?? "",
     filters.search ?? "",
   ]);
-
-  const { data: modules } = useSWR(
-    workspaceSlug && projectId ? TEST_CASE_MODULES(workspaceSlug, projectId) : null,
-    () => testCaseService.getModules(workspaceSlug, projectId)
-  );
 
   const {
     data: cases,
@@ -84,10 +84,6 @@ export function TestCaseListView(props: Props) {
   const runsArrived = runs !== undefined;
 
   const results = useMemo(() => cases?.results ?? [], [cases]);
-  // The same definition the filter bar uses: the default set of filters
-  // is not a filter, so an empty list of active cases is an empty list
-  // and not a list that matches no filter.
-  const hasFilters = hasTestCaseFilters(filters);
 
   /** The last execution of a case — and whether it is known at all. */
   const lastRunFor = (testCase: ITestCase) => {
@@ -96,116 +92,89 @@ export function TestCaseListView(props: Props) {
     return { lastRun, isUnknown };
   };
 
+  const handleDelete = useCallback(
+    async (testCase: ITestCase) => {
+      await testCaseService.deleteCase(workspaceSlug, projectId, testCase.id);
+      await mutate(TEST_CASE_LIST(workspaceSlug, projectId, filterKey));
+    },
+    [workspaceSlug, projectId, filterKey, mutate]
+  );
+
+  const renderList = () => {
+    if (isLoading) return <div className="p-4 text-13 text-tertiary">{t("project_test_case.list.loading")}</div>;
+
+    if (listError)
+      return <div className="p-4 text-13 text-danger-primary">{t("project_test_case.list.load_error")}</div>;
+
+    // A list that matches no filter says so and offers to drop them;
+    // a project without a case says that and offers to write the first
+    // one. The two states never share their copy.
+    if (results.length === 0)
+      return hasFilters ? (
+        <EmptyStateDetailed
+          assetKey="search"
+          title={t("project_test_case.list.no_result_title")}
+          description={t("project_test_case.list.no_result_description")}
+          actions={[
+            {
+              label: t("project_test_case.list.clear_filters"),
+              onClick: clearFilters,
+              variant: "secondary",
+            },
+          ]}
+        />
+      ) : (
+        <EmptyStateDetailed
+          assetKey="work-item"
+          title={t("project_test_case.list.empty_title")}
+          description={t("project_test_case.list.empty_description")}
+          actions={[
+            {
+              label: t("project_test_case.list.create_button"),
+              onClick: () => router.push(`/${workspaceSlug}/projects/${projectId}/test-cases/new`),
+              disabled: !canCreate,
+              variant: "primary",
+            },
+          ]}
+        />
+      );
+
+    return (
+      <ListLayout>
+        {results.map((testCase) => {
+          const { lastRun, isUnknown } = lastRunFor(testCase);
+          return (
+            <TestCaseRow
+              key={testCase.id}
+              workspaceSlug={workspaceSlug}
+              projectId={projectId}
+              testCase={testCase}
+              lastRun={lastRun}
+              lastResultUnknown={isUnknown}
+              canEdit={canCreate}
+              onDelete={handleDelete}
+            />
+          );
+        })}
+      </ListLayout>
+    );
+  };
+
   return (
     <div className="flex h-full w-full flex-col">
-      <TestCaseFilters
-        workspaceSlug={workspaceSlug}
-        projectId={projectId}
-        modules={modules ?? []}
-        module={filters.module ?? ""}
-        priority={filters.priority ?? ""}
-        issue={filters.issue ?? ""}
-        status={filters.status ?? "active"}
-        search={filters.search ?? ""}
-        onChange={(patch) => setFilters((current) => ({ ...current, ...patch }))}
-        onClear={() => setFilters({ status: "active" })}
-      />
+      {hasFilters && (
+        <div className="border-b border-subtle px-4 py-2">
+          <TestCaseAppliedFiltersList />
+        </div>
+      )}
 
-      <p className="px-4 pt-3 text-12 text-tertiary">{t("project_test_case.list.description")}</p>
+      {/* The caption of the list. An empty list carries its own copy —
+          the empty state — so this line would only repeat it. */}
+      {results.length > 0 && (
+        <p className="px-4 pt-3 pb-2 text-12 text-tertiary">{t("project_test_case.list.description")}</p>
+      )}
 
-      <div className="flex-1 overflow-y-auto">
-        {isLoading && <div className="p-4 text-13 text-tertiary">{t("project_test_case.list.loading")}</div>}
-
-        {listError && !isLoading && (
-          <div className="p-4 text-13 text-danger-primary">{t("project_test_case.list.load_error")}</div>
-        )}
-
-        {!isLoading && !listError && results.length === 0 && (
-          <div className="flex flex-col items-start gap-2 p-6">
-            <p className="text-14 text-primary">
-              {hasFilters ? t("project_test_case.list.no_result_title") : t("project_test_case.list.empty_title")}
-            </p>
-            <p className="text-13 text-tertiary">
-              {hasFilters
-                ? t("project_test_case.list.no_result_description")
-                : t("project_test_case.list.empty_description")}
-            </p>
-            {!hasFilters && canCreate && (
-              <Button
-                variant="primary"
-                size="lg"
-                onClick={() => router.push(`/${workspaceSlug}/projects/${projectId}/test-cases/new`)}
-                prependIcon={<AddOutline className="size-3.5" />}
-                className="mt-2"
-              >
-                {t("project_test_case.list.create_button")}
-              </Button>
-            )}
-          </div>
-        )}
-
-        {results.length > 0 && (
-          <>
-            {/* The wide screen: a table */}
-            <table className="hidden w-full table-fixed border-collapse md:table">
-              <thead>
-                <tr className="border-b border-subtle-1 text-left">
-                  <th className="w-32 px-4 py-2 text-11 font-medium text-tertiary">
-                    {t("project_test_case.list.column_number")}
-                  </th>
-                  <th className="px-4 py-2 text-11 font-medium text-tertiary">
-                    {t("project_test_case.list.column_title")}
-                  </th>
-                  <th className="w-24 px-4 py-2 text-11 font-medium text-tertiary">
-                    {t("project_test_case.list.column_module")}
-                  </th>
-                  <th className="w-24 px-4 py-2 text-11 font-medium text-tertiary">
-                    {t("project_test_case.list.column_priority")}
-                  </th>
-                  <th className="w-24 px-4 py-2 text-11 font-medium text-tertiary">
-                    {t("project_test_case.list.column_status")}
-                  </th>
-                  <th className="w-40 px-4 py-2 text-11 font-medium text-tertiary">
-                    {t("project_test_case.list.column_last_result")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((testCase) => {
-                  const { lastRun, isUnknown } = lastRunFor(testCase);
-                  return (
-                    <TestCaseTableRow
-                      key={testCase.id}
-                      workspaceSlug={workspaceSlug}
-                      projectId={projectId}
-                      testCase={testCase}
-                      lastRun={lastRun}
-                      lastResultUnknown={isUnknown}
-                    />
-                  );
-                })}
-              </tbody>
-            </table>
-
-            {/* The narrow screen: a card per case */}
-            <ul className="flex flex-col md:hidden">
-              {results.map((testCase) => {
-                const { lastRun, isUnknown } = lastRunFor(testCase);
-                return (
-                  <TestCaseCard
-                    key={testCase.id}
-                    workspaceSlug={workspaceSlug}
-                    projectId={projectId}
-                    testCase={testCase}
-                    lastRun={lastRun}
-                    lastResultUnknown={isUnknown}
-                  />
-                );
-              })}
-            </ul>
-          </>
-        )}
-      </div>
+      <div className="flex min-h-0 flex-1 flex-col">{renderList()}</div>
     </div>
   );
 }

@@ -63,3 +63,15 @@ export const hasTestCaseFilters = (filters: TTestCaseFilters): boolean =>
     filters.search ||
     (filters.status && filters.status !== TEST_CASE_DEFAULT_STATUS)
   );
+
+/**
+ * How many filters ask for something else than the default set. The count
+ * is the badge of the filter button; it uses the same definition as
+ * `hasTestCaseFilters`, so the badge is empty exactly when the filters are.
+ */
+export const countTestCaseFilters = (filters: TTestCaseFilters): number =>
+  (filters.module ? 1 : 0) +
+  (filters.priority ? 1 : 0) +
+  (filters.issue ? 1 : 0) +
+  (filters.search ? 1 : 0) +
+  (filters.status && filters.status !== TEST_CASE_DEFAULT_STATUS ? 1 : 0);
