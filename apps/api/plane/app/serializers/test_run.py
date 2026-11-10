@@ -101,6 +101,10 @@ class TestRunSerializer(BaseSerializer):
     # written as well, and ``executed_by_name`` is the text snapshot the
     # server keeps next to it.
     created_by = UserLiteSerializer(read_only=True)
+    # The number of the batch this one re-tests (STD-SW-003 §6.2 rule 2).
+    # The link itself travels as ``retest_of`` (the id); the number travels
+    # next to it, so the UI prints 「补测：RUN-…」 without a second call.
+    retest_of_number = serializers.SerializerMethodField()
 
     class Meta:
         model = TestRun
@@ -115,12 +119,19 @@ class TestRunSerializer(BaseSerializer):
             "executed_by",
             "executed_by_name",
             "status",
+            "retest_of",
+            "retest_of_number",
             "cases",
             "created_at",
             "updated_at",
             "created_by",
         ]
         read_only_fields = fields
+
+    def get_retest_of_number(self, run):
+        # ``SET_NULL``: an original that was deleted leaves the link empty,
+        # and the answer says so instead of failing.
+        return run.retest_of.number if run.retest_of_id else None
 
 
 class TestRunWriteSerializer(BaseSerializer):
@@ -135,6 +146,13 @@ class TestRunWriteSerializer(BaseSerializer):
     executed_by = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(), required=False, allow_null=True
     )
+    # The re-test link (§6.2 rule 2). The rules — same project, never
+    # itself, never a ring — live in the model (``_validate_retest_of``)
+    # and refuse the write with their own reason code; here only the row
+    # is resolved.
+    retest_of = serializers.PrimaryKeyRelatedField(
+        queryset=TestRun.objects.all(), required=False, allow_null=True
+    )
 
     class Meta:
         model = TestRun
@@ -147,6 +165,7 @@ class TestRunWriteSerializer(BaseSerializer):
             "environment",
             "executed_by",
             "status",
+            "retest_of",
         ]
         read_only_fields = ["id"]
 

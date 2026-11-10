@@ -9,6 +9,7 @@ from .base import (
     TestRunFinalizeEndpoint,
     TestRunStepAttachmentEndpoint,
     TestRunStepRecordEndpoint,
+    TestRunSummaryEndpoint,
     TestRunViewSet,
 )
 
@@ -18,6 +19,7 @@ __all__ = [
     "TestRunCaseDetailEndpoint",
     "TestRunStepRecordEndpoint",
     "TestRunFinalizeEndpoint",
+    "TestRunSummaryEndpoint",
     "TestRunAttachmentEndpoint",
     "TestRunStepAttachmentEndpoint",
 ]
