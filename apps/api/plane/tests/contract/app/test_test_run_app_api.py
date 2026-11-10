@@ -930,6 +930,58 @@ class TestAttachments:
         assert attached.issue_id == issue.id
         assert attached.test_run_case_id is None
 
+    def test_the_cover_of_a_project_is_refused(
+        self, session_client, workspace, project, module, create_user
+    ):
+        """The cover of a project belongs to the project as a whole — it
+        may not be attached to a record of a batch (and the unbind would
+        kill the cover)."""
+        case = create_case(session_client, workspace, project, module)
+        run = create_run(session_client, workspace, project, create_user)
+        run_case = add_case(session_client, workspace, project, run["id"], case["id"])
+
+        cover = make_asset(project, name="cover.png")
+        cover.entity_type = FileAsset.EntityTypeContext.PROJECT_COVER
+        cover.save()
+
+        response = session_client.post(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/{run_case['id']}/attachments/",
+            {"asset_id": str(cover.id)},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "asset_not_bindable" in error_codes(response)
+
+        # The cover is untouched.
+        cover.refresh_from_db()
+        assert cover.test_run_case_id is None
+        assert cover.is_deleted is False
+
+    def test_the_logo_of_a_workspace_is_refused(
+        self, session_client, workspace, project, module, create_user
+    ):
+        """The logo of a workspace belongs to the workspace as a whole."""
+        case = create_case(session_client, workspace, project, module)
+        run = create_run(session_client, workspace, project, create_user)
+        run_case = add_case(session_client, workspace, project, run["id"], case["id"])
+
+        logo = make_asset(project, name="logo.png")
+        logo.entity_type = FileAsset.EntityTypeContext.WORKSPACE_LOGO
+        logo.project_id = None
+        logo.save()
+
+        response = session_client.post(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/{run_case['id']}/attachments/",
+            {"asset_id": str(logo.id)},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "asset_not_bindable" in error_codes(response)
+
+        logo.refresh_from_db()
+        assert logo.test_run_case_id is None
+        assert logo.is_deleted is False
+
     def test_an_unknown_file_is_a_404(
         self, session_client, workspace, project, module, create_user
     ):

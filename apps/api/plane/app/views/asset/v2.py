@@ -769,6 +769,15 @@ class ProjectAssetEndpoint(BaseAPIView):
         asset_key = f"{workspace.id}/{uuid.uuid4().hex}-{name}"
 
         # Create a File Asset — resolve the SP proxy to its bot user.
+        # One kwargs dict: ``get_entity_id_field`` already answers with a
+        # ``project_id`` for the entity types that belong to a project
+        # (the cover of a project, a mermaid diagram), and handing that
+        # key in a second time raises "got multiple values for keyword
+        # argument 'project_id'". The project of the URL is the scope of
+        # this endpoint, so the file belongs to it.
+        entity_fields = self.get_entity_id_field(entity_type, entity_identifier)
+        entity_fields.pop("project_id", None)
+
         asset = FileAsset.objects.create(
             attributes={"name": name, "type": type, "size": size_limit},
             asset=asset_key,
@@ -777,7 +786,7 @@ class ProjectAssetEndpoint(BaseAPIView):
             created_by=actor_for_request(request),
             entity_type=entity_type,
             project_id=project_id,
-            **self.get_entity_id_field(entity_type, entity_identifier),
+            **entity_fields,
         )
 
         # Get the presigned URL

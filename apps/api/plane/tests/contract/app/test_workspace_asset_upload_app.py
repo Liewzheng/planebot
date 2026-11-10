@@ -94,6 +94,27 @@ class TestShippedUploads:
         assert asset.project_id == project.id
         assert asset.entity_type == FileAsset.EntityTypeContext.MERMAID_DIAGRAM
 
+    def test_the_project_cover_upload_of_the_project_endpoint_works(
+        self, session_client, workspace, project
+    ):
+        """The project endpoint had the same collision as the workspace
+        one: the project of the URL was handed in twice for the cover of
+        a project."""
+        response = session_client.post(
+            f"/api/assets/v2/workspaces/{workspace.slug}/projects/{project.id}/",
+            {
+                "name": "cover.png",
+                "type": "image/png",
+                "size": 2048,
+                "entity_type": FileAsset.EntityTypeContext.PROJECT_COVER,
+                "entity_identifier": str(project.id),
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK, response.content
+        asset = FileAsset.objects.get(id=response.json()["asset_id"])
+        assert asset.project_id == project.id
+
     def test_the_issue_attachment_upload_works(self, session_client, workspace, project):
         """The entity type without a project of its own."""
         from plane.db.models import Issue, State

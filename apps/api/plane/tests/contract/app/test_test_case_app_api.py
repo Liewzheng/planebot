@@ -574,6 +574,32 @@ class TestReadSide:
         stored = TestCase.objects.get(pk=body["id"])
         assert stored.title == "Log in with a valid account"
 
+    def test_the_conflict_carries_a_sentence(
+        self, session_client, workspace, project, module
+    ):
+        """Every error entry carries the Chinese sentence the front end
+        shows next to the offending field — also for the codes the app
+        layer adds on top of the vocabulary of the rules."""
+        body = create_case(session_client, workspace, project, module)
+        session_client.patch(
+            f"{cases_url(workspace.slug, project.id)}{body['id']}/",
+            {"title": "A newer title"},
+            format="json",
+        )
+
+        response = session_client.patch(
+            f"{cases_url(workspace.slug, project.id)}{body['id']}/",
+            {"title": "My title", "updated_at": body["updated_at"]},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_409_CONFLICT
+        entries = response.json()["errors"]
+        assert entries
+        for entry in entries:
+            assert entry["message"], f"the error entry {entry} has no sentence"
+        assert entries[0]["code"] == "conflict"
+        assert "重新载入" in entries[0]["message"]
+
     def test_a_fresh_update_is_written(
         self, session_client, workspace, project, module
     ):

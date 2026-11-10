@@ -132,6 +132,21 @@ _ASSET_ENTITY_FIELDS = (
     "test_run_step_record_id",
 )
 
+#: The entity types a file may carry when it is bound to a record of a
+#: batch. A file that belongs to a whole entity as such — the cover of a
+#: project, the logo of a workspace, an avatar — is not a file of a
+#: record: binding it would take it away from that entity, and the
+#: unbind would flag the row deleted. Only a file without an entity (or
+#: one that was already meant for a batch) may be attached to a record.
+_BINDABLE_ENTITY_TYPES = frozenset(
+    {
+        "",
+        None,
+        FileAsset.EntityTypeContext.TEST_RUN_STEP_RECORD,
+        FileAsset.EntityTypeContext.TEST_RUN_CASE_EVIDENCE,
+    }
+)
+
 
 def bindable_asset(request, slug, record):
     """The asset the request wants to bind to ``record``, or the error.
@@ -140,7 +155,9 @@ def bindable_asset(request, slug, record):
     another project may not be moved into this one — the bind would
     silently re-home it, and the unbind would then soft-delete a row of a
     project the caller has no rights in. A file that already hangs on
-    another entity may not get a second owner either.
+    another entity may not get a second owner either, and a file that
+    belongs to a whole entity (the cover of a project, the logo of a
+    workspace) may not be attached to a record at all.
 
     Returns the asset, or a :class:`Response` carrying the reason.
     """
@@ -174,6 +191,16 @@ def bindable_asset(request, slug, record):
                 "error": "The asset belongs to another project.",
                 "code": "asset_project_mismatch",
                 "errors": [error_entry("asset_project_mismatch", "asset_id")],
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if asset.entity_type not in _BINDABLE_ENTITY_TYPES:
+        return Response(
+            {
+                "error": "The asset belongs to another entity.",
+                "code": "asset_not_bindable",
+                "errors": [error_entry("asset_not_bindable", "asset_id")],
             },
             status=status.HTTP_400_BAD_REQUEST,
         )

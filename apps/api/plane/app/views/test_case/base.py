@@ -75,6 +75,7 @@ APP_REASON_MESSAGES_ZH = {
     "test_case_ids_missing": "请至少选择一个用例。",
     "asset_not_found": "附件不存在。",
     "asset_already_bound": "该附件已经绑定到其它记录。",
+    "asset_not_bindable": "该附件是其它用途的文件（封面、标识等），不能绑定到测试记录上。",
     "asset_project_mismatch": "该附件属于其它项目，不能绑定到本项目的记录上。",
     "run_version_fixed": "一个批次只对应一个被测版本，补测请新建批次。",
     "run_date_fixed": "批次的执行日期在创建后不能修改。",
@@ -82,10 +83,19 @@ APP_REASON_MESSAGES_ZH = {
 
 
 def error_entry(code: str, path: str = "", message: str = "") -> dict:
-    """One entry of the ``errors`` list of a 400 body."""
+    """One entry of the ``errors`` list of a 400 body.
+
+    The sentence comes from the vocabulary of the rules
+    (:data:`REASON_MESSAGES_ZH`) or, for the codes the app layer adds on
+    top of it, from :data:`APP_REASON_MESSAGES_ZH`. Both are consulted:
+    an entry without a sentence would leave the front end with nothing
+    to show next to the offending field.
+    """
     return {
         "code": code,
-        "message": message or REASON_MESSAGES_ZH.get(code, ""),
+        "message": message
+        or REASON_MESSAGES_ZH.get(code)
+        or APP_REASON_MESSAGES_ZH.get(code, ""),
         "path": path,
         "field": path,
     }
