@@ -16,6 +16,8 @@ from .page import urlpatterns as page_urls
 from .project import urlpatterns as project_urls
 from .search import urlpatterns as search_urls
 from .state import urlpatterns as state_urls
+from .test_case import urlpatterns as test_case_urls
+from .test_run import urlpatterns as test_run_urls
 from .user import urlpatterns as user_urls
 from .views import urlpatterns as view_urls
 from .webhook import urlpatterns as webhook_urls
@@ -37,6 +39,8 @@ urlpatterns = [
     *project_urls,
     *search_urls,
     *state_urls,
+    *test_case_urls,
+    *test_run_urls,
     *user_urls,
     *view_urls,
     *workspace_urls,
