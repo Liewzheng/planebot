@@ -6,32 +6,39 @@
 
 import { observer } from "mobx-react";
 // plane imports
+import { EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import { useTranslation } from "@plane/i18n";
 // components
 import { PageHead } from "@/components/core/page-title";
+import { TestRunListView } from "@/components/test-cases/runs";
 // hooks
 import { useProject } from "@/hooks/store/use-project";
+import { useUserPermissions } from "@/hooks/store/user";
 import type { Route } from "./+types/page";
 
 function ProjectTestRunsPage({ params }: Route.ComponentProps) {
-  const { projectId } = params;
+  const { workspaceSlug, projectId } = params;
   // plane hooks
   const { t } = useTranslation();
   // store hooks
   const { getProjectById } = useProject();
+  const { allowPermissions } = useUserPermissions();
   // derived values
   const project = getProjectById(projectId);
   const pageTitle = project?.name ? `${project.name} - ${t("project_test_case.batches.title")}` : undefined;
+  // A batch is opened and written by a member and above; the server keeps
+  // the same floor on every write of the surface.
+  const canWrite = allowPermissions(
+    [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
+    EUserPermissionsLevel.PROJECT,
+    workspaceSlug,
+    projectId
+  );
 
   return (
     <>
       <PageHead title={pageTitle} />
-      <div className="flex h-full w-full flex-col items-start justify-center gap-2 px-6 py-8">
-        <h1 className="text-18 font-semibold text-primary">{t("project_test_case.batches.title")}</h1>
-        <p className="text-13 text-secondary">{t("project_test_case.batches.description")}</p>
-        <p className="text-13 text-tertiary">{t("project_test_case.batches.empty_title")}</p>
-        <p className="text-13 text-tertiary">{t("project_test_case.batches.empty_description")}</p>
-      </div>
+      <TestRunListView workspaceSlug={workspaceSlug} projectId={projectId} canWrite={canWrite} />
     </>
   );
 }

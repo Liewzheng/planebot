@@ -16,6 +16,7 @@ import { AttachmentsCollapsible } from "./attachments";
 import { LinksCollapsible } from "./links";
 import { RelationsCollapsible } from "./relations";
 import { SubIssuesCollapsible } from "./sub-issues";
+import { IssueLinkedTestCases } from "./test-cases";
 
 type Props = {
   workspaceSlug: string;
@@ -87,6 +88,7 @@ export const IssueDetailWidgetCollapsibles = observer(function IssueDetailWidget
           issueServiceType={issueServiceType}
         />
       )}
+      <IssueLinkedTestCases workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} />
     </div>
   );
 });

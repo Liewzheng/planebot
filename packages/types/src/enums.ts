@@ -72,6 +72,10 @@ export enum EFileAssetType {
   INITIATIVE_DESCRIPTION = "INITIATIVE_DESCRIPTION",
   PROJECT_DESCRIPTION = "PROJECT_DESCRIPTION",
   TEAM_SPACE_COMMENT_DESCRIPTION = "TEAM_SPACE_COMMENT_DESCRIPTION",
+  /** A file attached to the measured value of one step of a batch case. */
+  TEST_RUN_STEP_RECORD = "TEST_RUN_STEP_RECORD",
+  /** A file attached to the evidence of one case inside a batch. */
+  TEST_RUN_CASE_EVIDENCE = "TEST_RUN_CASE_EVIDENCE",
 }
 
 export type TEditorAssetType =
