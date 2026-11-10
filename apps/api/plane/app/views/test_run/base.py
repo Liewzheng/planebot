@@ -15,9 +15,12 @@ The rules of the standard are enforced by the server:
 
 * a case that is added to a batch is **snapshotted** — a later edit of
   the case never rewrites the history of the batch;
-* while the batch is open a case may be taken out of it again — the
-  removal edits the composition of the batch and leaves the case itself
-  and its other batches alone;
+* while the batch is open a case that was never executed may be taken
+  out of it again — the removal edits the composition of the batch and
+  leaves the case itself and its other batches alone; a record that
+  already carries a verdict or a conclusion is refused with 409, because
+  removing it would let a second verdict be written inside the same
+  batch;
 * a verdict and a conclusion are written **once** (the model refuses a
   second write) — a wrong verdict is corrected by voiding the record and
   running the case again in a new batch;
@@ -75,6 +78,7 @@ from plane.db.testcase_summary import summarize_run
 from plane.db.testcase_validity import (
     DUPLICATE_CASE_NUMBER,
     RUN_STATUS_COMPLETED,
+    STEP_VERDICT_UNSET,
     validate_run,
     validate_run_write,
 )
@@ -91,6 +95,44 @@ from plane.utils.testcase_api import (
 )
 
 from ..base import BaseAPIView, BaseViewSet
+
+
+#: The stable reason code of a removal that would erase what the batch
+#: recorded. It is the endpoint's own code: neither reason-code map of
+#: the feature carries it, so the sentence of its entry is handed to
+#: :func:`error_entry` here.
+RUN_CASE_REMOVAL_AFTER_EXECUTION = "run_case_removal_after_execution"
+
+_RUN_CASE_REMOVAL_AFTER_EXECUTION_ZH = (
+    "该用例已记录执行结果，不能从批次移除；重跑请作废本批次。"
+)
+
+
+def removal_after_execution_response() -> Response:
+    """The 409 of a removal that would erase what the batch recorded.
+
+    The body is the envelope of :func:`run_conflict_response` — a
+    completed batch is not the only write this feature refuses, so the
+    client keys on a stable code here too — and the Chinese sentence is
+    the one the front end shows.
+    """
+    return Response(
+        {
+            "error": (
+                "The case record already carries execution results and cannot be "
+                "removed from the batch; re-run the case in a new batch."
+            ),
+            "code": RUN_CASE_REMOVAL_AFTER_EXECUTION,
+            "errors": [
+                error_entry(
+                    RUN_CASE_REMOVAL_AFTER_EXECUTION,
+                    "",
+                    _RUN_CASE_REMOVAL_AFTER_EXECUTION_ZH,
+                )
+            ],
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
 
 
 class TestRunViewSet(BaseViewSet):
@@ -415,7 +457,11 @@ class TestRunCaseDetailEndpoint(BaseAPIView):
     """The outcome of one case inside a batch.
 
     ``DELETE`` takes the case out of the batch — the undo of the add —
-    and answers 204. The case itself and its other batches stay.
+    and answers 204, as long as the batch recorded nothing about it yet.
+    A record whose execution has begun is refused with 409: a verdict on
+    a step or a conclusion of the case is written once and is never
+    retracted, and removing the record would hand out a fresh one — with
+    fresh step records — inside the same batch.
     """
 
     allow_service_principal = True
@@ -509,6 +555,22 @@ class TestRunCaseDetailEndpoint(BaseAPIView):
 
         if run_case.test_run.status == RUN_STATUS_COMPLETED:
             return run_conflict_response("A completed batch is frozen.")
+
+        # What the batch recorded is final, and removal is not the way
+        # around that: a removed record leaves a hole the same case can be
+        # selected into again, and the fresh record carries fresh step
+        # records — so a second, different verdict could be written inside
+        # the *same* batch, which the write-once rule of the standard
+        # forbids (a wrong verdict is corrected by voiding the record and
+        # running the case again in a new batch). A record that was never
+        # executed is a wrong selection and may still go: its step records
+        # all carry the placeholder verdict ``unset``. The measured value
+        # on its own is not a verdict and does not freeze the record.
+        if run_case.conclusion or any(
+            record.conclusion not in ("", STEP_VERDICT_UNSET)
+            for record in run_case.step_records.all()
+        ):
+            return removal_after_execution_response()
 
         # Soft delete: every read filters the removed row out, so the case
         # is out of the batch while the batch keeps what was recorded. The

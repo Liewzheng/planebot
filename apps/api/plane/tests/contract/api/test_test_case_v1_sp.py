@@ -38,6 +38,9 @@ The tests pin the behaviour the mission asks for:
   asks for); a record of another batch answers 404, a completed batch
   refuses it with the 409 envelope, and a second removal answers 404
   rather than crashing for every principal that passes the authz chain;
+  a record that already carries a step verdict or a conclusion is refused
+  with the stable ``run_case_removal_after_execution`` code — the undo of
+  a selection may not erase what was executed;
 * a completed batch refuses the upload with the same 409 envelope
   (``code`` / ``errors``) the bind path uses;
 * the field set of every answer is pinned (sorted key lists), so a
@@ -999,7 +1002,10 @@ class TestRemovingACaseFromABatch:
     admin-tier grant; taking a case out of a batch is the undo of adding
     it, so it asks for what the add asks for — ``update test_run`` — and
     a member-tier principal without a single ``delete`` scope may
-    perform it.
+    perform it. The undo stops where the record stops being a selection:
+    a record that already carries a verdict on a step or a conclusion is
+    refused with 409, because removing it and adding the case again would
+    hand out a fresh record and a second verdict inside the same batch.
     """
 
     def test_a_member_tier_sp_removes_a_case_without_a_delete_scope(
@@ -1098,6 +1104,72 @@ class TestRemovingACaseFromABatch:
         # The record survived the refused removal.
         response = human_client.get(f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/")
         assert [row["id"] for row in response.json()] == [run_case["id"]]
+
+    def test_a_removal_after_a_step_verdict_is_refused(
+        self, workspace, create_user, project, granted_sp, sp_client
+    ):
+        """A verdict is written once — the removal of the record would erase it.
+
+        The principal holds the ``update test_run`` scope and created the
+        batch itself, so the 409 that arrives is the removal rule and not
+        a scope or ownership error, and it carries the same envelope the
+        frozen-batch refusal does.
+        """
+        bot = granted_sp.ensure_bot_user()
+        _module, case = _build_case(sp_client, workspace, project)
+        run = _build_run(sp_client, workspace, project, bot)
+        run_case = _add_case(sp_client, workspace, project, run["id"], case["id"])
+
+        response = sp_client.patch(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}"
+            f"/cases/{run_case['id']}/steps/1/",
+            {"conclusion": "pass", "actual_value": "the form was shown"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK, response.content
+
+        response = sp_client.delete(
+            _run_case_url(workspace, project, run["id"], run_case["id"])
+        )
+        assert response.status_code == status.HTTP_409_CONFLICT, response.content
+        body = response.json()
+        assert body["code"] == "run_case_removal_after_execution", body
+        assert error_codes(response) == {"run_case_removal_after_execution"}, body
+        assert body["errors"][0]["path"] == "", body
+        assert body["errors"][0]["message"] == (
+            "该用例已记录执行结果，不能从批次移除；重跑请作废本批次。"
+        )
+
+        # The record — and the verdict it carries — is still in the batch.
+        response = sp_client.get(f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/")
+        assert [row["id"] for row in response.json()] == [run_case["id"]]
+        assert response.json()[0]["steps"][0]["conclusion"] == "pass"
+
+    def test_a_removal_after_a_conclusion_is_refused(
+        self, workspace, create_user, project, human_client
+    ):
+        """The conclusion of the case alone is enough to freeze the record."""
+        _module, case = _build_case(human_client, workspace, project)
+        run = _build_run(human_client, workspace, project, create_user)
+        run_case = _add_case(human_client, workspace, project, run["id"], case["id"])
+
+        # No step verdict yet — the conclusion of the case itself.
+        response = human_client.patch(
+            _run_case_url(workspace, project, run["id"], run_case["id"]),
+            {"conclusion": "PASS", "evidence": "the form was shown"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK, response.content
+
+        response = human_client.delete(
+            _run_case_url(workspace, project, run["id"], run_case["id"])
+        )
+        assert response.status_code == status.HTTP_409_CONFLICT, response.content
+        assert "run_case_removal_after_execution" in error_codes(response)
+
+        response = human_client.get(f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/")
+        assert [row["id"] for row in response.json()] == [run_case["id"]]
+        assert response.json()[0]["conclusion"] == "PASS"
 
     def test_a_completed_batch_refuses_the_removal(
         self, workspace, create_user, project, granted_sp, sp_client
