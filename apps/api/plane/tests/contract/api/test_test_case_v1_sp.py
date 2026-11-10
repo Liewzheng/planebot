@@ -1056,6 +1056,10 @@ class TestTheWireFormatIsPinned:
                 "priority",
                 "preconditions",
                 "environment",
+                # STD-SW-003 §4.1 fields 10 and 11: the two recommended
+                # header items the case serializer carries (M82).
+                "related_feature",
+                "remarks",
                 "status",
                 "steps",
                 "issue_links",
@@ -1088,6 +1092,10 @@ class TestTheWireFormatIsPinned:
                 "executed_by",
                 "executed_by_name",
                 "status",
+                # STD-SW-003 §6.2 rule 2: the re-test link and the number of
+                # the batch it points at (M82).
+                "retest_of",
+                "retest_of_number",
                 "cases",
                 "created_at",
                 "updated_at",

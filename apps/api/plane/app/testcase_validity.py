@@ -16,7 +16,8 @@ codes they return into the wire format the front end consumes:
   each with a **field path**, the stable **reason code** and a Chinese
   sentence;
 * :func:`check_authoring` runs the *authoring* subset of the rules — the
-  mandatory header items, the number format and the step table — for the
+  mandatory header items, the number format and the step table (the
+  §5.6 ban on unverifiable expected results included) — for the
   create/update surface, where no verdict and no measured value exist
   yet.
 
