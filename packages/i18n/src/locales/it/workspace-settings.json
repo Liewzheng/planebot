@@ -581,7 +581,9 @@
             "comment": "Commento",
             "state": "Stato",
             "page": "Pagina",
-            "invite": "Invito"
+            "invite": "Invito",
+            "test_case": "Test case",
+            "test_run": "Test run"
           },
           "actions": {
             "all": "Tutto",

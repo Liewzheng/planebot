@@ -581,7 +581,9 @@
             "comment": "Commentaire",
             "state": "État",
             "page": "Page",
-            "invite": "Invitation"
+            "invite": "Invitation",
+            "test_case": "Test case",
+            "test_run": "Test run"
           },
           "actions": {
             "all": "Tout",

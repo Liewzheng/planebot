@@ -20,7 +20,9 @@ export type TServiceScopeResourceType =
   | "comment"
   | "state"
   | "page"
-  | "invite";
+  | "invite"
+  | "test_case"
+  | "test_run";
 
 export type TServiceScopeAction = "all" | "read" | "create" | "update" | "delete";
 

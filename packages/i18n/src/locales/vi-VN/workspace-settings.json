@@ -581,7 +581,9 @@
             "comment": "Bình luận",
             "state": "Trạng thái",
             "page": "Trang",
-            "invite": "Lời mời"
+            "invite": "Lời mời",
+            "test_case": "Test case",
+            "test_run": "Test run"
           },
           "actions": {
             "all": "Tất cả",

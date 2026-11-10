@@ -581,7 +581,9 @@
             "comment": "留言",
             "state": "狀態",
             "page": "頁面",
-            "invite": "邀請"
+            "invite": "邀請",
+            "test_case": "Test case",
+            "test_run": "Test run"
           },
           "actions": {
             "all": "全部",

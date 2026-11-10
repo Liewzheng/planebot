@@ -252,7 +252,9 @@
             "comment": "Comment",
             "state": "State",
             "page": "Page",
-            "invite": "Invite"
+            "invite": "Invite",
+            "test_case": "Test case",
+            "test_run": "Test run"
           },
           "actions": {
             "all": "All",

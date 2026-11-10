@@ -581,7 +581,9 @@
             "comment": "댓글",
             "state": "상태",
             "page": "페이지",
-            "invite": "초대"
+            "invite": "초대",
+            "test_case": "Test case",
+            "test_run": "Test run"
           },
           "actions": {
             "all": "모두",

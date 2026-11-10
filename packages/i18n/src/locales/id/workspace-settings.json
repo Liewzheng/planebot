@@ -581,7 +581,9 @@
             "comment": "Komentar",
             "state": "Status",
             "page": "Halaman",
-            "invite": "Undangan"
+            "invite": "Undangan",
+            "test_case": "Test case",
+            "test_run": "Test run"
           },
           "actions": {
             "all": "Semua",
