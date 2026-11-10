@@ -11,10 +11,8 @@ import type {
   ITestCase,
   ITestCaseIssueLink,
   ITestCaseModule,
-  ITestCaseStep,
   ITestRunSummary,
   TTestCaseFilters,
-  TTestCaseStepInput,
   TTestCaseWrite,
   TPaginatedResponse,
 } from "@plane/types";
@@ -126,36 +124,6 @@ export class TestCaseService extends APIService {
   async deleteCase(workspaceSlug: string, projectId: string, testCaseId: string): Promise<void> {
     return this.delete(`${this.basePath(workspaceSlug, projectId)}/test-cases/${testCaseId}/`)
       .then(() => undefined)
-      .catch((error) => {
-        throw error?.response?.data;
-      });
-  }
-
-  // ------------------------------------------------------------------
-  // The step table
-  // ------------------------------------------------------------------
-
-  async getSteps(workspaceSlug: string, projectId: string, testCaseId: string): Promise<ITestCaseStep[]> {
-    return this.get(`${this.basePath(workspaceSlug, projectId)}/test-cases/${testCaseId}/steps/`)
-      .then((response) => response?.data)
-      .catch((error) => {
-        throw error?.response?.data;
-      });
-  }
-
-  /**
-   * The step table is replaced as a whole. The answer carries the new
-   * `updated_at` of the case — the client keeps it for the next write,
-   * otherwise it would lock itself out with a stale version.
-   */
-  async replaceSteps(
-    workspaceSlug: string,
-    projectId: string,
-    testCaseId: string,
-    steps: TTestCaseStepInput[]
-  ): Promise<{ updated_at: string; steps: ITestCaseStep[] }> {
-    return this.put(`${this.basePath(workspaceSlug, projectId)}/test-cases/${testCaseId}/steps/`, { steps })
-      .then((response) => response?.data)
       .catch((error) => {
         throw error?.response?.data;
       });

@@ -12,7 +12,7 @@ import { cn } from "@plane/utils";
 // components
 import { TestCaseWorkItemPicker } from "../shared/work-item-picker";
 // constants
-import { TEST_CASE_PRIORITIES } from "../constants";
+import { TEST_CASE_PRIORITIES, hasTestCaseFilters } from "../constants";
 
 type Props = {
   workspaceSlug: string;
@@ -41,7 +41,9 @@ export function TestCaseFilters(props: Props) {
   // until the user asks for it.
   const [isIssuePickerOpen, setIsIssuePickerOpen] = useState(false);
 
-  const hasFilters = Boolean(module || priority || issue || status || search);
+  // The same definition the list uses — the bar offers "clear the
+  // filters" exactly when there is something to clear.
+  const hasFilters = hasTestCaseFilters({ module, priority, issue, status, search });
 
   return (
     <div className="flex flex-col gap-3 border-b border-subtle-1 px-4 py-3">

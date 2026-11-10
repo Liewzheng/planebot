@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import type { TTestCasePriority, TTestCaseStatus } from "@plane/types";
+import type { TTestCaseFilters, TTestCasePriority, TTestCaseStatus } from "@plane/types";
 
 /** The keys the lists and the detail views are cached under. */
 export const TEST_CASE_LIST = (workspaceSlug: string, projectId: string, filterKey: string) =>
@@ -40,3 +40,26 @@ export const TEST_CASE_AUTOSAVE_DEBOUNCE_MS = 800;
  * applies (`is_valid_module_code`).
  */
 export const isValidModuleCode = (code: string): boolean => /^[A-Z]{2,6}$/.test(code);
+
+/** The state the list starts with — the cases that are not voided. */
+export const TEST_CASE_DEFAULT_STATUS = "active";
+
+/**
+ * True when the filters ask for something else than the default set.
+ *
+ * The default state of the list is the active cases without a filter, so
+ * the default state is not a filter. Both the filter bar and the list
+ * use this one definition: the bar offers "clear the filters" exactly
+ * when there is something to clear, and the list says "no test case
+ * matches the filters" exactly when the filters are the reason the list
+ * is empty — a list of active cases that is empty is an empty list, not
+ * a list that matches no filter.
+ */
+export const hasTestCaseFilters = (filters: TTestCaseFilters): boolean =>
+  Boolean(
+    filters.module ||
+    filters.priority ||
+    filters.issue ||
+    filters.search ||
+    (filters.status && filters.status !== TEST_CASE_DEFAULT_STATUS)
+  );

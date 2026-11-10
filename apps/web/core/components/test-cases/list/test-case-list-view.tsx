@@ -14,7 +14,7 @@ import type { ITestCase, TTestCaseFilters, ITestRunSummary } from "@plane/types"
 import { TestCaseFilters } from "./test-case-filters";
 import { TestCaseCard, TestCaseTableRow, lastRunOfCase } from "./test-case-row";
 // constants
-import { TEST_CASE_LIST, TEST_CASE_MODULES, TEST_CASE_RUNS } from "../constants";
+import { TEST_CASE_LIST, TEST_CASE_MODULES, TEST_CASE_RUNS, hasTestCaseFilters } from "../constants";
 // hooks
 import { useAppRouter } from "@/hooks/use-app-router";
 // services
@@ -78,14 +78,21 @@ export function TestCaseListView(props: Props) {
   // the window may still have been executed. The cell then says "—" — it
   // may only say "never executed" when every batch was seen.
   const runsWindowTruncated = (runs?.total_results ?? 0) > runList.length;
+  // And before the first answer arrives the client has seen no batch at
+  // all, so it knows nothing about the last execution of a case. The
+  // batch answer is the heavy one, so this window is not short.
+  const runsArrived = runs !== undefined;
 
   const results = useMemo(() => cases?.results ?? [], [cases]);
-  const hasFilters = Boolean(filters.module || filters.priority || filters.issue || filters.search);
+  // The same definition the filter bar uses: the default set of filters
+  // is not a filter, so an empty list of active cases is an empty list
+  // and not a list that matches no filter.
+  const hasFilters = hasTestCaseFilters(filters);
 
   /** The last execution of a case — and whether it is known at all. */
   const lastRunFor = (testCase: ITestCase) => {
     const lastRun = lastRunOfCase(runList, testCase.number);
-    const isUnknown = Boolean(runsError) || (!lastRun && runsWindowTruncated);
+    const isUnknown = Boolean(runsError) || !runsArrived || (!lastRun && runsWindowTruncated);
     return { lastRun, isUnknown };
   };
 
