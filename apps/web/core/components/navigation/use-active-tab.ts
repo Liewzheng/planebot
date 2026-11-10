@@ -28,7 +28,10 @@ export const useActiveTab = ({ navigationItems, pathname, workItemId, workItem, 
       const isWorkItemActive = item.key === "work_items" && workItemCondition;
       const isEpicActive = item.key === "epics" && epicCondition;
       // Pathname condition - use exact match or startsWith for better accuracy
-      const isPathnameActive = pathname === item.href || pathname.startsWith(item.href + "/");
+      const isPathnameActive =
+        pathname === item.href ||
+        pathname.startsWith(item.href + "/") ||
+        (item.activePaths?.some((path) => pathname === path || pathname.startsWith(path + "/")) ?? false);
       // Return
       return isWorkItemActive || isEpicActive || isPathnameActive;
     },

@@ -8,6 +8,7 @@ import { useMemo, useCallback } from "react";
 // plane imports
 import { EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import {
+  CheckSquareOutline,
   CyclesOutline,
   IntakeOutline,
   ModuleOutline,
@@ -99,6 +100,18 @@ export const useNavigationItems = ({
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
         shouldRender: !!project?.inbox_view,
         sortOrder: 6,
+      },
+      {
+        i18n_key: "sidebar.test",
+        key: "test",
+        name: "Test",
+        href: `/${workspaceSlug}/projects/${projectId}/test-cases`,
+        // The entry carries two pages: the cases and the batches.
+        activePaths: [`/${workspaceSlug}/projects/${projectId}/test-runs`],
+        icon: CheckSquareOutline,
+        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+        shouldRender: true,
+        sortOrder: 7,
       },
     ],
     [project]

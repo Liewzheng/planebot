@@ -39,6 +39,9 @@ export type TNavigationItem = {
   sortOrder: number;
   i18n_key: string;
   key: string;
+  // The paths that light the entry up besides its own href — an entry
+  // that carries more than one page.
+  activePaths?: string[];
 };
 
 type TTabNavigationRootProps = {
