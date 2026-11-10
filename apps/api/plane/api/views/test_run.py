@@ -15,6 +15,12 @@ rules the app surface enforces — the validity functions live in
 
 * a case that is added to a batch is **snapshotted** — a later edit of
   the case never rewrites the history of the batch;
+* while the batch is open a case that was never executed may be taken
+  out of it again — the removal edits the composition of the batch and
+  leaves the case itself and its other batches alone; a record that
+  already carries a verdict or a conclusion is refused with 409, because
+  removing it would let a second verdict be written inside the same
+  batch;
 * a verdict and a conclusion are written **once** (the model refuses a
   second write) — a wrong verdict is corrected by voiding the record and
   running the case again in a new batch;
@@ -72,6 +78,7 @@ from plane.db.models import (
 from plane.db.testcase_validity import (
     DUPLICATE_CASE_NUMBER,
     RUN_STATUS_COMPLETED,
+    STEP_VERDICT_UNSET,
     validate_run,
     validate_run_write,
 )
@@ -89,6 +96,46 @@ from plane.utils.testcase_api import (
 )
 
 from .base import BaseAPIView
+
+
+#: The stable reason code of a removal that would erase what the batch
+#: recorded. It is the endpoint's own code: neither reason-code map of
+#: the feature carries it, so the sentence of its entry is handed to
+#: :func:`error_entry` here. The two view modules of the feature may not
+#: import each other (see :mod:`plane.utils.testcase_api`), so the code
+#: and the response are defined on both surfaces and kept identical.
+RUN_CASE_REMOVAL_AFTER_EXECUTION = "run_case_removal_after_execution"
+
+_RUN_CASE_REMOVAL_AFTER_EXECUTION_ZH = (
+    "该用例已记录执行结果，不能从批次移除；重跑请作废本批次。"
+)
+
+
+def removal_after_execution_response() -> Response:
+    """The 409 of a removal that would erase what the batch recorded.
+
+    The body is the envelope of :func:`run_conflict_response` — a
+    completed batch is not the only write this feature refuses, so the
+    client keys on a stable code here too — and the Chinese sentence is
+    the one the front end shows.
+    """
+    return Response(
+        {
+            "error": (
+                "The case record already carries execution results and cannot be "
+                "removed from the batch; re-run the case in a new batch."
+            ),
+            "code": RUN_CASE_REMOVAL_AFTER_EXECUTION,
+            "errors": [
+                error_entry(
+                    RUN_CASE_REMOVAL_AFTER_EXECUTION,
+                    "",
+                    _RUN_CASE_REMOVAL_AFTER_EXECUTION_ZH,
+                )
+            ],
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
 
 
 def credit_rows(rows, actor_id):
@@ -421,8 +468,16 @@ class TestRunCaseEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, Bas
         )
 
 
-class TestRunCaseDetailEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
-    """The outcome of one case inside a batch."""
+class TestRunCaseDetailEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, BaseAPIView):
+    """The outcome of one case inside a batch.
+
+    ``DELETE`` takes the case out of the batch — the undo of the add —
+    and answers 204, as long as the batch recorded nothing about it yet.
+    A record whose execution has begun is refused with 409: a verdict on
+    a step or a conclusion of the case is written once and is never
+    retracted, and removing the record would hand out a fresh one — with
+    fresh step records — inside the same batch.
+    """
 
     resource_type = "test_run"
 
@@ -431,6 +486,19 @@ class TestRunCaseDetailEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
     # The write acts on the case record itself.
     authz_resource_model = TestRunCase
     authz_resource_lookup = "run_case_id"
+
+    # The removal is judged as an ``update`` of the batch's composition,
+    # not as a ``delete`` of a resource: taking a case out of a batch
+    # edits the batch, and the principal that may add a case has to be
+    # able to undo the add. Judged as ``delete`` the matrix would demand
+    # the delete scope and an admin-tier grant, so the undo would be
+    # refused where the add was allowed. Removing the *case* itself is a
+    # different write and keeps the action of the method.
+    #
+    # The answers of that gate: a GUEST (role 5) is refused with 403 by
+    # :class:`ProjectEntityPermission`; a service principal without the
+    # ``update test_run`` scope is refused with 403 by the scope step.
+    authz_update_methods = ("DELETE",)
 
     def _run_case(self, slug, project_id, test_run_id, run_case_id):
         return (
@@ -480,6 +548,42 @@ class TestRunCaseDetailEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
 
         run_case = self._run_case(slug, project_id, test_run_id, run_case_id)
         return Response(TestRunCaseSerializer(run_case).data, status=status.HTTP_200_OK)
+
+    def delete(self, request, slug, project_id, test_run_id, run_case_id):
+        run_case = self._run_case(slug, project_id, test_run_id, run_case_id)
+        if run_case is None:
+            return Response({"error": "Test run case not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if run_case.test_run.status == RUN_STATUS_COMPLETED:
+            return run_conflict_response("A completed batch is frozen.")
+
+        # What the batch recorded is final, and removal is not the way
+        # around that: a removed record leaves a hole the same case can be
+        # selected into again, and the fresh record carries fresh step
+        # records — so a second, different verdict could be written inside
+        # the *same* batch, which the write-once rule of the standard
+        # forbids (a wrong verdict is corrected by voiding the record and
+        # running the case again in a new batch). A record that was never
+        # executed is a wrong selection and may still go: its step records
+        # all carry the placeholder verdict ``unset``. The measured value
+        # on its own is not a verdict and does not freeze the record.
+        if run_case.conclusion or any(
+            record.conclusion not in ("", STEP_VERDICT_UNSET)
+            for record in run_case.step_records.all()
+        ):
+            return removal_after_execution_response()
+
+        # Soft delete: every read filters the removed row out, so the case
+        # is out of the batch while the batch keeps what was recorded. The
+        # partial unique index ignores a deleted row, so the same case may
+        # be selected into the batch again; a second removal finds no live
+        # row and answers 404 (a member-tier service principal stops one
+        # step earlier, at the ownership step, because the row it would
+        # own is soft-deleted — still never a 500). The case row and the
+        # rows of its other batches are not touched — the deleted record
+        # is the only link between this batch and the case.
+        run_case.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class TestRunStepRecordEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
