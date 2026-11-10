@@ -111,6 +111,7 @@ build/
 temp/
 scripts/
 !packages/i18n/scripts/
+!apps/web/scripts/
 
 # i18n auto-generated types (regenerated on every build)
 packages/i18n/src/types/keys.generated.ts
