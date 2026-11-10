@@ -36,6 +36,8 @@ type Props = {
   caseNumber: string;
   step: ITestRunStepRecord;
   disabled: boolean;
+  /** The batch is completed — its record is frozen, so no verdict is offered. */
+  frozen: boolean;
   errors?: TRunFieldErrors;
   /** The batch changed on the server — the caller refreshes it. */
   onChanged: () => void;
@@ -58,7 +60,8 @@ type Props = {
  * an attached screenshot.
  */
 export function TestCaseRunStepRow(props: Props) {
-  const { workspaceSlug, projectId, testRunId, runCaseId, caseNumber, step, disabled, errors, onChanged } = props;
+  const { workspaceSlug, projectId, testRunId, runCaseId, caseNumber, step, disabled, frozen, errors, onChanged } =
+    props;
   const { t } = useTranslation();
   // states
   const [value, setValue] = useState(step.actual_value ?? "");
@@ -293,6 +296,10 @@ export function TestCaseRunStepRow(props: Props) {
               ? t("project_test_case.execution.step.verdict_pass_locked")
               : t("project_test_case.execution.step.verdict_fail_locked")}
           </p>
+        ) : frozen ? (
+          /* A frozen batch offers no verdict — the same rule the batch header
+             and the conclusion follow: absent, not merely disabled. */
+          <p className="text-11 text-tertiary">{t("project_test_case.execution.step.verdict_frozen")}</p>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <button

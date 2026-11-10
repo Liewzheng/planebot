@@ -7,7 +7,6 @@
 import { useCallback, useState } from "react";
 import { useTranslation } from "@plane/i18n";
 import { Button } from "@plane/propel/button";
-import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import { AlertModalCore } from "@plane/ui";
 import useSWR from "swr";
 // components
@@ -17,7 +16,7 @@ import { TestCaseRunSummaryPanel } from "./run-summary-panel";
 // constants
 import { TEST_RUN_DETAIL, TEST_RUN_SUMMARY_REPORT } from "./constants";
 // helpers
-import { parseRunErrors, refusalFallback, withRefusalSentence } from "./types";
+import { parseRunErrors, refusalFallback, refusalIsFrozenBatch, withRefusalSentence } from "./types";
 import type { TParsedRunErrors, TRunRefusal } from "./types";
 // services
 import { testCaseService } from "@/services/test-cases/test-case.service";
@@ -34,6 +33,35 @@ const statusKey = (status: string): string => {
   if (status === "completed") return "project_test_case.batches.status_completed";
   if (status === "in_progress") return "project_test_case.batches.status_in_progress";
   return "project_test_case.batches.status_draft";
+};
+
+/**
+ * The one notice the page shows about the state of the batch itself: the
+ * transition it just made, or the refusal that told it the batch was closed
+ * elsewhere.
+ *
+ * It is a block **in the page**, never an overlay: an overlay that reports
+ * "record frozen" has to be dismissible or it traps the reader on a page whose
+ * buttons are already gone. The keys are stored, not the translated text, so
+ * switching the language re-reads them.
+ */
+type TBatchNotice = {
+  tone: "success" | "warning";
+  title: string;
+  message: string;
+};
+
+const NOTICE_CLASSES: Record<TBatchNotice["tone"], { box: string; title: string; message: string }> = {
+  success: {
+    box: "border-success-strong bg-success-subtle",
+    title: "text-success-primary",
+    message: "text-secondary",
+  },
+  warning: {
+    box: "border-warning-strong bg-warning-subtle",
+    title: "text-warning-primary",
+    message: "text-secondary",
+  },
 };
 
 /**
@@ -58,6 +86,7 @@ export function TestRunDetailView(props: Props) {
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [errors, setErrors] = useState<TParsedRunErrors>({ run: {}, cases: {}, form: [] });
   const [hasFinalizeErrors, setHasFinalizeErrors] = useState(false);
+  const [notice, setNotice] = useState<TBatchNotice | null>(null);
 
   const {
     data: run,
@@ -84,19 +113,32 @@ export function TestRunDetailView(props: Props) {
     void mutateSummary();
   }, [mutate, mutateSummary]);
 
+  /** Re-read the batch, and hand the caller a promise that never rejects. */
+  const reread = useCallback(
+    () => Promise.all([mutate().catch(() => undefined), mutateSummary().catch(() => undefined)]),
+    [mutate, mutateSummary]
+  );
+
   const finalize = async () => {
     setIsFinalizing(true);
     setErrors({ run: {}, cases: {}, form: [] });
     setHasFinalizeErrors(false);
+    setNotice(null);
 
     try {
-      await testCaseService.finalizeRun(workspaceSlug, projectId, testRunId);
+      const frozen = await testCaseService.finalizeRun(workspaceSlug, projectId, testRunId);
       setIsConfirmingFinalize(false);
-      refresh();
-      setToast({
-        type: TOAST_TYPE.SUCCESS,
-        title: t("project_test_case.execution.finalize.success_title"),
-        message: t("project_test_case.execution.finalize.success_message"),
+      // The answer of the write **is** the frozen batch. It goes into the
+      // cache, and a revalidation follows behind it, so every control on the
+      // page is derived from the status the server just reported — the layout
+      // no longer waits on a second GET whose timing this page does not own.
+      // An answer without a batch (a proxy that swallowed the body) still
+      // revalidates, so the page is never seeded with nothing.
+      await Promise.all([frozen ? mutate(frozen, { revalidate: true }) : mutate(), mutateSummary()]);
+      setNotice({
+        tone: "success",
+        title: "project_test_case.execution.finalize.success_title",
+        message: "project_test_case.execution.finalize.success_message",
       });
     } catch (finalizeError) {
       const refusal = finalizeError as TRunRefusal;
@@ -113,9 +155,26 @@ export function TestRunDetailView(props: Props) {
       );
       setHasFinalizeErrors(true);
       setIsConfirmingFinalize(false);
+      // 409 of this endpoint means one thing: the record was frozen by
+      // someone else between the click and the request. Re-reading is what
+      // turns the page into the frozen layout, and the notice says why —
+      // inline and dismissible, never an overlay to get stuck behind.
+      if (refusalIsFrozenBatch(refusal)) {
+        await reread();
+        setNotice({
+          tone: "warning",
+          title: "project_test_case.execution.finalize.already_frozen_title",
+          message: "project_test_case.execution.finalize.already_frozen_message",
+        });
+      }
     } finally {
       setIsFinalizing(false);
     }
+  };
+
+  const dismissRunErrors = () => {
+    setHasFinalizeErrors(false);
+    setErrors({ run: {}, cases: {}, form: [] });
   };
 
   if (isLoading && !run) return <p className="p-4 text-13 text-tertiary">{t("project_test_case.execution.loading")}</p>;
@@ -133,6 +192,7 @@ export function TestRunDetailView(props: Props) {
   const existingCaseIds = run.cases.map((runCase) => runCase.test_case).filter((id): id is string => Boolean(id));
 
   const runLevelErrors = [...Object.entries(errors.run).flatMap(([, messages]) => messages), ...errors.form];
+  const noticeClasses = notice ? NOTICE_CLASSES[notice.tone] : null;
 
   return (
     <div className="flex h-full w-full flex-col gap-4 overflow-y-auto px-4 py-4 pb-24">
@@ -156,6 +216,28 @@ export function TestRunDetailView(props: Props) {
             {t(statusKey(run.status))}
           </span>
         </div>
+
+        {/* The transition, or the refusal that says the batch is closed: a
+            block in the page with its own dismiss control — never a layer on
+            top of the page that the reader has to reload to escape. */}
+        {notice && noticeClasses && (
+          <div
+            role="status"
+            className={`flex items-start justify-between gap-3 rounded-md border px-2.5 py-2 ${noticeClasses.box}`}
+          >
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <p className={`text-12 font-medium ${noticeClasses.title}`}>{t(notice.title)}</p>
+              <p className={`text-11 ${noticeClasses.message}`}>{t(notice.message)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNotice(null)}
+              className={`shrink-0 rounded-sm border border-subtle-1 bg-layer-1 px-2 py-1 text-11 ${noticeClasses.title} hover:bg-layer-2`}
+            >
+              {t("common.close")}
+            </button>
+          </div>
+        )}
 
         {run.retest_of_number && (
           <p className="rounded-md border border-subtle-1 bg-layer-2 px-2.5 py-1.5 text-12 text-secondary">
@@ -182,17 +264,26 @@ export function TestRunDetailView(props: Props) {
         {isCompleted && <p className="text-11 text-tertiary">{t("project_test_case.execution.completed_hint")}</p>}
 
         {runLevelErrors.length > 0 && (
-          <div className="flex flex-col gap-1 rounded-md border border-danger-strong bg-danger-subtle px-2.5 py-2">
-            <p className="text-11 font-medium text-danger-primary">
-              {t("project_test_case.execution.finalize.refused_title")}
-            </p>
-            <ul className="flex flex-col gap-0.5">
-              {runLevelErrors.map((message) => (
-                <li key={message} className="text-11 text-danger-primary">
-                  {message}
-                </li>
-              ))}
-            </ul>
+          <div className="flex items-start justify-between gap-3 rounded-md border border-danger-strong bg-danger-subtle px-2.5 py-2">
+            <div className="flex min-w-0 flex-col gap-1">
+              <p className="text-11 font-medium text-danger-primary">
+                {t("project_test_case.execution.finalize.refused_title")}
+              </p>
+              <ul className="flex flex-col gap-0.5">
+                {runLevelErrors.map((message) => (
+                  <li key={message} className="text-11 text-danger-primary">
+                    {message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <button
+              type="button"
+              onClick={dismissRunErrors}
+              className="shrink-0 rounded-sm border border-subtle-1 bg-layer-1 px-2 py-1 text-11 text-danger-primary hover:bg-layer-2"
+            >
+              {t("common.close")}
+            </button>
           </div>
         )}
 
@@ -260,6 +351,7 @@ export function TestRunDetailView(props: Props) {
                   testRunId={testRunId}
                   runCase={runCase}
                   disabled={!isEditable}
+                  frozen={isCompleted}
                   canRemove={isEditable}
                   errors={errors.cases[runCase.case_number]}
                   onChanged={refresh}
