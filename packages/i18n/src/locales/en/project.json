@@ -385,6 +385,7 @@
       "steps_empty": "The case has no step yet.",
       "steps_empty_hint": "Add the first step of the case.",
       "create_button": "Create the test case",
+      "create_failed_no_reason": "The request did not reach the server, or the server refused the case without naming a field.",
       "creating": "Creating…",
       "save_failed": "The case could not be saved.",
       "load_failed": "The case could not be loaded.",

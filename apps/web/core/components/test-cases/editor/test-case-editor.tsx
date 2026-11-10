@@ -73,7 +73,8 @@ export function TestCaseEditor(props: Props) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlightRef = useRef(false);
   const pendingRef = useRef(false);
-  const saveRef = useRef<(() => Promise<void>) | null>(null);
+  const pendingForceRef = useRef(false);
+  const saveRef = useRef<((force?: boolean) => Promise<void>) | null>(null);
   const initializedForRef = useRef<string | null>(null);
 
   // ------------------------------------------------------------------
@@ -169,65 +170,85 @@ export function TestCaseEditor(props: Props) {
     setStepErrors(nextSteps);
   }, []);
 
-  const save = useCallback(async () => {
-    if (!testCaseId || !canEdit) return;
+  /**
+   * The write of the case.
+   *
+   * `force` writes the draft even when it did not change since the last
+   * successful write. The conflict dialog needs it: the user decides
+   * there that *their* version wins, and that decision has to reach the
+   * server even when the content is the same as the saved one.
+   */
+  const save = useCallback(
+    async (force = false) => {
+      if (!testCaseId || !canEdit) return;
 
-    if (inFlightRef.current) {
-      // A write is already on its way — the next one is sent as soon as
-      // this one is through, so the versions cannot overtake each other.
-      pendingRef.current = true;
-      return;
-    }
+      const current = draftRef.current;
+      if (!current) return;
 
-    const current = draftRef.current;
-    if (!current) return;
+      // Nothing changed since the last successful write. The server
+      // moves the version of the record on every write it accepts, so a
+      // write that changes nothing would make the next person conflict
+      // with a record nobody touched.
+      if (!force && savedKeyRef.current === draftKey(current)) return;
 
-    inFlightRef.current = true;
-    setSaveState("saving");
-
-    const sentKey = draftKey(current);
-
-    try {
-      const updated = await testCaseService.updateCase(workspaceSlug, projectId, testCaseId, {
-        module: current.module,
-        title: current.title,
-        purpose: current.purpose,
-        object_overview: current.object_overview,
-        priority: current.priority,
-        preconditions: current.preconditions,
-        environment: current.environment,
-        status: current.status,
-        steps: current.steps.map((step) => ({
-          action: step.action,
-          expected_result: step.expected_result,
-        })),
-        updated_at: versionRef.current,
-      });
-
-      versionRef.current = updated.updated_at;
-      savedKeyRef.current = sentKey;
-      setFieldErrors({});
-      setStepErrors({});
-      setSaveState("saved");
-      void mutateCase(updated, { revalidate: false });
-    } catch (error) {
-      const envelope = error as ITestCaseErrorResponse | undefined;
-
-      if (envelope?.code === "conflict" && envelope.current) {
-        setConflict(envelope.current);
-        setSaveState("conflict");
-      } else {
-        applyErrors(envelope);
-        setSaveState("error");
+      if (inFlightRef.current) {
+        // A write is already on its way — the next one is sent as soon as
+        // this one is through, so the versions cannot overtake each other.
+        pendingRef.current = true;
+        pendingForceRef.current = pendingForceRef.current || force;
+        return;
       }
-    } finally {
-      inFlightRef.current = false;
-      if (pendingRef.current) {
-        pendingRef.current = false;
-        void saveRef.current?.();
+
+      inFlightRef.current = true;
+      setSaveState("saving");
+
+      const sentKey = draftKey(current);
+
+      try {
+        const updated = await testCaseService.updateCase(workspaceSlug, projectId, testCaseId, {
+          module: current.module,
+          title: current.title,
+          purpose: current.purpose,
+          object_overview: current.object_overview,
+          priority: current.priority,
+          preconditions: current.preconditions,
+          environment: current.environment,
+          status: current.status,
+          steps: current.steps.map((step) => ({
+            action: step.action,
+            expected_result: step.expected_result,
+          })),
+          updated_at: versionRef.current,
+        });
+
+        versionRef.current = updated.updated_at;
+        savedKeyRef.current = sentKey;
+        setFieldErrors({});
+        setStepErrors({});
+        setSaveState("saved");
+        void mutateCase(updated, { revalidate: false });
+      } catch (error) {
+        const envelope = error as ITestCaseErrorResponse | undefined;
+
+        if (envelope?.code === "conflict" && envelope.current) {
+          setConflict(envelope.current);
+          setSaveState("conflict");
+        } else {
+          applyErrors(envelope);
+          setSaveState("error");
+        }
+      } finally {
+        inFlightRef.current = false;
+        if (pendingRef.current) {
+          pendingRef.current = false;
+          const forceNext = pendingForceRef.current;
+          pendingForceRef.current = false;
+          void saveRef.current?.(forceNext);
+        }
       }
-    }
-  }, [workspaceSlug, projectId, testCaseId, canEdit, applyErrors, mutateCase]);
+    },
+    [workspaceSlug, projectId, testCaseId, canEdit, applyErrors, mutateCase]
+  );
 
   saveRef.current = save;
 
@@ -279,11 +300,13 @@ export function TestCaseEditor(props: Props) {
   const keepMine = useCallback(() => {
     if (!conflict) return;
     // The version of the server is the one the write is based on now, so
-    // the write goes through — the user asked for it.
+    // the write goes through — the user asked for it. The write is
+    // forced: the content of the draft may be the same as the content
+    // that is already saved, and the decision of the user still has to
+    // reach the server.
     versionRef.current = conflict.updated_at;
     setConflict(null);
-    setSaveState("idle");
-    void saveRef.current?.();
+    void saveRef.current?.(true);
   }, [conflict]);
 
   const takeTheirs = useCallback(() => {
@@ -299,6 +322,16 @@ export function TestCaseEditor(props: Props) {
     setSaveState("saved");
     void mutateCase(conflict, { revalidate: false });
   }, [conflict, mutateCase]);
+
+  /**
+   * The user closed the dialog without choosing. The write did not land
+   * and the draft still holds the change, so the state says that — it
+   * must not say "all changes are saved".
+   */
+  const cancelConflict = useCallback(() => {
+    setConflict(null);
+    setSaveState("error");
+  }, []);
 
   // ------------------------------------------------------------------
   // The creation of a case
@@ -330,13 +363,24 @@ export function TestCaseEditor(props: Props) {
 
       onCreated?.(created);
     } catch (error) {
-      applyErrors(error as ITestCaseErrorResponse);
+      const envelope = error as ITestCaseErrorResponse | undefined;
+      const reasons = envelope?.errors ?? [];
+
+      applyErrors(envelope);
       setSaveState("error");
-      setToast({
-        type: TOAST_TYPE.ERROR,
-        title: t("project_test_case.editor.save_failed"),
-        message: t("project_test_case.editor.save_failed"),
-      });
+
+      // A refusal that names the fields speaks through them: the Chinese
+      // sentence of the server stands next to the field it belongs to. A
+      // refusal without such a sentence (the request did not reach the
+      // server) has nothing to show there — that one is worth a toast,
+      // and the toast says what it was.
+      if (reasons.length === 0) {
+        setToast({
+          type: TOAST_TYPE.ERROR,
+          title: t("project_test_case.editor.save_failed"),
+          message: envelope?.error || t("project_test_case.editor.create_failed_no_reason"),
+        });
+      }
     } finally {
       setIsCreating(false);
     }
@@ -510,12 +554,10 @@ export function TestCaseEditor(props: Props) {
         isOpen={Boolean(conflict)}
         current={conflict}
         draft={draft}
+        modules={moduleList}
         onKeepMine={keepMine}
         onTakeTheirs={takeTheirs}
-        onClose={() => {
-          setConflict(null);
-          setSaveState("idle");
-        }}
+        onClose={cancelConflict}
       />
 
       <TestCaseModuleModal

@@ -71,7 +71,7 @@ export function TestCaseTableRow(props: Props) {
           ) : (
             <TestCaseResultBadge conclusion={lastRun?.conclusion} />
           )}
-          {lastRun && <span className="text-11 text-tertiary">{lastRun.runNumber}</span>}
+          {lastRun && !lastResultUnknown && <span className="text-11 text-tertiary">{lastRun.runNumber}</span>}
         </div>
       </td>
     </tr>
@@ -107,7 +107,7 @@ export function TestCaseCard(props: Props) {
         ) : (
           <TestCaseResultBadge conclusion={lastRun?.conclusion} />
         )}
-        {lastRun && <span className="text-11 text-tertiary">{lastRun.runNumber}</span>}
+        {lastRun && !lastResultUnknown && <span className="text-11 text-tertiary">{lastRun.runNumber}</span>}
       </div>
 
       {testCase.issue_links.length > 0 && (

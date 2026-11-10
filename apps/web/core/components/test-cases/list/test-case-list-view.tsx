@@ -9,7 +9,7 @@ import { useTranslation } from "@plane/i18n";
 import { Button } from "@plane/propel/button";
 import { AddOutline } from "@makeplane/propel/icons";
 import useSWR from "swr";
-import type { TTestCaseFilters, ITestRunSummary } from "@plane/types";
+import type { ITestCase, TTestCaseFilters, ITestRunSummary } from "@plane/types";
 // components
 import { TestCaseFilters } from "./test-case-filters";
 import { TestCaseCard, TestCaseTableRow, lastRunOfCase } from "./test-case-row";
@@ -73,8 +73,21 @@ export function TestCaseListView(props: Props) {
 
   const runList = useMemo<ITestRunSummary[]>(() => runs?.results ?? [], [runs]);
 
+  // The window of the batches is not the whole history: when the server
+  // holds more batches than the client has seen, a case that is not in
+  // the window may still have been executed. The cell then says "—" — it
+  // may only say "never executed" when every batch was seen.
+  const runsWindowTruncated = (runs?.total_results ?? 0) > runList.length;
+
   const results = useMemo(() => cases?.results ?? [], [cases]);
   const hasFilters = Boolean(filters.module || filters.priority || filters.issue || filters.search);
+
+  /** The last execution of a case — and whether it is known at all. */
+  const lastRunFor = (testCase: ITestCase) => {
+    const lastRun = lastRunOfCase(runList, testCase.number);
+    const isUnknown = Boolean(runsError) || (!lastRun && runsWindowTruncated);
+    return { lastRun, isUnknown };
+  };
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -151,30 +164,37 @@ export function TestCaseListView(props: Props) {
                 </tr>
               </thead>
               <tbody>
-                {results.map((testCase) => (
-                  <TestCaseTableRow
-                    key={testCase.id}
-                    workspaceSlug={workspaceSlug}
-                    projectId={projectId}
-                    testCase={testCase}
-                    lastRun={lastRunOfCase(runList, testCase.number)}
-                    lastResultUnknown={Boolean(runsError)}
-                  />
-                ))}
+                {results.map((testCase) => {
+                  const { lastRun, isUnknown } = lastRunFor(testCase);
+                  return (
+                    <TestCaseTableRow
+                      key={testCase.id}
+                      workspaceSlug={workspaceSlug}
+                      projectId={projectId}
+                      testCase={testCase}
+                      lastRun={lastRun}
+                      lastResultUnknown={isUnknown}
+                    />
+                  );
+                })}
               </tbody>
             </table>
 
             {/* The narrow screen: a card per case */}
             <ul className="flex flex-col md:hidden">
-              {results.map((testCase) => (
-                <TestCaseCard
-                  key={testCase.id}
-                  workspaceSlug={workspaceSlug}
-                  projectId={projectId}
-                  testCase={testCase}
-                  lastRun={lastRunOfCase(runList, testCase.number)}
-                />
-              ))}
+              {results.map((testCase) => {
+                const { lastRun, isUnknown } = lastRunFor(testCase);
+                return (
+                  <TestCaseCard
+                    key={testCase.id}
+                    workspaceSlug={workspaceSlug}
+                    projectId={projectId}
+                    testCase={testCase}
+                    lastRun={lastRun}
+                    lastResultUnknown={isUnknown}
+                  />
+                );
+              })}
             </ul>
           </>
         )}

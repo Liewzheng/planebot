@@ -385,6 +385,7 @@
       "steps_empty": "该用例还没有步骤。",
       "steps_empty_hint": "添加用例的第一个步骤。",
       "create_button": "创建测试用例",
+      "create_failed_no_reason": "请求没有到达服务端，或者服务端拒绝时没有指出具体的字段。",
       "creating": "正在创建…",
       "save_failed": "用例保存失败。",
       "load_failed": "用例加载失败。",
