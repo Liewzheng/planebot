@@ -34,6 +34,7 @@ keys on.
 """
 
 from unittest import mock
+from uuid import uuid4
 
 import pytest
 from rest_framework import status
@@ -85,23 +86,6 @@ def assets_url(slug):
 
 def error_codes(response):
     return {entry.get("code") for entry in response.json().get("errors", [])}
-
-
-def _make_sp(workspace, owner, name):
-    sp = ServicePrincipal.objects.create(
-        workspace=workspace,
-        owner=owner,
-        name=name,
-    )
-    APIToken.objects.create(
-        label=f"svc:{name}",
-        token=f"plane_svc_token_{name}",
-        user=owner,
-        principal_type=PrincipalType.SERVICE,
-        service_principal=sp,
-        workspace=workspace,
-    )
-    return sp
 
 
 def _scope(sp, project, resource_type, action):
@@ -190,14 +174,60 @@ def project(db, workspace, create_user):
 
 
 @pytest.fixture
-def sp(workspace, create_user):
-    return _make_sp(workspace, create_user, "case-bot")
+def sp_token():
+    """A service token of its own for every test.
+
+    The throttle of the v1 surface is keyed on the API-key string
+    (:mod:`plane.api.rate_limit`) and its counter lives in the cache
+    (Redis in the test stack), so a token that is shared by many tests
+    spends one bucket for all of them and the later tests are answered
+    with 429. A token per test gives every test its own bucket — and it
+    keeps this file independent of the order it runs in.
+    """
+    return f"plane_svc_token_case-bot-{uuid4().hex}"
 
 
 @pytest.fixture
-def sp_client(sp):
+def sp(workspace, create_user, sp_token):
+    sp = ServicePrincipal.objects.create(
+        workspace=workspace,
+        owner=create_user,
+        name="case-bot",
+    )
+    APIToken.objects.create(
+        label="svc:case-bot",
+        token=sp_token,
+        user=create_user,
+        principal_type=PrincipalType.SERVICE,
+        service_principal=sp,
+        workspace=workspace,
+    )
+    return sp
+
+
+@pytest.fixture
+def sp_client(sp_token):
     client = APIClient()
-    client.credentials(HTTP_X_API_KEY="plane_svc_token_case-bot")
+    client.credentials(HTTP_X_API_KEY=sp_token)
+    return client
+
+
+@pytest.fixture
+def human_client(db, create_user):
+    """A client with a human API token of its own.
+
+    The shared ``api_key_client`` fixture hands every test the same
+    token, so the throttle bucket of that token is spent by the whole
+    suite. A token per test keeps the human path of this file
+    independent of the rest of the suite.
+    """
+    token = APIToken.objects.create(
+        user=create_user,
+        label="Test API Token",
+        token=f"plane_api_case-bot-{uuid4().hex}",
+    )
+    client = APIClient()
+    client.credentials(HTTP_X_API_KEY=token.token)
     return client
 
 
@@ -347,12 +377,12 @@ class TestSPCannotWriteForeignRows:
     bot user created."""
 
     def test_sp_cannot_patch_a_case_a_human_created(
-        self, workspace, create_user, project, granted_sp, sp_client, api_key_client
+        self, workspace, create_user, project, granted_sp, sp_client, human_client
     ):
         # The shadow bot of the principal — the identity the ownership
         # step compares the row's creator with.
         granted_sp.ensure_bot_user()
-        _module, case = _build_case(api_key_client, workspace, project)
+        _module, case = _build_case(human_client, workspace, project)
 
         response = sp_client.patch(
             f"{cases_url(workspace.slug, project.id)}{case['id']}/",
@@ -371,14 +401,14 @@ class TestSPCannotWriteForeignRows:
         assert TestCaseModel.objects.get(pk=case["id"]).title == case["title"]
 
     def test_sp_cannot_mark_a_step_of_a_case_a_human_created(
-        self, workspace, create_user, project, granted_sp, sp_client, api_key_client
+        self, workspace, create_user, project, granted_sp, sp_client, human_client
     ):
         """The step record of a human's batch is out of reach as well:
         the ownership is judged on the case record the step belongs to."""
         bot = granted_sp.ensure_bot_user()
-        _module, case = _build_case(api_key_client, workspace, project)
-        run = _build_run(api_key_client, workspace, project, create_user)
-        run_case = _add_case(api_key_client, workspace, project, run["id"], case["id"])
+        _module, case = _build_case(human_client, workspace, project)
+        run = _build_run(human_client, workspace, project, create_user)
+        run_case = _add_case(human_client, workspace, project, run["id"], case["id"])
 
         response = sp_client.patch(
             f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/{run_case['id']}/steps/1/",
@@ -399,24 +429,31 @@ class TestHumanUsesTheSameEndpoints:
     token."""
 
     def test_a_human_token_registers_a_module_writes_a_case_and_marks_a_step(
-        self, workspace, create_user, project, api_key_client
+        self, workspace, create_user, project, human_client
     ):
-        module, case = _build_case(api_key_client, workspace, project)
+        module, case = _build_case(human_client, workspace, project)
         assert module["code"] == "NET"
 
-        run = _build_run(api_key_client, workspace, project, create_user)
-        run_case = _add_case(api_key_client, workspace, project, run["id"], case["id"])
+        run = _build_run(human_client, workspace, project, create_user)
+        run_case = _add_case(human_client, workspace, project, run["id"], case["id"])
 
-        response = api_key_client.patch(
+        response = human_client.patch(
             f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/{run_case['id']}/steps/1/",
             {"conclusion": "pass", "actual_value": "the form was shown"},
             format="json",
         )
         assert response.status_code == status.HTTP_200_OK, response.content
 
-    def test_a_human_token_lists_the_cases(self, workspace, create_user, project, api_key_client):
-        _module, case = _build_case(api_key_client, workspace, project)
-        response = api_key_client.get(cases_url(workspace.slug, project.id))
+        # The attribution of a human write is the user the token belongs
+        # to — the same column the service principal writes its shadow
+        # bot into.
+        assert TestCaseModel.objects.get(pk=case["id"]).created_by_id == create_user.pk
+        assert TestRunModel.objects.get(pk=run["id"]).created_by_id == create_user.pk
+        assert TestRunCaseModel.objects.get(pk=run_case["id"]).created_by_id == create_user.pk
+
+    def test_a_human_token_lists_the_cases(self, workspace, create_user, project, human_client):
+        _module, case = _build_case(human_client, workspace, project)
+        response = human_client.get(cases_url(workspace.slug, project.id))
         assert response.status_code == status.HTTP_200_OK, response.content
         assert case["number"] in [row["number"] for row in response.json()["results"]]
 
