@@ -391,35 +391,40 @@ export function TestCaseRunStepRow(props: Props) {
         </ul>
       )}
 
-      <AlertModalCore
-        isOpen={pendingVerdict !== null}
-        handleClose={() => {
-          setPendingVerdict(null);
-          setVerdictError(null);
-        }}
-        handleSubmit={() => void writeVerdict()}
-        isSubmitting={isWritingVerdict}
-        title={t("project_test_case.execution.step.confirm_verdict_title", { number: step.sequence_id })}
-        content={
-          <div className="flex flex-col gap-2">
-            <p>
-              {pendingVerdict === "pass"
-                ? t("project_test_case.execution.step.confirm_verdict_pass")
-                : t("project_test_case.execution.step.confirm_verdict_fail")}
-            </p>
-            {verdictError && (
-              <p className="text-12 font-medium text-danger-primary" role="alert">
-                {verdictError}
+      {/* Mounted only while it is in use — a closed `ModalCore` keeps a
+          `fixed inset-0` wrapper in the tree, and a leftover one blocks the
+          page it was closed out of. */}
+      {(pendingVerdict !== null || isWritingVerdict) && (
+        <AlertModalCore
+          isOpen={pendingVerdict !== null}
+          handleClose={() => {
+            setPendingVerdict(null);
+            setVerdictError(null);
+          }}
+          handleSubmit={() => void writeVerdict()}
+          isSubmitting={isWritingVerdict}
+          title={t("project_test_case.execution.step.confirm_verdict_title", { number: step.sequence_id })}
+          content={
+            <div className="flex flex-col gap-2">
+              <p>
+                {pendingVerdict === "pass"
+                  ? t("project_test_case.execution.step.confirm_verdict_pass")
+                  : t("project_test_case.execution.step.confirm_verdict_fail")}
               </p>
-            )}
-          </div>
-        }
-        primaryButtonText={{
-          default: t("project_test_case.execution.step.confirm_verdict_submit"),
-          loading: t("project_test_case.execution.step.confirm_verdict_submit"),
-        }}
-        secondaryButtonText={t("common.cancel")}
-      />
+              {verdictError && (
+                <p className="text-12 font-medium text-danger-primary" role="alert">
+                  {verdictError}
+                </p>
+              )}
+            </div>
+          }
+          primaryButtonText={{
+            default: t("project_test_case.execution.step.confirm_verdict_submit"),
+            loading: t("project_test_case.execution.step.confirm_verdict_submit"),
+          }}
+          secondaryButtonText={t("common.cancel")}
+        />
+      )}
     </li>
   );
 }

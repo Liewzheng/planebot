@@ -232,9 +232,10 @@ export function TestRunDetailView(props: Props) {
             <button
               type="button"
               onClick={() => setNotice(null)}
+              aria-label={t("close")}
               className={`shrink-0 rounded-sm border border-subtle-1 bg-layer-1 px-2 py-1 text-11 ${noticeClasses.title} hover:bg-layer-2`}
             >
-              {t("common.close")}
+              {t("close")}
             </button>
           </div>
         )}
@@ -280,9 +281,10 @@ export function TestRunDetailView(props: Props) {
             <button
               type="button"
               onClick={dismissRunErrors}
+              aria-label={t("close")}
               className="shrink-0 rounded-sm border border-subtle-1 bg-layer-1 px-2 py-1 text-11 text-danger-primary hover:bg-layer-2"
             >
-              {t("common.close")}
+              {t("close")}
             </button>
           </div>
         )}
@@ -362,19 +364,27 @@ export function TestRunDetailView(props: Props) {
         )}
       </section>
 
-      <AlertModalCore
-        isOpen={isConfirmingFinalize}
-        handleClose={() => setIsConfirmingFinalize(false)}
-        handleSubmit={() => void finalize()}
-        isSubmitting={isFinalizing}
-        title={t("project_test_case.execution.finalize.confirm_title")}
-        content={t("project_test_case.execution.finalize.confirm_content")}
-        primaryButtonText={{
-          default: t("project_test_case.execution.finalize.button"),
-          loading: t("project_test_case.execution.finalize.finalizing"),
-        }}
-        secondaryButtonText={t("common.cancel")}
-      />
+      {/* The dialog exists only while it is being used. `ModalCore` leaves a
+          closed dialog in the DOM (its `fixed inset-0` wrapper keeps
+          `pointer-events: auto`), and the leftover carries a live-looking
+          「完成批次」 with `disabled=false` — the control the reader then
+          clicked on an already-frozen batch. A frozen batch mounts nothing,
+          before any request, exactly like 完成批次 in the header. */}
+      {isEditable && (isConfirmingFinalize || isFinalizing) && (
+        <AlertModalCore
+          isOpen={isConfirmingFinalize}
+          handleClose={() => setIsConfirmingFinalize(false)}
+          handleSubmit={() => void finalize()}
+          isSubmitting={isFinalizing}
+          title={t("project_test_case.execution.finalize.confirm_title")}
+          content={t("project_test_case.execution.finalize.confirm_content")}
+          primaryButtonText={{
+            default: t("project_test_case.execution.finalize.button"),
+            loading: t("project_test_case.execution.finalize.finalizing"),
+          }}
+          secondaryButtonText={t("common.cancel")}
+        />
+      )}
     </div>
   );
 }

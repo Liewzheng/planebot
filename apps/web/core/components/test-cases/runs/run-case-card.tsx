@@ -156,7 +156,11 @@ export function TestCaseRunCaseCard(props: Props) {
         </Collapsible>
       </div>
 
-      {canRemove && (
+      {/* Mounted only while it is in use: a closed dialog stays in the tree
+          (`ModalCore` keeps its `fixed inset-0` wrapper with
+          `pointer-events: auto`), and a leftover one blocks the page it was
+          closed out of. */}
+      {canRemove && (isRemoveOpen || isRemoving) && (
         <AlertModalCore
           isOpen={isRemoveOpen}
           handleClose={() => setIsRemoveOpen(false)}
