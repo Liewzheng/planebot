@@ -36,8 +36,10 @@ from uuid import uuid4
 
 import pytest
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from plane.db.models import (
+    APIToken,
     Project,
     ProjectMember,
     TestCase,
@@ -51,6 +53,12 @@ from plane.db.testcase_validity import (
     RETEST_OF_CYCLE,
     RETEST_OF_PROJECT_MISMATCH,
     RETEST_OF_SELF,
+)
+from plane.service_principals.constants import PrincipalType
+from plane.service_principals.models import (
+    ProjectGrant,
+    ServicePrincipal,
+    ServiceScope,
 )
 
 
@@ -103,6 +111,54 @@ def other_module(db, other_project):
         code="OTH",
         description="The module of the other project",
     )
+
+
+@pytest.fixture
+def sp(db, workspace, create_user):
+    return ServicePrincipal.objects.create(
+        workspace=workspace,
+        owner=create_user,
+        name="std003-bot",
+    )
+
+
+@pytest.fixture
+def sp_token(db, sp):
+    return APIToken.objects.create(
+        user=sp.owner,
+        label="svc:std003-bot",
+        user_type=1,
+        is_service=True,
+        principal_type=PrincipalType.SERVICE,
+        service_principal=sp,
+        workspace=sp.workspace,
+        token="plane_svc_std003_bot",
+    )
+
+
+@pytest.fixture
+def sp_key_client(api_client, sp_token):
+    client = APIClient()
+    client.credentials(HTTP_X_API_KEY=sp_token.token)
+    return client
+
+
+@pytest.fixture
+def sp_granted(db, sp, project):
+    """The SP may read the batches of the project — and nothing else."""
+    ServiceScope.objects.create(
+        service_principal=sp,
+        project=project,
+        resource_type="test_run",
+        action="read",
+    )
+    ProjectGrant.objects.create(
+        service_principal=sp,
+        project=project,
+        role_cap=15,
+        is_active=True,
+    )
+    return sp
 
 
 def cases_url(slug, project_id):
@@ -912,6 +968,30 @@ class TestSummary:
         response = summary(session_client, workspace, project, run["id"])
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["fail"] == 1
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestSummaryPermission:
+    """The summary is a read of the batch: the same role floor and the
+    same service-principal scope as every other read of the batch side."""
+
+    def test_a_granted_service_principal_may_read_the_summary(
+        self, session_client, sp_key_client, workspace, project, module, create_user, sp_granted
+    ):
+        run, _ = build_sample_batch(
+            session_client, workspace, project, module, create_user
+        )
+        response = sp_key_client.get(summary_url(workspace.slug, project.id, run["id"]))
+        assert response.status_code == status.HTTP_200_OK, response.content
+        assert response.json()["total"] == 1
+
+    def test_a_service_principal_without_a_scope_is_denied(
+        self, session_client, sp_key_client, workspace, project, create_user, sp
+    ):
+        run = create_run(session_client, workspace, project, create_user)
+        response = sp_key_client.get(summary_url(workspace.slug, project.id, run["id"]))
+        assert response.status_code == status.HTTP_403_FORBIDDEN, response.content
 
 
 # --------------------------------------------------------------------------- #
