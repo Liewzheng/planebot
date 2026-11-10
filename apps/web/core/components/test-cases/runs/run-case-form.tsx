@@ -550,34 +550,39 @@ export function TestCaseRunCaseForm(props: Props) {
 
       {footer && <div className="flex flex-wrap items-center justify-end gap-2">{footer}</div>}
 
-      <AlertModalCore
-        isOpen={isConfirmingConclusion}
-        handleClose={() => setIsConfirmingConclusion(false)}
-        handleSubmit={() => void writeConclusion()}
-        isSubmitting={isWritingConclusion}
-        title={t("project_test_case.execution.case.confirm_conclusion_title")}
-        content={
-          <div className="flex flex-col gap-2">
-            <p>
-              {t("project_test_case.execution.case.confirm_conclusion_content", {
-                conclusion: chosenConclusion
-                  ? t(`project_test_case.last_result.${conclusionKey(chosenConclusion)}`)
-                  : "",
-              })}
-            </p>
-            {conclusionError && (
-              <p className="text-12 font-medium text-danger-primary" role="alert">
-                {conclusionError}
+      {/* Mounted only while it is in use — a closed `ModalCore` keeps a
+          `fixed inset-0` wrapper in the tree, and a leftover one blocks the
+          page it was closed out of. */}
+      {(isConfirmingConclusion || isWritingConclusion) && (
+        <AlertModalCore
+          isOpen={isConfirmingConclusion}
+          handleClose={() => setIsConfirmingConclusion(false)}
+          handleSubmit={() => void writeConclusion()}
+          isSubmitting={isWritingConclusion}
+          title={t("project_test_case.execution.case.confirm_conclusion_title")}
+          content={
+            <div className="flex flex-col gap-2">
+              <p>
+                {t("project_test_case.execution.case.confirm_conclusion_content", {
+                  conclusion: chosenConclusion
+                    ? t(`project_test_case.last_result.${conclusionKey(chosenConclusion)}`)
+                    : "",
+                })}
               </p>
-            )}
-          </div>
-        }
-        primaryButtonText={{
-          default: t("project_test_case.execution.case.conclude"),
-          loading: t("project_test_case.execution.case.concluding"),
-        }}
-        secondaryButtonText={t("common.cancel")}
-      />
+              {conclusionError && (
+                <p className="text-12 font-medium text-danger-primary" role="alert">
+                  {conclusionError}
+                </p>
+              )}
+            </div>
+          }
+          primaryButtonText={{
+            default: t("project_test_case.execution.case.conclude"),
+            loading: t("project_test_case.execution.case.concluding"),
+          }}
+          secondaryButtonText={t("common.cancel")}
+        />
+      )}
     </div>
   );
 }
