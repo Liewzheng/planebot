@@ -10,6 +10,7 @@ import { ImageFileIcon } from "@plane/propel/icons";
 import type { AxiosRequestConfig } from "axios";
 import type { EFileAssetType, ITestRunAttachment } from "@plane/types";
 import { useDropzone } from "react-dropzone";
+import type { FileRejection } from "react-dropzone";
 // helpers
 import { useFileSize } from "@/hooks/use-file-size";
 // services
@@ -136,8 +137,29 @@ export const TestCaseRunAttachmentUploader = forwardRef<TTestCaseRunAttachmentUp
       [uploadFile]
     );
 
+    // The drop zone refuses an oversize or non-image file before `onDrop`
+    // sees it; without this callback the drop would silently do nothing and
+    // the tester would think the upload was ignored.
+    const onDropRejected = useCallback(
+      (rejections: FileRejection[]) => {
+        const first = rejections[0];
+        if (!first) return;
+
+        const tooLarge = first.errors.some((entry) => entry.code === "file-too-large");
+        setError(
+          tooLarge
+            ? t("project_test_case.execution.attachments.too_large", {
+                size: Math.round(maxFileSize / 1024 / 1024),
+              })
+            : t("project_test_case.execution.attachments.invalid_type")
+        );
+      },
+      [maxFileSize, t]
+    );
+
     const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
       onDrop,
+      onDropRejected,
       accept: { "image/*": [".png", ".jpg", ".jpeg", ".webp", ".gif"] },
       maxSize: maxFileSize,
       multiple: false,

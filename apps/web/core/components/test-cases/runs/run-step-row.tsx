@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "@plane/i18n";
 import { AlertModalCore } from "@plane/ui";
 import { EFileAssetType } from "@plane/types";
-import type { ITestRunStepRecord } from "@plane/types";
+import type { ITestCaseErrorResponse, ITestRunStepRecord } from "@plane/types";
 // components
 import { TestCaseSaveIndicator } from "../shared/save-indicator";
 import type { TTestCaseSaveState } from "../shared/save-indicator";
@@ -20,7 +20,7 @@ import type { TTestCaseMarkdownEditorHandle } from "./markdown-editor";
 // constants
 import { TEST_RUN_AUTOSAVE_DEBOUNCE_MS } from "./constants";
 // helpers
-import { markdownText, missingMeasurement, parseRunErrors } from "./types";
+import { firstStepReason, missingMeasurement, parseRunErrors } from "./types";
 import type { TRunFieldErrors } from "./types";
 // services
 import { testCaseService } from "@/services/test-cases/test-case.service";
@@ -69,7 +69,7 @@ export function TestCaseRunStepRow(props: Props) {
   // refs
   const savedRef = useRef(step.actual_value ?? "");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inFlightRef = useRef(false);
+  const inFlightPromiseRef = useRef<Promise<void> | null>(null);
   const editorRef = useRef<TTestCaseMarkdownEditorHandle | null>(null);
   const uploaderRef = useRef<TTestCaseRunAttachmentUploaderHandle | null>(null);
   const unmountedRef = useRef(false);
@@ -79,44 +79,62 @@ export function TestCaseRunStepRow(props: Props) {
   // A refresh of the batch replaces the record; a value that is being typed
   // must not be overwritten by the answer to its own write.
   useEffect(() => {
-    if (inFlightRef.current) return;
+    if (inFlightPromiseRef.current) return;
     if (step.actual_value === savedRef.current) return;
     savedRef.current = step.actual_value ?? "";
     setValue(step.actual_value ?? "");
   }, [step.actual_value]);
 
   const save = useCallback(
-    async (nextValue: string) => {
+    async (nextValue: string): Promise<void> => {
       if (disabled) return;
+
+      // A write is already on its way: wait it out, then send what is still
+      // unsaved, so a caller that awaits `flush()` really sees the text on the
+      // server before it writes the verdict about that text.
+      if (inFlightPromiseRef.current) await inFlightPromiseRef.current;
       if (nextValue === savedRef.current) return;
 
-      inFlightRef.current = true;
-      setSaveState("saving");
-      setLocalError(null);
-
-      try {
-        const updated = await testCaseService.updateRunStep(
-          workspaceSlug,
-          projectId,
-          testRunId,
-          runCaseId,
-          step.sequence_id,
-          {
-            actual_value: nextValue,
-          }
-        );
-        savedRef.current = updated.actual_value ?? nextValue;
-        setSaveState("saved");
-        onChanged();
-      } catch (error) {
-        const parsed = parseRunErrors(error as never);
-        const stepErrors = parsed.cases[caseNumber]?.steps[step.sequence_id] ?? {};
-        const first = Object.values(stepErrors)[0]?.[0] ?? parsed.form[0];
-        setLocalError(first ?? t("project_test_case.execution.step.save_failed"));
-        setSaveState("error");
-      } finally {
-        inFlightRef.current = false;
+      if (!unmountedRef.current) {
+        setSaveState("saving");
+        setLocalError(null);
       }
+
+      const write = (async () => {
+        try {
+          const updated = await testCaseService.updateRunStep(
+            workspaceSlug,
+            projectId,
+            testRunId,
+            runCaseId,
+            step.sequence_id,
+            {
+              actual_value: nextValue,
+            }
+          );
+          savedRef.current = updated.actual_value ?? nextValue;
+          if (!unmountedRef.current) setSaveState("saved");
+          onChanged();
+        } catch (error) {
+          if (unmountedRef.current) return;
+          // The refusal names the field, not the step, so the batch-level
+          // entries and the envelope's sentence are read as well.
+          const reason = firstStepReason(
+            parseRunErrors(error as ITestCaseErrorResponse),
+            error as ITestCaseErrorResponse,
+            caseNumber,
+            step.sequence_id
+          );
+          setLocalError(reason ?? t("project_test_case.execution.step.save_failed"));
+          setSaveState("error");
+        }
+      })();
+
+      const tracked = write.finally(() => {
+        if (inFlightPromiseRef.current === tracked) inFlightPromiseRef.current = null;
+      });
+      inFlightPromiseRef.current = tracked;
+      await tracked;
     },
     [caseNumber, disabled, onChanged, projectId, runCaseId, step.sequence_id, t, testRunId, workspaceSlug]
   );
@@ -135,12 +153,13 @@ export function TestCaseRunStepRow(props: Props) {
     []
   );
 
-  const flush = useCallback(() => {
+  /** Send the typed value now, and hand back the write so callers can await it. */
+  const flush = useCallback((): Promise<void> => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    void saveRef.current(value);
+    return saveRef.current(value);
   }, [value]);
 
   useEffect(() => {
@@ -175,8 +194,7 @@ export function TestCaseRunStepRow(props: Props) {
     }
 
     // The typed text has to be on the server before the verdict that
-    // describes it; the two writes are separate rows.
-    if (value !== savedRef.current) flush();
+    // describes it; `writeVerdict` awaits the flush, so the order is real.
     setPendingVerdict(next);
   };
 
@@ -186,22 +204,35 @@ export function TestCaseRunStepRow(props: Props) {
     setIsWritingVerdict(true);
     setLocalError(null);
     try {
+      await flush();
+
       await testCaseService.updateRunStep(workspaceSlug, projectId, testRunId, runCaseId, step.sequence_id, {
         conclusion: pendingVerdict,
       });
       setPendingVerdict(null);
       onChanged();
     } catch (error) {
-      const parsed = parseRunErrors(error as never);
-      const stepErrors = parsed.cases[caseNumber]?.steps[step.sequence_id] ?? {};
-      const first = Object.values(stepErrors)[0]?.[0] ?? parsed.form[0];
-      setLocalError(first ?? t("project_test_case.execution.step.verdict_failed"));
+      // The refusal of `_assert_verdict_is_final` names the field only, so the
+      // batch-level entries and the envelope's own sentence are read as well.
+      const reason = firstStepReason(
+        parseRunErrors(error as ITestCaseErrorResponse),
+        error as ITestCaseErrorResponse,
+        caseNumber,
+        step.sequence_id
+      );
+      setLocalError(reason ?? t("project_test_case.execution.step.verdict_failed"));
+      // Close the dialog so the sentence, which stands next to the measured
+      // value, is not hidden behind it.
+      setPendingVerdict(null);
     } finally {
       setIsWritingVerdict(false);
     }
   };
 
-  const needsMeasurement = verdict === "fail" && !markdownText(value) && (step.attachments ?? []).length === 0;
+  // One predicate for the guard and the hint — a second copy could disagree
+  // with the rule it is meant to show.
+  const needsMeasurement =
+    verdict === "fail" && missingMeasurement({ actual_value: value, attachments: step.attachments });
   // Every reason the server addresses to this step is shown here — the
   // finalize rules can name the expected result (`expected_is_unjudgeable`,
   // §5.6) just as they name the measured value or the verdict.

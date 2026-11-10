@@ -311,14 +311,22 @@ export class TestCaseService extends APIService {
   }
 
   /**
-   * Take a case out of a batch. A case record that is already gone answers
-   * 404 — the caller treats that as "removed" and refreshes.
+   * Take a case out of a batch.
+   *
+   * The refusal body of this feature is `{error, code, errors[]}` — and the
+   * 404 of "this record is not in that batch" is only
+   * `{"error": "Test run case not found"}`, with no code. The caller has to
+   * tell "already gone" (404, nothing to do) from "refused" (409 on a frozen
+   * batch or on a record that already carries a verdict, 403), so the HTTP
+   * status travels with the body instead of being dropped here.
    */
   async removeRunCase(workspaceSlug: string, projectId: string, testRunId: string, runCaseId: string): Promise<void> {
     return this.delete(`${this.runCasePath(workspaceSlug, projectId, testRunId, runCaseId)}/`)
       .then(() => undefined)
       .catch((error) => {
-        throw error?.response?.data;
+        const body = error?.response?.data;
+        const status = error?.response?.status;
+        throw typeof body === "object" && body !== null ? { ...body, status } : { error: body, status };
       });
   }
 

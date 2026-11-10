@@ -9,7 +9,7 @@ import { useTranslation } from "@plane/i18n";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import { AlertModalCore, Collapsible } from "@plane/ui";
 import { ChevronDownIcon, ChevronRightIcon } from "@plane/propel/icons";
-import type { ITestRunCase } from "@plane/types";
+import type { ITestCaseErrorResponse, ITestRunCase } from "@plane/types";
 // components
 import { TestCaseResultBadge } from "../shared/badges";
 import { TestCaseRunCaseForm } from "./run-case-form";
@@ -66,18 +66,25 @@ export function TestCaseRunCaseCard(props: Props) {
       setIsRemoveOpen(false);
       onChanged();
     } catch (error) {
-      // A record that is already gone answers 404 — that is the outcome the
-      // caller asked for, not a failure worth a toast.
-      const envelope = error as { code?: string; error?: string } | undefined;
-      if (envelope?.code === "not_found" || envelope?.error === "Test run case not found") {
+      // A record that is already gone answers 404 (the service keeps the
+      // status next to the body) — that is the outcome the caller asked for,
+      // not a failure worth a toast. Every other refusal (a frozen batch, a
+      // record that already carries a verdict, a missing permission) carries
+      // its own sentence, and that sentence is what the toast shows.
+      const envelope = error as (ITestCaseErrorResponse & { status?: number }) | undefined;
+      if (envelope?.status === 404) {
         setIsRemoveOpen(false);
         onChanged();
         return;
       }
+      const sentence =
+        envelope?.errors?.find((entry) => entry?.message)?.message ||
+        envelope?.error ||
+        t("project_test_case.execution.case.remove_failed");
       setToast({
         type: TOAST_TYPE.ERROR,
         title: t("project_test_case.execution.case.remove_failed"),
-        message: envelope?.error || t("project_test_case.execution.case.remove_failed"),
+        message: sentence,
       });
     } finally {
       setIsRemoving(false);

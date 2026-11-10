@@ -168,6 +168,110 @@ export const parseRunErrors = (envelope?: ITestCaseErrorResponse | null): TParse
 export const stepsWithErrors = (errors?: TRunCaseErrors): number[] =>
   errors ? Object.keys(errors.steps).map(Number) : [];
 
+/** The sentence of a refusal, when the envelope carries one. */
+const envelopeSentence = (envelope?: ITestCaseErrorResponse | null): string | undefined => {
+  const sentence = (envelope?.error ?? "").trim();
+  return sentence.length > 0 ? sentence : undefined;
+};
+
+/**
+ * The reasons of a refused write that belong to one case record, as the
+ * form shows them.
+ *
+ * The feature refuses in two shapes and both have to reach the screen:
+ *
+ * * the batch rules name their location — `cases[TC-…].conclusion`,
+ *   `cases[TC-…].steps[2].actual_value` — and those entries land in
+ *   `parsed.cases[…]`;
+ * * a row of one case is refused by the model/serializer
+ *   (`validation_error_response`), whose entry carries **only** the field
+ *   name (`path: "conclusion"`) and no case number. Such an entry lands in
+ *   `parsed.run` — and a form that read `parsed.cases[…]` alone dropped it
+ *   silently (the conclusion dialog closed nothing and said nothing).
+ *
+ * Order: the reasons addressed to this case first, then the ones of the
+ * batch header (a row-level refusal belongs here), then the entries that
+ * name no place at all, and the envelope's own sentence only when none of the
+ * three produced anything — so no refusal can end up nowhere.
+ */
+export const collectCaseErrors = (
+  parsed: TParsedRunErrors,
+  envelope?: ITestCaseErrorResponse | null,
+  caseNumber?: string
+): TRunFieldErrors => {
+  const merged: TRunFieldErrors = {};
+
+  const merge = (source: TRunFieldErrors) => {
+    for (const [field, messages] of Object.entries(source)) {
+      for (const message of messages) addTo(merged, field, message);
+    }
+  };
+
+  merge((caseNumber ? parsed.cases[caseNumber]?.fields : undefined) ?? {});
+  merge(parsed.run);
+
+  // The unplaced reasons repeat per case; the same sentence twice says
+  // nothing the first one did not.
+  const unplaced = [...new Set(parsed.form)];
+  for (const message of unplaced) addTo(merged, "__form__", message);
+
+  if (Object.keys(merged).length === 0) {
+    const sentence = envelopeSentence(envelope);
+    if (sentence) addTo(merged, "__form__", sentence);
+  }
+
+  return merged;
+};
+
+/**
+ * The first reason of a refused step write, as one sentence.
+ *
+ * A step PATCH is refused by the model (`_assert_verdict_is_final`, a
+ * serializer detail), whose entry names the field but not the step — the
+ * entry lands in `parsed.run`, not in `parsed.cases[…].steps[…]`. Reading
+ * only the latter left the tester with the generic "the verdict could not be
+ * written" while the server had said exactly why.
+ */
+export const firstStepReason = (
+  parsed: TParsedRunErrors,
+  envelope?: ITestCaseErrorResponse | null,
+  caseNumber?: string,
+  stepSequence?: number
+): string | undefined => {
+  const stepErrors =
+    caseNumber && typeof stepSequence === "number" ? parsed.cases[caseNumber]?.steps[stepSequence] : undefined;
+  const stepFirst = Object.values(stepErrors ?? {})[0]?.[0];
+  if (stepFirst) return stepFirst;
+
+  const runFirst = Object.values(parsed.run)[0]?.[0];
+  if (runFirst) return runFirst;
+
+  if (parsed.form[0]) return parsed.form[0];
+
+  return envelopeSentence(envelope);
+};
+
+/**
+ * Give a refusal that names no location at least one visible sentence.
+ *
+ * A 403/404/409 body of this feature carries `error` and `code` but often no
+ * `errors[]` entry the parser can place (`{"error": "Test run not found"}`,
+ * `{"error": "A completed batch is frozen."}`). The caller renders whatever
+ * the parser found; without this, such a refusal leaves the screen with a
+ * heading and no reason.
+ */
+export const withRefusalSentence = (
+  parsed: TParsedRunErrors,
+  envelope?: ITestCaseErrorResponse | null
+): TParsedRunErrors => {
+  if (parsed.form.length > 0) return parsed;
+  if (Object.keys(parsed.run).length > 0) return parsed;
+  if (Object.keys(parsed.cases).length > 0) return parsed;
+
+  const sentence = envelopeSentence(envelope);
+  return sentence ? { ...parsed, form: [sentence] } : parsed;
+};
+
 /**
  * The hint of a ✔/✘ attempt that has nothing to record. §4.4 rule 1: a ✘
  * with no measured value is an invalid record — the measured value may be

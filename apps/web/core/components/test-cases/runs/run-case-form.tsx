@@ -10,7 +10,7 @@ import { useTranslation } from "@plane/i18n";
 import { Button } from "@plane/propel/button";
 import { AlertModalCore } from "@plane/ui";
 import { EFileAssetType } from "@plane/types";
-import type { ITestRunCase, TTestRunConclusion } from "@plane/types";
+import type { ITestCaseErrorResponse, ITestRunCase, TTestRunConclusion } from "@plane/types";
 // components
 import { TestCaseResultBadge, TestCasePriorityBadge } from "../shared/badges";
 import { TestCaseSaveIndicator } from "../shared/save-indicator";
@@ -24,7 +24,7 @@ import { TestCaseRunStepRow } from "./run-step-row";
 // constants
 import { TEST_RUN_AUTOSAVE_DEBOUNCE_MS, TEST_RUN_CONCLUSIONS } from "./constants";
 // helpers
-import { changedCaseFields, draftFromRunCase, parseRunErrors } from "./types";
+import { changedCaseFields, collectCaseErrors, draftFromRunCase, parseRunErrors } from "./types";
 import type { TRunCaseDraft, TRunCaseErrors, TRunCaseTextField } from "./types";
 // services
 import { testCaseService } from "@/services/test-cases/test-case.service";
@@ -78,7 +78,7 @@ export function TestCaseRunCaseForm(props: Props) {
   const savedRef = useRef<TRunCaseDraft>(draftFromRunCase(runCase));
   const initializedForRef = useRef<string>(runCase.id);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inFlightRef = useRef(false);
+  const inFlightPromiseRef = useRef<Promise<void> | null>(null);
   const evidenceEditorRef = useRef<TTestCaseMarkdownEditorHandle | null>(null);
   const evidenceUploaderRef = useRef<TTestCaseRunAttachmentUploaderHandle | null>(null);
   const unmountedRef = useRef(false);
@@ -95,36 +95,49 @@ export function TestCaseRunCaseForm(props: Props) {
     setDraft(next);
   }, [runCase]);
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (): Promise<void> => {
     if (disabled) return;
+
+    // A write is already on its way: wait it out and then send what is left,
+    // so a caller that awaits `flush()` really sees its text on the server —
+    // the conclusion is written after it, and the two writes cannot overtake
+    // each other.
+    if (inFlightPromiseRef.current) await inFlightPromiseRef.current;
 
     const changed = changedCaseFields(savedRef.current, draftRef.current);
     if (Object.keys(changed).length === 0) return;
-    if (inFlightRef.current) return;
 
-    inFlightRef.current = true;
     if (!unmountedRef.current) {
       setSaveState("saving");
       setLocalErrors({});
     }
 
-    try {
-      const updated = await testCaseService.updateRunCase(workspaceSlug, projectId, testRunId, runCase.id, changed);
-      savedRef.current = draftFromRunCase(updated);
-      if (!unmountedRef.current) setSaveState("saved");
-      onChanged();
-    } catch (error) {
-      if (unmountedRef.current) return;
-      const parsed = parseRunErrors(error as never);
-      const caseErrors = parsed.cases[runCase.case_number]?.fields ?? {};
-      setLocalErrors({
-        ...caseErrors,
-        ...(parsed.form.length > 0 ? { __form__: parsed.form } : {}),
-      });
-      setSaveState("error");
-    } finally {
-      inFlightRef.current = false;
-    }
+    const write = (async () => {
+      try {
+        const updated = await testCaseService.updateRunCase(workspaceSlug, projectId, testRunId, runCase.id, changed);
+        savedRef.current = draftFromRunCase(updated);
+        if (!unmountedRef.current) setSaveState("saved");
+        onChanged();
+      } catch (error) {
+        if (unmountedRef.current) return;
+        // A refusal of this row names only the field (`path: "conclusion"`),
+        // not the case — collectCaseErrors reads both shapes.
+        setLocalErrors(
+          collectCaseErrors(
+            parseRunErrors(error as ITestCaseErrorResponse),
+            error as ITestCaseErrorResponse,
+            runCase.case_number
+          )
+        );
+        setSaveState("error");
+      }
+    })();
+
+    const tracked = write.finally(() => {
+      if (inFlightPromiseRef.current === tracked) inFlightPromiseRef.current = null;
+    });
+    inFlightPromiseRef.current = tracked;
+    await tracked;
   }, [disabled, onChanged, projectId, runCase.case_number, runCase.id, testRunId, workspaceSlug]);
 
   const saveRef = useRef(save);
@@ -140,12 +153,13 @@ export function TestCaseRunCaseForm(props: Props) {
     []
   );
 
-  const flush = useCallback(() => {
+  /** Send what is unsaved now, and hand back the write so callers can await it. */
+  const flush = useCallback((): Promise<void> => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    void saveRef.current();
+    return saveRef.current();
   }, []);
 
   // The pause after which the typed fields go out.
@@ -181,9 +195,10 @@ export function TestCaseRunCaseForm(props: Props) {
     setIsWritingConclusion(true);
     setLocalErrors({});
     try {
-      // The typed fields go first: the conclusion is a statement about them,
-      // and the two writes are separate rows.
-      if (Object.keys(changedCaseFields(savedRef.current, draftRef.current)).length > 0) flush();
+      // The typed fields go first, and the wait is real: the conclusion is a
+      // statement about them and the two writes are separate rows on the same
+      // record.
+      await flush();
 
       await testCaseService.updateRunCase(workspaceSlug, projectId, testRunId, runCase.id, {
         conclusion: chosenConclusion,
@@ -191,8 +206,20 @@ export function TestCaseRunCaseForm(props: Props) {
       setIsConfirmingConclusion(false);
       onChanged();
     } catch (error) {
-      const parsed = parseRunErrors(error as never);
-      setLocalErrors(parsed.cases[runCase.case_number]?.fields ?? {});
+      // The row refusal of this endpoint names the field but not the case
+      // (`{"path": "conclusion", "field": "conclusion"}`), so the reasons of
+      // the batch header and the envelope's own sentence are merged too — a
+      // refused conclusion must never leave the dialog silent.
+      setLocalErrors(
+        collectCaseErrors(
+          parseRunErrors(error as ITestCaseErrorResponse),
+          error as ITestCaseErrorResponse,
+          runCase.case_number
+        )
+      );
+      // Close the dialog: the reason stands next to the conclusion block, and
+      // a dialog that stays open would hide it.
+      setIsConfirmingConclusion(false);
     } finally {
       setIsWritingConclusion(false);
     }

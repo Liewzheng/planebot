@@ -18,7 +18,7 @@ import { TestCaseRunSummaryPanel } from "./run-summary-panel";
 // constants
 import { TEST_RUN_DETAIL, TEST_RUN_SUMMARY_REPORT } from "./constants";
 // helpers
-import { parseRunErrors } from "./types";
+import { parseRunErrors, withRefusalSentence } from "./types";
 import type { TParsedRunErrors } from "./types";
 // services
 import { testCaseService } from "@/services/test-cases/test-case.service";
@@ -101,7 +101,10 @@ export function TestRunDetailView(props: Props) {
       });
     } catch (finalizeError) {
       const envelope = finalizeError as ITestCaseErrorResponse | undefined;
-      setErrors(parseRunErrors(envelope));
+      // A 403/404/409 body carries a sentence but often no entry the parser
+      // can place; without the fallback the page would only say "each reason
+      // is shown next to its field" while showing none.
+      setErrors(withRefusalSentence(parseRunErrors(envelope), envelope));
       setHasFinalizeErrors(true);
       setIsConfirmingFinalize(false);
     } finally {
