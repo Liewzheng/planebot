@@ -15,7 +15,6 @@ from rest_framework import serializers
 
 # Module imports
 from plane.db.models import (
-    FileAsset,
     TestRun,
     TestRunCase,
     TestRunStepRecord,
@@ -210,14 +209,3 @@ class TestRunStepRecordWriteSerializer(BaseSerializer):
         if conclusion and conclusion not in ("pass", "fail", "unset"):
             raise serializers.ValidationError("The step verdict must be pass, fail or unset.")
         return conclusion
-
-
-class TestRunAttachmentSerializer(serializers.Serializer):
-    """The body of a request that binds a file to a record."""
-
-    asset_id = serializers.UUIDField()
-
-    def validate_asset_id(self, value):
-        if not FileAsset.objects.filter(id=value, is_deleted=False).exists():
-            raise serializers.ValidationError("The asset does not exist.")
-        return value

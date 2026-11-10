@@ -478,6 +478,39 @@ class TestStepsAndLinks:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "step_count_zero" in error_codes(response)
 
+    def test_a_malformed_step_table_is_refused(
+        self, session_client, workspace, project, module
+    ):
+        """The step table is replaced as a whole, so the endpoint takes the
+        raw body — a body that is not a list of objects is a refused
+        payload, not a crash."""
+        body = create_case(session_client, workspace, project, module)
+        before = session_client.get(
+            f"{cases_url(workspace.slug, project.id)}{body['id']}/steps/"
+        ).json()
+
+        for payload in (
+            {"steps": ["oops"]},
+            {"steps": {"a": 1}},
+            {"steps": "abc"},
+            {"steps": [None]},
+            {"steps": 7},
+        ):
+            response = session_client.put(
+                f"{cases_url(workspace.slug, project.id)}{body['id']}/steps/",
+                payload,
+                format="json",
+            )
+            assert response.status_code == status.HTTP_400_BAD_REQUEST, payload
+            assert response.json()["code"] == "invalid_payload", payload
+            assert response.json()["errors"][0]["field"] == "steps", payload
+
+        # The stored step table is untouched.
+        after = session_client.get(
+            f"{cases_url(workspace.slug, project.id)}{body['id']}/steps/"
+        ).json()
+        assert after == before
+
     def test_a_work_item_is_linked_and_unlinked(
         self, session_client, workspace, project, module, issue
     ):

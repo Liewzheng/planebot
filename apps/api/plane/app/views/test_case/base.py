@@ -570,6 +570,26 @@ class TestCaseStepEndpoint(BaseAPIView):
         if steps is None:
             steps = []
 
+        # This endpoint takes the raw body (the step table is replaced as
+        # a whole), so the shape is checked here: a table that is not a
+        # list of objects is a refused payload, not a crash.
+        if not isinstance(steps, list) or any(not isinstance(step, dict) for step in steps):
+            return Response(
+                {
+                    "error": "The payload is not valid.",
+                    "code": "invalid_payload",
+                    "errors": [
+                        error_entry(
+                            "invalid_payload",
+                            "steps",
+                            "The step table must be a list of objects with an "
+                            "'action' and an 'expected_result'.",
+                        )
+                    ],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         header = {
             "title": case.title,
             "purpose": case.purpose,

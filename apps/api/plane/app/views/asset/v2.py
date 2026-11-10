@@ -309,7 +309,6 @@ class WorkspaceFileAssetEndpoint(BaseAPIView):
             )
         return None
 
-
     def asset_delete(self, asset_id):
         asset = FileAsset.objects.filter(id=asset_id).first()
         # Check if the asset exists

@@ -377,8 +377,13 @@ def build_case_data(
         steps=tuple(
             StepRecordData(
                 sequence_id=index,
-                action=step.get("action") or "",
-                expected_result=step.get("expected_result") or "",
+                # Only a mapping carries a step; anything else is read as
+                # an empty action, so a malformed step lands on
+                # ``action_empty`` instead of raising.
+                action=(step.get("action") or "") if isinstance(step, dict) else "",
+                expected_result=(
+                    (step.get("expected_result") or "") if isinstance(step, dict) else ""
+                ),
             )
             for index, step in enumerate(steps, start=1)
         ),
