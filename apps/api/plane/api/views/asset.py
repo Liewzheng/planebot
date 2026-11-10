@@ -457,17 +457,22 @@ class GenericAssetEndpoint(BaseAPIView):
         """The record of a batch a file of this entity type hangs on.
 
         ``None`` for every other entity type — those are not bound to a
-        record of a batch — and for an identifier that names no record.
+        record of a batch — and for an identifier that names no record
+        (or one that is not a uuid at all: the lookup would raise).
         """
+        try:
+            record_id = uuid.UUID(str(entity_identifier))
+        except (ValueError, TypeError, AttributeError):
+            return None
         if entity_type == FileAsset.EntityTypeContext.TEST_RUN_STEP_RECORD:
             return (
-                TestRunStepRecord.objects.filter(pk=entity_identifier)
+                TestRunStepRecord.objects.filter(pk=record_id)
                 .select_related("test_run_case__test_run")
                 .first()
             )
         if entity_type == FileAsset.EntityTypeContext.TEST_RUN_CASE_EVIDENCE:
             return (
-                TestRunCase.objects.filter(pk=entity_identifier)
+                TestRunCase.objects.filter(pk=record_id)
                 .select_related("test_run")
                 .first()
             )
