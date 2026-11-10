@@ -219,6 +219,45 @@ export const coreRoutes: RouteConfigEntry[] = [
               "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/intake/page.tsx"
             ),
           ]),
+
+          // Test Cases List
+          layout("./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/test-cases/(list)/layout.tsx", [
+            route(
+              ":workspaceSlug/projects/:projectId/test-cases",
+              "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/test-cases/(list)/page.tsx"
+            ),
+          ]),
+
+          // Test Case Create — the static segment comes before the
+          // dynamic one, so "new" is not read as a case id.
+          layout(
+            "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/test-cases/(create)/new/layout.tsx",
+            [
+              route(
+                ":workspaceSlug/projects/:projectId/test-cases/new",
+                "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/test-cases/(create)/new/page.tsx"
+              ),
+            ]
+          ),
+
+          // Test Case Detail
+          layout(
+            "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/test-cases/(detail)/[testCaseId]/layout.tsx",
+            [
+              route(
+                ":workspaceSlug/projects/:projectId/test-cases/:testCaseId",
+                "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/test-cases/(detail)/[testCaseId]/page.tsx"
+              ),
+            ]
+          ),
+
+          // Test Runs List — the batches are not part of this version yet
+          layout("./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/test-runs/(list)/layout.tsx", [
+            route(
+              ":workspaceSlug/projects/:projectId/test-runs",
+              "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/test-runs/(list)/page.tsx"
+            ),
+          ]),
         ]),
 
         // Project Archives - Issues, Cycles, Modules
