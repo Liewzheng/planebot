@@ -63,12 +63,29 @@ this field (``react-markdown`` in
 ``remark-gfm`` yet, so it still shows the tildes. The web layer has to
 enable remark-gfm, otherwise the rules judge a value the renderer shows
 verbatim.
+
+Expected result vs measured value
+---------------------------------
+Two different questions live on the same step row, and they never answer
+for each other:
+
+* the **measured value** carries the observed original. It is rejected
+  when it is *nothing but* an evaluation word
+  (:data:`ACTUAL_VALUE_IS_EVALUATION`, §4.4, §6.3);
+* the **expected result** must be observable. §5.6 bans ten unverifiable
+  wordings from it (正常 / 正确 / 无异常 / 友好 / 流畅 / 美观 / 符合设计 / 应该 /
+  大概 / 一般), and such a case is "not written yet" — it may not enter a
+  batch. The banned word is looked for **inside** the sentence, because
+  the counter-example of §5.6 is a whole sentence
+  (「切换语言后界面显示正常」); the code is
+  :data:`EXPECTED_IS_UNJUDGEABLE`, not the measured-value code.
 """
 
 from dataclasses import dataclass
 from datetime import date
 import html
 import re
+import unicodedata
 
 # Third party imports
 import mistune
@@ -133,6 +150,12 @@ STEP_CONCLUSION_INVALID = "step_conclusion_invalid"
 STEP_CONCLUSION_UNSET = "step_conclusion_unset"
 FAIL_WITHOUT_ACTUAL_VALUE = "fail_without_actual_value"
 ACTUAL_VALUE_IS_EVALUATION = "actual_value_is_evaluation"
+#: The **expected** result of a step carries a wording §5.6 bans
+#: (正常 / 正确 / 无异常 / …). The case is "not written yet" and may not
+#: enter a batch. It is not the measured-value code: a judgement about a
+#: result and a criterion that cannot be judged are two different
+#: findings (see the module docstring).
+EXPECTED_IS_UNJUDGEABLE = "expected_is_unjudgeable"
 #: The measured value of a failed step carries nothing but an image.
 #: The code never decides the validity on its own — it always comes with
 #: :data:`FAIL_WITHOUT_ACTUAL_VALUE` — but it tells the front end what
@@ -144,6 +167,11 @@ CONCLUSION_INVALID = "conclusion_invalid"
 CONCLUSION_PASS_WITH_FAILED_STEP = "conclusion_pass_with_failed_step"
 CONCLUSION_PASS_WITH_UNSET_STEP = "conclusion_pass_with_unset_step"
 CONCLUSION_FAIL_WITHOUT_FAILED_STEP = "conclusion_fail_without_failed_step"
+#: Retired: a ``FAIL`` conclusion may hold steps that were never executed
+#: — they are the 需人工 steps of the batch. REC-SW-001's own sample has
+#: one (step 7, both boxes blank, 「按 `需人工` 记，不影响 `FAIL` 判定」), so
+#: the rule that refused the shape was dropped. The name stays defined
+#: because the app-side maps still reference it; no rule emits it.
 CONCLUSION_FAIL_WITH_UNSET_STEP = "conclusion_fail_with_unset_step"
 CONCLUSION_NA_WITHOUT_REASON = "conclusion_na_without_reason"
 CONCLUSION_NA_WITHOUT_CRITERIA_SOURCE = "conclusion_na_without_criteria_source"
@@ -165,6 +193,12 @@ RUN_COMPLETED = "run_completed"
 #: (STD-SW-003 §6). The model layer raises this code; the batch is
 #: corrected by voiding the case record and running again in a new batch.
 CONCLUSION_IS_FINAL = "conclusion_is_final"
+#: The ``retest_of`` link of a batch (STD-SW-003 §6.2 rule 2). The three
+#: codes are raised by the model layer, so they are listed here with the
+#: other codes the API turns into a message.
+RETEST_OF_PROJECT_MISMATCH = "retest_of_project_mismatch"
+RETEST_OF_SELF = "retest_of_self"
+RETEST_OF_CYCLE = "retest_of_cycle"
 
 
 #: English sentence per bare reason code. The front end localises from the
@@ -183,16 +217,20 @@ REASON_MESSAGES = {
     ACTION_EMPTY: "The step action is required.",
     EXPECTED_EMPTY: "The step expected result is required.",
     STEP_CONCLUSION_INVALID: "The step verdict must be pass, fail or unset.",
-    STEP_CONCLUSION_UNSET: "The step verdict must be marked, it may not be left blank.",
+    STEP_CONCLUSION_UNSET: "A PASS conclusion means every box was ticked ✔; a blank step contradicts it.",
     FAIL_WITHOUT_ACTUAL_VALUE: "A failed step must carry the measured value — as text or as an attached file.",
     ACTUAL_VALUE_IS_EVALUATION: "The measured value must be the observed original, not an evaluation word.",
+    EXPECTED_IS_UNJUDGEABLE: (
+        "The expected result must say what is observed; 正常 / 正确 / 无异常 / "
+        "友好 / 流畅 / 美观 / 符合设计 / 应该 / 大概 / 一般 cannot be judged by the "
+        "reader (STD-SW-003 §5.6)."
+    ),
     ACTUAL_VALUE_IS_IMAGE_ONLY: "The measured value is only an image — attach the file to the step.",
     ACTUAL_VALUE_WITHOUT_CONCLUSION: "A measured value without a step verdict is not allowed.",
     CONCLUSION_INVALID: "The conclusion must be PASS, FAIL, N/A or MANUAL.",
     CONCLUSION_PASS_WITH_FAILED_STEP: "A PASS conclusion must not have a failed step.",
     CONCLUSION_PASS_WITH_UNSET_STEP: "A PASS conclusion must not have a step with a blank verdict.",
     CONCLUSION_FAIL_WITHOUT_FAILED_STEP: "A FAIL conclusion needs at least one failed step.",
-    CONCLUSION_FAIL_WITH_UNSET_STEP: "A FAIL conclusion must not have a step with a blank verdict.",
     CONCLUSION_NA_WITHOUT_REASON: "An N/A conclusion needs a reason.",
     CONCLUSION_NA_WITHOUT_CRITERIA_SOURCE: "An N/A conclusion needs the source of its criteria.",
     CONCLUSION_NA_WITH_FAILED_STEP: "An N/A conclusion must not have a failed step.",
@@ -210,6 +248,9 @@ REASON_MESSAGES = {
     DUPLICATE_CASE_NUMBER: "The same test case is in the batch twice.",
     RUN_COMPLETED: "The batch is completed, a conclusion is never written back into it.",
     CONCLUSION_IS_FINAL: "A conclusion that is written into a batch is never changed.",
+    RETEST_OF_PROJECT_MISMATCH: "The batch this one re-tests must belong to the same project.",
+    RETEST_OF_SELF: "A batch cannot be a re-test of itself.",
+    RETEST_OF_CYCLE: "A re-test chain cannot run in a ring.",
 }
 
 
@@ -539,6 +580,160 @@ def _is_evaluation_text(text: str) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# Unverifiable wording in an expected result (不可判定词, §5.6)
+# --------------------------------------------------------------------------- #
+
+#: The ten wordings STD-SW-003 §5.6 bans from the **expected** result of a
+#: step, in the order the table of §5.6 lists them. A case whose expected
+#: result carries one of them is "not written yet" (按「未写完」处理) and may
+#: not enter a batch.
+#:
+#: Why each one is banned, in the words of §5.6: 正常 / 正确 / 无异常 — the
+#: definition is filled in by the reader; 友好 / 流畅 / 美观 — there is no way
+#: to observe it; 符合设计 — the design document may be stale; 应该 / 大概 /
+#: 一般 — uncertainty written down as a conclusion. The fix column of the
+#: table says what to write instead: the concrete text, number, file name
+#: or state, a response-time ceiling, the version of the design, or
+#: 「需人工」 with the item to confirm.
+#:
+#: Two rows of the same table are not in the list. 「无报错」 names the
+#: absence of an error and its fix column asks for a concrete criterion (an
+#: ``error`` log line, an exit code) — it is a reminder about a specific
+#: criterion, not one of the ten phrasing words. The row about naked
+#: interface jargon (chip, 面板 …) is a naming rule (§5.6 last line), not a
+#: word list.
+UNJUDGEABLE_EXPECTED_PHRASES = (
+    "正常",
+    "正确",
+    "无异常",
+    "友好",
+    "流畅",
+    "美观",
+    "符合设计",
+    "应该",
+    "大概",
+    "一般",
+)
+
+#: Every accepted spelling of the ten, mapped to the wording of §5.6 it
+#: stands for. A banned word is banned however it is typed: the list
+#: carries the simplified characters of §5.6, the traditional characters of
+#: the same words, and their English renderings.
+UNJUDGEABLE_EXPECTED_WORDINGS = {
+    # 正常 — an outcome the reader defines himself
+    "正常": "正常",
+    "normal": "正常",
+    # 正确
+    "正确": "正确",
+    "正確": "正确",
+    "correct": "正确",
+    # 无异常
+    "无异常": "无异常",
+    "無異常": "无异常",
+    "no error": "无异常",
+    "error-free": "无异常",
+    # 友好
+    "友好": "友好",
+    "friendly": "友好",
+    "user-friendly": "友好",
+    # 流畅
+    "流畅": "流畅",
+    "流暢": "流畅",
+    "smooth": "流畅",
+    # 美观
+    "美观": "美观",
+    "美觀": "美观",
+    "beautiful": "美观",
+    "good-looking": "美观",
+    # 符合设计
+    "符合设计": "符合设计",
+    "符合設計": "符合设计",
+    "as designed": "符合设计",
+    "matches the design": "符合设计",
+    "per the design": "符合设计",
+    # 应该
+    "应该": "应该",
+    "應該": "应该",
+    "should": "应该",
+    # 大概
+    "大概": "大概",
+    "roughly": "大概",
+    "approximately": "大概",
+    # 一般
+    "一般": "一般",
+    "generally": "一般",
+    "in general": "一般",
+}
+
+#: The characters of a CJK spelling are matched as a substring of the
+#: whitespace-free text: 「正 常」 is the same word as 「正常」.
+_CJK_UNJUDGEABLE = tuple(
+    sorted(spelling for spelling in UNJUDGEABLE_EXPECTED_WORDINGS if not spelling.isascii())
+)
+
+#: An English spelling is matched from its left boundary, so ``correctly``
+#: is the same word as ``correct`` and ``normally`` as ``normal``. A
+#: drawing of the boundary on the right would let the inflections through,
+#: and an inflected ban word is still a ban word.
+_ASCII_UNJUDGEABLE = tuple(
+    (
+        spelling,
+        re.compile(rf"(?<![a-z0-9]){re.escape(spelling)}"),
+    )
+    for spelling in sorted(UNJUDGEABLE_EXPECTED_WORDINGS)
+    if spelling.isascii()
+)
+
+
+def _normalized_expected_text(value: object) -> str:
+    """The text of an expected result, prepared for the §5.6 lookup.
+
+    The markup is removed the way every other rule of this module removes
+    it (a ``**正常**`` says what ``正常`` says), then NFKC folds full-width
+    letters to their ASCII form (``ＮＯＲＭＡＬ`` reads as ``normal``) and
+    casefold removes the case.
+    """
+    if not isinstance(value, str):
+        return ""
+    text = _read_markdown(value)[0]
+    return unicodedata.normalize("NFKC", text).casefold()
+
+
+def first_unjudgeable_phrase(value: object) -> str | None:
+    """The §5.6 wording an expected result carries, or ``None``.
+
+    Unlike the measured-value rule, the lookup is **inside** the sentence:
+    the counter-example of §5.6 is a whole sentence, 「切换语言后界面显示正常」.
+    The value returned is the wording as §5.6 spells it (「正确」 for
+    ``correct`` / ``正確``), so a caller can quote the standard.
+    """
+    text = _normalized_expected_text(value)
+    if not text:
+        return None
+
+    compact = "".join(text.split())
+    for spelling in _CJK_UNJUDGEABLE:
+        if spelling in compact:
+            return UNJUDGEABLE_EXPECTED_WORDINGS[spelling]
+
+    for spelling, pattern in _ASCII_UNJUDGEABLE:
+        if pattern.search(text):
+            return UNJUDGEABLE_EXPECTED_WORDINGS[spelling]
+
+    return None
+
+
+def is_unjudgeable_expected_result(value: object) -> bool:
+    """True when the expected result carries a wording §5.6 bans.
+
+    This is the authoring-side question ("could a reader judge this?"),
+    separate from :func:`is_evaluation_phrase`, which asks whether a
+    measured value is nothing but a judgement.
+    """
+    return first_unjudgeable_phrase(value) is not None
+
+
+# --------------------------------------------------------------------------- #
 # Input shapes (plain dataclasses — no Django involved)
 # --------------------------------------------------------------------------- #
 
@@ -668,6 +863,11 @@ def validate_run_case(case: RunCaseData) -> list[str]:
             reasons.append(label + ACTION_EMPTY)
         if not _is_filled(step.expected_result):
             reasons.append(label + EXPECTED_EMPTY)
+        elif is_unjudgeable_expected_result(step.expected_result):
+            # §5.6: an expected result that only a person with the
+            # product in their head can judge is not written yet. The
+            # case may not enter the batch, whatever its verdicts are.
+            reasons.append(label + EXPECTED_IS_UNJUDGEABLE)
 
         if step.conclusion not in STEP_VERDICTS:
             reasons.append(label + STEP_CONCLUSION_INVALID)
@@ -684,13 +884,14 @@ def validate_run_case(case: RunCaseData) -> list[str]:
 
         if step.conclusion == STEP_VERDICT_UNSET:
             unset_steps.append(step)
-            if case.conclusion in (
-                RUN_CASE_CONCLUSION_PASS,
-                RUN_CASE_CONCLUSION_FAIL,
-            ):
-                # The verdict box of an executed step may not stay blank.
-                # A case that has not reached a conclusion yet may leave
-                # its steps open.
+            if case.conclusion == RUN_CASE_CONCLUSION_PASS:
+                # A PASS conclusion means every box was ticked ✔, so a
+                # blank box contradicts it. Under FAIL the standard allows
+                # the blank box: it is a step that was not executed and is
+                # recorded as 需人工 (REC-SW-001, step 7: 「两个框都不勾，
+                # 在实测值写「未准备环境」」, 「按 `需人工` 记，不影响
+                # `FAIL` 判定」). A case that has not reached a conclusion
+                # yet may leave its steps open as well.
                 reasons.append(label + STEP_CONCLUSION_UNSET)
         if step.conclusion == STEP_VERDICT_FAIL:
             failed_steps.append(step)
@@ -703,7 +904,16 @@ def validate_run_case(case: RunCaseData) -> list[str]:
 
         if step_has_text and _is_evaluation_text(step_text):
             reasons.append(label + ACTUAL_VALUE_IS_EVALUATION)
-        if step_has_measurement and step.conclusion == STEP_VERDICT_UNSET:
+        if (
+            step_has_measurement
+            and step.conclusion == STEP_VERDICT_UNSET
+            and case.conclusion != RUN_CASE_CONCLUSION_FAIL
+        ):
+            # A measured value with no box ticked is an unfinished record.
+            # The exception is the 需人工 step of a FAIL case: §6.1 rule 1
+            # asks for the reason in the measured value exactly that way
+            # (「未准备环境时两个框都不勾，在实测值写「未准备环境」」), and the
+            # sample of REC-SW-001 records it in a FAIL case.
             reasons.append(label + ACTUAL_VALUE_WITHOUT_CONCLUSION)
 
     # --- conclusion --------------------------------------------------------
@@ -715,10 +925,12 @@ def validate_run_case(case: RunCaseData) -> list[str]:
         if unset_steps:
             reasons.append(CONCLUSION_PASS_WITH_UNSET_STEP)
     elif case.conclusion == RUN_CASE_CONCLUSION_FAIL:
+        # One ✘ step decides the FAIL. The remaining steps may be unset —
+        # they are the 需人工 steps of the batch, and REC-SW-001's own
+        # sample records them exactly that way (「按 `需人工` 记，不影响
+        # `FAIL` 判定」, and the summary counts 需人工 1 next to FAIL 1).
         if not failed_steps:
             reasons.append(CONCLUSION_FAIL_WITHOUT_FAILED_STEP)
-        if unset_steps:
-            reasons.append(CONCLUSION_FAIL_WITH_UNSET_STEP)
     elif case.conclusion == RUN_CASE_CONCLUSION_NA:
         if not _is_filled(case.na_reason):
             reasons.append(CONCLUSION_NA_WITHOUT_REASON)

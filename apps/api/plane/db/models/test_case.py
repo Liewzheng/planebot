@@ -9,11 +9,13 @@ The layer holds the writing side of the standard:
 * :class:`TestCaseModule` — the registry of module codes (STD-SW-003 §4.2,
   discipline 3: one code stands for one group of functions, registered at
   the head of the project's case set).
-* :class:`TestCase` — the case header (the eight mandatory items) and its
-  status ``active`` / ``void``.
+* :class:`TestCase` — the case header (the eight mandatory items, plus
+  the two recommended text columns of §4.1: the related feature and the
+  remarks) and its status ``active`` / ``void``.
 * :class:`TestCaseStep` — the ordered step table.
 * :class:`TestRun` — a batch (one continuous execution) with its version,
-  environment, executor and date.
+  environment, executor and date, and — for a re-test batch — the link to
+  the batch it re-tests (§6.2 rule 2).
 * :class:`TestRunCase` — a case inside a batch. It carries a **snapshot**
   of the case header, so editing the case later never rewrites the history
   of a batch that was already executed.
@@ -44,6 +46,9 @@ from plane.db.testcase_numbering import (
 from plane.db.testcase_validity import (
     CONCLUSION_IS_FINAL,
     DUPLICATE_CASE_NUMBER,
+    RETEST_OF_CYCLE,
+    RETEST_OF_PROJECT_MISMATCH,
+    RETEST_OF_SELF,
     RUN_CASE_CONCLUSION_FAIL,
     RUN_CASE_CONCLUSION_MANUAL,
     RUN_CASE_CONCLUSION_NA,
@@ -226,6 +231,15 @@ class TestRunSequence(ProjectBaseModel):
 class TestCase(ProjectBaseModel):
     """A test case: the eight mandatory items of the case header.
 
+    The two recommended fields of STD-SW-003 §4.1 are text columns next to
+    them: ``related_feature`` (field 10 — what the case stands for: the
+    requirement item, change ticket, commit or design version and where
+    the value was read from) and ``remarks`` (field 11 — deviations,
+    findings, uncovered scope, unverified items and their source). Both
+    sit next to the work-item links of :class:`TestCaseIssue`: the links
+    are rows that move with the work item, the two columns are what the
+    author wrote down, and a case may carry either, both or neither.
+
     The number (``TC-<CODE>-<NNN>``) is handed out by
     :func:`allocate_test_case_number` when the case is created and never
     changes afterwards — not when the case is voided, and not when the
@@ -261,6 +275,36 @@ class TestCase(ProjectBaseModel):
         blank=True,
         default="",
         verbose_name="Environment And Version",
+    )
+
+    # STD-SW-003 §4.1 field 10 (推荐). Free text, deliberately: the
+    # standard names "需求条目、变更单号、提交号或设计稿版本" plus the source
+    # the value was read from (§5.7), which is a sentence, not a row. It
+    # sits next to the work-item links of ``TestCaseIssue`` — a case may
+    # carry both, and neither replaces the other: the link is a living
+    # reference to a row, the text is what the case was written against
+    # at that moment.
+    related_feature = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Related Feature",
+        help_text=(
+            "The requirement item, change ticket, commit or design version "
+            "this case stands for, plus where the value was read from "
+            "(STD-SW-003 §4.1 field 10, §5.7). Free text; it sits next to "
+            "the work-item links of TestCaseIssue and does not replace them."
+        ),
+    )
+    # STD-SW-003 §4.1 field 11 (推荐).
+    remarks = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Remarks",
+        help_text=(
+            "Deviations, incidental findings, uncovered scope, unverified "
+            "items and the source they rest on (STD-SW-003 §4.1 field 11, "
+            "§5.12)."
+        ),
     )
 
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="active")
@@ -392,6 +436,12 @@ class TestRun(ProjectBaseModel):
     tested version (number + build + commit), the environment, the
     executor and the execution date. The number is handed out by
     :func:`allocate_test_run_number` and never changes.
+
+    ``retest_of`` is the fifth header item of a **re-test** batch: §6.2
+    rule 2 says 「补测追加新批次，批次头写「补测：`RUN-20261109-01`」指向原
+    批次；不往旧批次里回填结论」. The link points at the original batch,
+    which is normally already completed — pointing at a completed batch is
+    the ordinary case, not an error.
     """
 
     STATUS_CHOICES = (
@@ -430,6 +480,24 @@ class TestRun(ProjectBaseModel):
         choices=STATUS_CHOICES,
         default=RUN_STATUS_DRAFT,
     )
+    # STD-SW-003 §6.2 rule 2. ``SET_NULL``: deleting the original batch
+    # must not delete the re-test that followed it — the re-test is a
+    # record of its own, and its snapshot of the cases is what it is for.
+    # The link is checked by ``_validate_retest_of``: same project, never
+    # itself, never a ring.
+    retest_of = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="retests",
+        help_text=(
+            "The batch this one re-tests (STD-SW-003 §6.2 rule 2: a re-test "
+            "appends a new batch that names the original one). The original "
+            "is usually completed already. Same project, never itself, and "
+            "the chain never runs in a ring."
+        ),
+    )
 
     class Meta:
         verbose_name = "Test Run"
@@ -448,8 +516,11 @@ class TestRun(ProjectBaseModel):
 
     def clean(self):
         super().clean()
+        self._validate_retest_of()
 
     def save(self, *args, **kwargs):
+        self._validate_retest_of()
+
         if self._state.adding:
             self._assign_number()
         else:
@@ -534,6 +605,77 @@ class TestRun(ProjectBaseModel):
             update_fields.append("executed_by_name")
         kwargs["update_fields"] = update_fields
 
+    def _validate_retest_of(self):
+        """Check the link of a re-test batch (STD-SW-003 §6.2 rule 2).
+
+        Three things are refused:
+
+        * a link across projects — a batch of one project may not describe
+          the history of another (every other guard of this file draws the
+          same line);
+        * a link to itself;
+        * a link that closes a ring, whether the ring runs through this
+          batch or between two other rows.
+
+        A link to a **completed** batch is the normal case: §6.2 rule 2
+        appends the re-test after the original one. A link to an open batch
+        is allowed too — a re-test may be opened while the first batch is
+        still being written.
+        """
+        if not self.retest_of_id:
+            return
+
+        if self.pk is not None and self.retest_of_id == self.pk:
+            raise ValidationError(
+                {"retest_of": f"{RETEST_OF_SELF}: a batch cannot re-test itself."}
+            )
+
+        seen = set()
+        current_id = self.retest_of_id
+        while current_id is not None:
+            if self.pk is not None and current_id == self.pk:
+                raise ValidationError(
+                    {
+                        "retest_of": (
+                            f"{RETEST_OF_CYCLE}: the re-test chain would run "
+                            "in a ring."
+                        )
+                    }
+                )
+            if current_id in seen:
+                # A ring that does not contain this batch: two other rows
+                # point at each other. Refusing it keeps the walk finite
+                # and keeps a broken chain out.
+                raise ValidationError(
+                    {
+                        "retest_of": (
+                            f"{RETEST_OF_CYCLE}: the re-test chain would run "
+                            "in a ring."
+                        )
+                    }
+                )
+            seen.add(current_id)
+
+            row = (
+                TestRun.all_objects.filter(pk=current_id)
+                .values("project_id", "retest_of_id")
+                .first()
+            )
+            if row is None:
+                raise ValidationError(
+                    {"retest_of": "The batch this one re-tests does not exist."}
+                )
+            if self.project_id and row["project_id"] != self.project_id:
+                raise ValidationError(
+                    {
+                        "retest_of": (
+                            f"{RETEST_OF_PROJECT_MISMATCH}: the batch this one "
+                            "re-tests must belong to the same project."
+                        )
+                    }
+                )
+            current_id = row["retest_of_id"]
+
     def _executor_display_name(self):
         user = self.executed_by
         if user is None:
@@ -616,6 +758,7 @@ class TestRun(ProjectBaseModel):
                 "environment",
                 "executed_by",
                 "executed_by_name",
+                "retest_of",
             )
             .first()
         )
@@ -640,6 +783,10 @@ class TestRun(ProjectBaseModel):
         ]
         if self.executed_by_id != original["executed_by"]:
             changed.append("executed_by")
+        if self.retest_of_id != original["retest_of"]:
+            # The link to the original batch is part of the header as well
+            # (§6.2 rule 2): a completed batch does not gain or lose it.
+            changed.append("retest_of")
         if changed:
             raise ValidationError(
                 "A completed batch is frozen; the following fields cannot be "
