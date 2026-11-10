@@ -437,5 +437,10 @@
         "toast_fill_all": "請填寫所有欄位。"
       }
     }
+  },
+  "project_test_case": {
+    "list": {
+      "delete_error_title": "Delete failed"
+    }
   }
 }

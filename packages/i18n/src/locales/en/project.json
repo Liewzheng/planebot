@@ -329,6 +329,7 @@
       "row_actions": "Actions",
       "delete_confirm_title": "Delete this test case?",
       "delete_confirm_description": "The case and its step table are removed. Its number is not given back.",
+      "delete_error_title": "Delete failed",
       "delete_error": "The test case could not be deleted.",
       "column_number": "Number",
       "column_title": "Title",

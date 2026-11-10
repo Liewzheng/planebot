@@ -24,7 +24,10 @@ import { testCaseService } from "@/services/test-cases/test-case.service";
 type Props = {
   workspaceSlug: string;
   projectId: string;
+  /** The reader may create a case and edit one — a member and above. */
   canCreate: boolean;
+  /** The reader may delete a case — the endpoint only allows an admin. */
+  canDelete: boolean;
 };
 
 /**
@@ -38,7 +41,7 @@ type Props = {
  * through `TestCaseListFiltersProvider`.
  */
 export function TestCaseListView(props: Props) {
-  const { workspaceSlug, projectId, canCreate } = props;
+  const { workspaceSlug, projectId, canCreate, canDelete } = props;
   const { t } = useTranslation();
   const router = useAppRouter();
   const { mutate } = useSWRConfig();
@@ -152,6 +155,7 @@ export function TestCaseListView(props: Props) {
               lastRun={lastRun}
               lastResultUnknown={isUnknown}
               canEdit={canCreate}
+              canDelete={canDelete}
               onDelete={handleDelete}
             />
           );

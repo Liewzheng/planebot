@@ -11,7 +11,7 @@ import { IconButton } from "@plane/propel/icon-button";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import { AlertModalCore, CustomMenu } from "@plane/ui";
 import { CheckSquareOutline, DeleteOutline, EditOutline, MoreHorizontalOutline } from "@makeplane/propel/icons";
-import type { ITestCase, ITestRunSummary } from "@plane/types";
+import type { ITestCase, ITestCaseErrorResponse, ITestRunSummary } from "@plane/types";
 // components
 import { TestCasePriorityBadge, TestCaseResultBadge, TestCaseStatusBadge } from "../shared/badges";
 // hooks
@@ -28,9 +28,30 @@ type Props = {
    * saying "never executed" would be a guess.
    */
   lastResultUnknown?: boolean;
-  /** The reader may edit and delete the case. */
+  /** The reader may edit the case — a project member and above. */
   canEdit: boolean;
+  /**
+   * The reader may delete the case — the endpoint only allows a project
+   * admin, so an edit-only reader must not see the delete action at all.
+   */
+  canDelete: boolean;
   onDelete: (testCase: ITestCase) => Promise<void>;
+};
+
+/**
+ * The sentence of a refused delete, as the server wrote it. The envelope
+ * of the feature carries one message per problem; when it is missing the
+ * caller falls back to its own sentence.
+ */
+const refusalMessage = (refusal: unknown): string | null => {
+  if (!refusal || typeof refusal !== "object") return null;
+
+  const envelope = refusal as ITestCaseErrorResponse;
+  const entries = Array.isArray(envelope.errors) ? envelope.errors : [];
+  const first = entries.find((entry) => typeof entry?.message === "string" && entry.message.trim() !== "");
+  if (first) return first.message;
+
+  return typeof envelope.error === "string" && envelope.error.trim() !== "" ? envelope.error : null;
 };
 
 /**
@@ -43,7 +64,7 @@ type Props = {
  * that keeps a row a single line of reading on a phone as well.
  */
 export function TestCaseRow(props: Props) {
-  const { workspaceSlug, projectId, testCase, lastRun, lastResultUnknown, canEdit, onDelete } = props;
+  const { workspaceSlug, projectId, testCase, lastRun, lastResultUnknown, canEdit, canDelete, onDelete } = props;
   // translation
   const { t } = useTranslation();
   // router
@@ -58,11 +79,11 @@ export function TestCaseRow(props: Props) {
     setIsDeleting(true);
     try {
       await onDelete(testCase);
-    } catch {
+    } catch (error) {
       setToast({
         type: TOAST_TYPE.ERROR,
-        title: t("project_test_case.list.delete_error"),
-        message: t("project_test_case.list.delete_error"),
+        title: t("project_test_case.list.delete_error_title"),
+        message: refusalMessage(error) ?? t("project_test_case.list.delete_error"),
       });
     } finally {
       setIsDeleting(false);
@@ -107,7 +128,7 @@ export function TestCaseRow(props: Props) {
           </span>
         </Link>
 
-        {canEdit && (
+        {(canEdit || canDelete) && (
           <div className="flex shrink-0 items-center">
             <CustomMenu
               customButton={
@@ -121,36 +142,42 @@ export function TestCaseRow(props: Props) {
               placement="bottom-end"
               closeOnSelect
             >
-              <CustomMenu.MenuItem onClick={() => router.push(href)}>
-                <span className="flex items-center gap-2">
-                  <EditOutline className="size-3" />
-                  {t("common.edit")}
-                </span>
-              </CustomMenu.MenuItem>
-              <CustomMenu.MenuItem onClick={() => setIsDeleteOpen(true)}>
-                <span className="flex items-center gap-2">
-                  <DeleteOutline className="size-3" />
-                  {t("common.delete")}
-                </span>
-              </CustomMenu.MenuItem>
+              {canEdit && (
+                <CustomMenu.MenuItem onClick={() => router.push(href)}>
+                  <span className="flex items-center gap-2">
+                    <EditOutline className="size-3" />
+                    {t("common.edit")}
+                  </span>
+                </CustomMenu.MenuItem>
+              )}
+              {canDelete && (
+                <CustomMenu.MenuItem onClick={() => setIsDeleteOpen(true)}>
+                  <span className="flex items-center gap-2">
+                    <DeleteOutline className="size-3" />
+                    {t("common.delete")}
+                  </span>
+                </CustomMenu.MenuItem>
+              )}
             </CustomMenu>
           </div>
         )}
       </div>
 
-      <AlertModalCore
-        isOpen={isDeleteOpen}
-        handleClose={() => setIsDeleteOpen(false)}
-        handleSubmit={remove}
-        isSubmitting={isDeleting}
-        title={t("project_test_case.list.delete_confirm_title")}
-        content={t("project_test_case.list.delete_confirm_description")}
-        primaryButtonText={{
-          default: t("common.delete"),
-          loading: t("common.delete"),
-        }}
-        secondaryButtonText={t("common.cancel")}
-      />
+      {canDelete && (
+        <AlertModalCore
+          isOpen={isDeleteOpen}
+          handleClose={() => setIsDeleteOpen(false)}
+          handleSubmit={remove}
+          isSubmitting={isDeleting}
+          title={t("project_test_case.list.delete_confirm_title")}
+          content={t("project_test_case.list.delete_confirm_description")}
+          primaryButtonText={{
+            default: t("common.delete"),
+            loading: t("common.delete"),
+          }}
+          secondaryButtonText={t("common.cancel")}
+        />
+      )}
     </>
   );
 }

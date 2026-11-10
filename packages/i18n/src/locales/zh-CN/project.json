@@ -329,6 +329,7 @@
       "row_actions": "操作",
       "delete_confirm_title": "删除这个测试用例？",
       "delete_confirm_description": "用例及其步骤表会被删除，编号不会归还。",
+      "delete_error_title": "删除失败",
       "delete_error": "测试用例删除失败。",
       "column_number": "编号",
       "column_title": "标题",

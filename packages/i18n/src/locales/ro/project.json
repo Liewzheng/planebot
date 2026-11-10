@@ -437,5 +437,10 @@
         "toast_fill_all": "Please fill all fields."
       }
     }
+  },
+  "project_test_case": {
+    "list": {
+      "delete_error_title": "Delete failed"
+    }
   }
 }
