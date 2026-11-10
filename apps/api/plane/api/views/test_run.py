@@ -15,6 +15,9 @@ rules the app surface enforces — the validity functions live in
 
 * a case that is added to a batch is **snapshotted** — a later edit of
   the case never rewrites the history of the batch;
+* while the batch is open a case may be taken out of it again — the
+  removal edits the composition of the batch and leaves the case itself
+  and its other batches alone;
 * a verdict and a conclusion are written **once** (the model refuses a
   second write) — a wrong verdict is corrected by voiding the record and
   running the case again in a new batch;
@@ -421,8 +424,12 @@ class TestRunCaseEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, Bas
         )
 
 
-class TestRunCaseDetailEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
-    """The outcome of one case inside a batch."""
+class TestRunCaseDetailEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, BaseAPIView):
+    """The outcome of one case inside a batch.
+
+    ``DELETE`` takes the case out of the batch — the undo of the add —
+    and answers 204. The case itself and its other batches stay.
+    """
 
     resource_type = "test_run"
 
@@ -431,6 +438,19 @@ class TestRunCaseDetailEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
     # The write acts on the case record itself.
     authz_resource_model = TestRunCase
     authz_resource_lookup = "run_case_id"
+
+    # The removal is judged as an ``update`` of the batch's composition,
+    # not as a ``delete`` of a resource: taking a case out of a batch
+    # edits the batch, and the principal that may add a case has to be
+    # able to undo the add. Judged as ``delete`` the matrix would demand
+    # the delete scope and an admin-tier grant, so the undo would be
+    # refused where the add was allowed. Removing the *case* itself is a
+    # different write and keeps the action of the method.
+    #
+    # The answers of that gate: a GUEST (role 5) is refused with 403 by
+    # :class:`ProjectEntityPermission`; a service principal without the
+    # ``update test_run`` scope is refused with 403 by the scope step.
+    authz_update_methods = ("DELETE",)
 
     def _run_case(self, slug, project_id, test_run_id, run_case_id):
         return (
@@ -480,6 +500,26 @@ class TestRunCaseDetailEndpoint(ProjectScopedAuthzMixin, BaseAPIView):
 
         run_case = self._run_case(slug, project_id, test_run_id, run_case_id)
         return Response(TestRunCaseSerializer(run_case).data, status=status.HTTP_200_OK)
+
+    def delete(self, request, slug, project_id, test_run_id, run_case_id):
+        run_case = self._run_case(slug, project_id, test_run_id, run_case_id)
+        if run_case is None:
+            return Response({"error": "Test run case not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if run_case.test_run.status == RUN_STATUS_COMPLETED:
+            return run_conflict_response("A completed batch is frozen.")
+
+        # Soft delete: every read filters the removed row out, so the case
+        # is out of the batch while the batch keeps what was recorded. The
+        # partial unique index ignores a deleted row, so the same case may
+        # be selected into the batch again; a second removal finds no live
+        # row and answers 404 (a member-tier service principal stops one
+        # step earlier, at the ownership step, because the row it would
+        # own is soft-deleted — still never a 500). The case row and the
+        # rows of its other batches are not touched — the deleted record
+        # is the only link between this batch and the case.
+        run_case.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class TestRunStepRecordEndpoint(ProjectScopedAuthzMixin, BaseAPIView):

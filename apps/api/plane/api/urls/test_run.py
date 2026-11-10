@@ -41,7 +41,7 @@ urlpatterns = [
     ),
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/test-runs/<uuid:test_run_id>/cases/<uuid:run_case_id>/",
-        TestRunCaseDetailEndpoint.as_view(http_method_names=["get", "patch"]),
+        TestRunCaseDetailEndpoint.as_view(http_method_names=["get", "patch", "delete"]),
         name="test-run-cases",
     ),
     path(
