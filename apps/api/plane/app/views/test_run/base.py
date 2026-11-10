@@ -75,6 +75,7 @@ from ..base import BaseAPIView, BaseViewSet
 from ..test_case.base import (
     APP_REASON_MESSAGES_ZH,
     error_entry,
+    serializer_error_response,
     stale_record_response,
     validation_error_response,
 )
@@ -195,22 +196,29 @@ def bindable_asset(request, slug, record):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    if asset.entity_type not in _BINDABLE_ENTITY_TYPES:
-        return Response(
-            {
-                "error": "The asset belongs to another entity.",
-                "code": "asset_not_bindable",
-                "errors": [error_entry("asset_not_bindable", "asset_id")],
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
     if any(getattr(asset, field) for field in _ASSET_ENTITY_FIELDS):
+        # The file hangs on another entity (a work item, a page, a
+        # comment, a record of another batch). The check comes first: the
+        # answer names the entity the file already belongs to, not the
+        # kind of entity type it carries.
         return Response(
             {
                 "error": "The asset is already bound to a record.",
                 "code": "asset_already_bound",
                 "errors": [error_entry("asset_already_bound", "asset_id")],
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if asset.entity_type not in _BINDABLE_ENTITY_TYPES:
+        # The file belongs to a whole entity — the cover of a project,
+        # the logo of a workspace, an avatar. It carries no entity
+        # foreign key, so the check above cannot see it.
+        return Response(
+            {
+                "error": "The asset belongs to another entity.",
+                "code": "asset_not_bindable",
+                "errors": [error_entry("asset_not_bindable", "asset_id")],
             },
             status=status.HTTP_400_BAD_REQUEST,
         )
@@ -286,7 +294,7 @@ class TestRunViewSet(BaseViewSet):
 
         serializer = TestRunWriteSerializer(data=request.data, context={"request": request})
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return serializer_error_response(serializer)
 
         try:
             run = serializer.save(project=project, workspace=project.workspace)
@@ -370,7 +378,7 @@ class TestRunViewSet(BaseViewSet):
             run, data=request.data, partial=True, context={"request": request}
         )
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return serializer_error_response(serializer)
 
         try:
             serializer.save()
@@ -586,7 +594,7 @@ class TestRunCaseDetailEndpoint(BaseAPIView):
             run_case, data=request.data, partial=True, context={"request": request}
         )
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return serializer_error_response(serializer)
 
         try:
             serializer.save()
@@ -652,7 +660,7 @@ class TestRunStepRecordEndpoint(BaseAPIView):
             record, data=request.data, partial=True, context={"request": request}
         )
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return serializer_error_response(serializer)
 
         try:
             serializer.save()

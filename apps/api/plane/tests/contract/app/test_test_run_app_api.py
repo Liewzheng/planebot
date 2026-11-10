@@ -573,6 +573,57 @@ class TestFinalize:
         assert f"cases[{case['number']}].steps[1].actual_value" in paths
         assert f"cases[{case['number']}].evidence" in paths
 
+    def test_the_batch_carries_its_case_records(
+        self, session_client, workspace, project, module, create_user
+    ):
+        """The batch answer carries the case records it holds."""
+        case = create_case(session_client, workspace, project, module)
+        run = create_run(session_client, workspace, project, create_user)
+        run_case = add_case(session_client, workspace, project, run["id"], case["id"])
+
+        # The batch that was created carries the key (it was empty then).
+        assert "cases" in run
+        assert run["cases"] == []
+
+        # The detail carries the case record.
+        response = session_client.get(f"{runs_url(workspace.slug, project.id)}{run['id']}/")
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert len(body["cases"]) == 1
+        assert body["cases"][0]["case_number"] == "TC-CLI-001"
+        assert body["cases"][0]["id"] == run_case["id"]
+
+        # The list carries them as well.
+        response = session_client.get(runs_url(workspace.slug, project.id))
+        assert response.status_code == status.HTTP_200_OK
+        listed = response.json()["results"][0]
+        assert len(listed["cases"]) == 1
+        assert listed["cases"][0]["case_number"] == "TC-CLI-001"
+
+        # And so does the answer of the finalize.
+        mark_step(
+            session_client,
+            workspace,
+            project,
+            run["id"],
+            run_case["id"],
+            1,
+            conclusion="pass",
+            actual_value="the form was shown",
+        )
+        conclude(
+            session_client,
+            workspace,
+            project,
+            run["id"],
+            run_case["id"],
+            conclusion="PASS",
+            evidence="it worked",
+        )
+        response = finalize(session_client, workspace, project, run["id"])
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.json()["cases"]) == 1
+
     def test_a_completed_batch_is_frozen(
         self, session_client, workspace, project, module, create_user
     ):
@@ -929,6 +980,64 @@ class TestAttachments:
         attached.refresh_from_db()
         assert attached.issue_id == issue.id
         assert attached.test_run_case_id is None
+
+    def test_a_file_uploaded_through_the_project_endpoint_can_be_bound(
+        self, session_client, workspace, project, module, create_user
+    ):
+        """The workspace upload needs an entity type and binds the file
+        right away; the project endpoint leaves the file unbound, so the
+        bind is what attaches it to a record."""
+        case = create_case(session_client, workspace, project, module)
+        run = create_run(session_client, workspace, project, create_user)
+        run_case = add_case(session_client, workspace, project, run["id"], case["id"])
+
+        response = session_client.post(
+            f"/api/assets/v2/workspaces/{workspace.slug}/projects/{project.id}/",
+            {
+                "name": "shot.png",
+                "type": "image/png",
+                "size": 4096,
+                "entity_type": FileAsset.EntityTypeContext.TEST_RUN_CASE_EVIDENCE,
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK, response.content
+        asset_id = response.json()["asset_id"]
+
+        # The file carries no foreign key — the bind is what attaches it.
+        asset = FileAsset.objects.get(id=asset_id)
+        assert asset.test_run_case_id is None
+        assert asset.project_id == project.id
+
+        response = session_client.post(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/{run_case['id']}/attachments/",
+            {"asset_id": asset_id},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.content
+
+    def test_a_work_item_attachment_answers_already_bound(
+        self, session_client, workspace, project, module, create_user, issue
+    ):
+        """The file hangs on a work item: the answer names that, not the
+        kind of entity type the file carries."""
+        case = create_case(session_client, workspace, project, module)
+        run = create_run(session_client, workspace, project, create_user)
+        run_case = add_case(session_client, workspace, project, run["id"], case["id"])
+
+        attached = make_asset(project, name="issue-shot.png")
+        attached.entity_type = FileAsset.EntityTypeContext.ISSUE_ATTACHMENT
+        attached.issue_id = issue.id
+        attached.save()
+
+        response = session_client.post(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/{run_case['id']}/attachments/",
+            {"asset_id": str(attached.id)},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "asset_already_bound" in error_codes(response)
+        assert "asset_not_bindable" not in error_codes(response)
 
     def test_the_cover_of_a_project_is_refused(
         self, session_client, workspace, project, module, create_user

@@ -101,6 +101,42 @@ def error_entry(code: str, path: str = "", message: str = "") -> dict:
     }
 
 
+def serializer_error_response(serializer, error: str = "The payload is not valid.") -> Response:
+    """Wrap the refusal of a serializer in the envelope of this feature.
+
+    A field the serializer refuses (an unknown priority, a date that is
+    not a date) is answered in the same shape as every other error of
+    the feature, so the front end and the CLI never have to parse a
+    second shape. The message of such an entry is the **detail of the
+    serializer** — it is not a localised sentence; the code and the
+    field are what a client keys on.
+    """
+    errors = []
+    raw_errors = serializer.errors
+    if isinstance(raw_errors, dict):
+        items = raw_errors.items()
+    else:
+        items = [("", raw_errors)]
+
+    for field, messages in items:
+        if not isinstance(messages, (list, tuple)):
+            messages = [messages]
+        for message in messages:
+            errors.append(
+                {
+                    "code": "invalid_payload",
+                    "message": str(message),
+                    "path": field,
+                    "field": field,
+                }
+            )
+
+    return Response(
+        {"error": error, "code": "invalid_payload", "errors": errors},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
 def validation_error_response(exc, error: str = "The payload is not valid.") -> Response:
     """Map a Django ``ValidationError`` onto the 400 body of this feature.
 
@@ -219,10 +255,10 @@ class TestCaseModuleEndpoint(BaseAPIView):
 
         serializer = TestCaseModuleSerializer(data=request.data, context={"request": request})
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return serializer_error_response(serializer)
 
-        code = serializer.validated_data["code"]
-        description = serializer.validated_data["description"]
+        code = serializer.validated_data.get("code", "")
+        description = serializer.validated_data.get("description", "").strip()
 
         if not is_valid_module_code(code):
             return Response(
@@ -342,7 +378,7 @@ class TestCaseViewSet(BaseViewSet):
 
         serializer = TestCaseWriteSerializer(data=request.data, context={"request": request})
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return serializer_error_response(serializer)
 
         module = serializer.validated_data.get("module")
         if module is None or module.project_id != project.id:
@@ -419,7 +455,7 @@ class TestCaseViewSet(BaseViewSet):
             case, data=request.data, partial=True, context={"request": request}
         )
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return serializer_error_response(serializer)
 
         module = serializer.validated_data.get("module", case.module)
         if module.project_id != case.project_id:

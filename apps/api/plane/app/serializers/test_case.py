@@ -91,7 +91,16 @@ class FileAssetAttachmentSerializer(serializers.Serializer):
 
 
 class TestCaseModuleSerializer(BaseSerializer):
-    """A registered module code of a project."""
+    """A registered module code of a project.
+
+    The endpoint owns the messages of the registry: the serializer
+    tolerates an empty code and an empty description, and the view
+    answers with ``module_code_format`` / ``module_description_missing``
+    (a Chinese sentence) instead of a raw serializer detail.
+    """
+
+    code = serializers.CharField(required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = TestCaseModule
@@ -105,10 +114,7 @@ class TestCaseModuleSerializer(BaseSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate_code(self, value):
-        code = (value or "").strip().upper()
-        if not code:
-            raise serializers.ValidationError("The module code is required.")
-        return code
+        return (value or "").strip().upper()
 
     def create(self, validated_data):
         instance = TestCaseModule(**validated_data)

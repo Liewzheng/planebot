@@ -93,7 +93,10 @@ class TestRunCaseSerializer(BaseSerializer):
 class TestRunSerializer(BaseSerializer):
     """A batch: one continuous execution."""
 
-    cases = TestRunCaseSerializer(many=True, read_only=True)
+    # The related name of the case records of a batch is ``run_cases``;
+    # without the source DRF would look for ``run.cases``, find nothing
+    # and drop the field silently.
+    cases = TestRunCaseSerializer(source="run_cases", many=True, read_only=True)
     # The creator travels as the user itself (see the case serializer).
     # ``executed_by`` stays the id of the user: it is a field that is
     # written as well, and ``executed_by_name`` is the text snapshot the

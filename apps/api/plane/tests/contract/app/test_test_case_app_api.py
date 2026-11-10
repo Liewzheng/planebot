@@ -154,6 +154,10 @@ def cases_url(slug, project_id):
     return f"/api/workspaces/{slug}/projects/{project_id}/test-cases/"
 
 
+def runs_url(slug, project_id):
+    return f"/api/workspaces/{slug}/projects/{project_id}/test-runs/"
+
+
 def modules_url(slug, project_id):
     return f"/api/workspaces/{slug}/projects/{project_id}/test-case-modules/"
 
@@ -222,6 +226,30 @@ class TestModuleRegistry:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "module_code_format" in error_codes(response)
 
+    def test_a_missing_description_is_answered_by_the_endpoint(
+        self, session_client, workspace, project
+    ):
+        """The endpoint owns the message of the registry: a blank
+        description is refused with the Chinese sentence, not with a raw
+        serializer detail."""
+        for payload in ({"code": "NET"}, {"code": "NET", "description": ""}, {"code": "NET", "description": "  "}):
+            response = session_client.post(
+                modules_url(workspace.slug, project.id), payload, format="json"
+            )
+            assert response.status_code == status.HTTP_400_BAD_REQUEST, payload
+            assert "module_description_missing" in error_codes(response), payload
+
+    def test_a_malformed_code_is_answered_by_the_endpoint(
+        self, session_client, workspace, project
+    ):
+        """The same for the code — including an empty one."""
+        for payload in ({"code": "1", "description": "d"}, {"code": "", "description": "d"}, {"description": "d"}):
+            response = session_client.post(
+                modules_url(workspace.slug, project.id), payload, format="json"
+            )
+            assert response.status_code == status.HTTP_400_BAD_REQUEST, payload
+            assert "module_code_format" in error_codes(response), payload
+
     def test_a_code_is_unique_inside_the_project(self, session_client, workspace, project, module):
         response = session_client.post(
             modules_url(workspace.slug, project.id),
@@ -230,6 +258,54 @@ class TestModuleRegistry:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "module_code_taken" in error_codes(response)
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestTheErrorEnvelope:
+    """Every refusal of the API answers the same shape."""
+
+    def test_a_refused_field_answers_the_envelope(
+        self, session_client, workspace, project, module
+    ):
+        response = session_client.post(
+            cases_url(workspace.slug, project.id),
+            case_payload(module, priority="7"),
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        body = response.json()
+        assert body["code"] == "invalid_payload"
+        assert body["error"]
+        entries = body["errors"]
+        assert entries
+        entry = entries[0]
+        assert entry["code"] == "invalid_payload"
+        assert entry["field"] == "priority"
+        assert entry["path"] == "priority"
+        # The message of a payload entry is the detail of the serializer —
+        # a client keys on the code and the field.
+        assert entry["message"]
+
+    def test_a_refused_batch_field_answers_the_envelope(
+        self, session_client, workspace, project, create_user
+    ):
+        response = session_client.post(
+            runs_url(workspace.slug, project.id),
+            {
+                "run_date": "not-a-date",
+                "version_number": "1.2.3",
+                "build_number": "b1",
+                "commit_hash": "abc",
+                "environment": "e",
+                "executed_by": str(create_user.id),
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        body = response.json()
+        assert body["code"] == "invalid_payload"
+        assert body["errors"][0]["field"] == "run_date"
 
 
 # --------------------------------------------------------------------------- #
