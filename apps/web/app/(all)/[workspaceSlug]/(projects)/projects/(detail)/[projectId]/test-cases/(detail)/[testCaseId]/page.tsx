@@ -35,6 +35,14 @@ function ProjectTestCaseDetailPage({ params }: Route.ComponentProps) {
     workspaceSlug,
     projectId
   );
+  // The delete endpoint is admin-only — `TestCaseEndpoint.destroy`
+  // (apps/api/plane/app/views/test_case/base.py:351) is
+  // `@allow_permission([ROLE.ADMIN], ..., action=AuthzAction.DELETE)`, and a
+  // member who owns the case still gets 403, so this is ADMIN alone rather
+  // than `owner || admin`. The list page gates its row delete on the same
+  // floor (`test-cases/(list)/page.tsx`, `canDelete`): change one, change
+  // both.
+  const canDelete = allowPermissions([EUserPermissions.ADMIN], EUserPermissionsLevel.PROJECT, workspaceSlug, projectId);
 
   return (
     <>
@@ -44,6 +52,7 @@ function ProjectTestCaseDetailPage({ params }: Route.ComponentProps) {
         projectId={projectId}
         testCaseId={testCaseId}
         canEdit={canEdit}
+        canDelete={canDelete}
         onDeleted={() => router.push(`/${workspaceSlug}/projects/${projectId}/test-cases`)}
       />
     </>

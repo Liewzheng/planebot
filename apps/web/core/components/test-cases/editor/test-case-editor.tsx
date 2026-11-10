@@ -35,6 +35,13 @@ type Props = {
   /** The case that is edited — without it the editor creates a case. */
   testCaseId?: string;
   canEdit: boolean;
+  /**
+   * The reader may delete the case — the delete endpoint only allows a
+   * project admin, so this is a wider floor than `canEdit`. It defaults
+   * to false: a caller that has not worked out the role must not offer
+   * the action.
+   */
+  canDelete?: boolean;
   /** Called after a case was created — the route moves to the new case. */
   onCreated?: (testCase: ITestCase) => void;
   onDeleted?: () => void;
@@ -52,7 +59,7 @@ type Props = {
  * the two versions wins.
  */
 export function TestCaseEditor(props: Props) {
-  const { workspaceSlug, projectId, testCaseId, canEdit, onCreated, onDeleted } = props;
+  const { workspaceSlug, projectId, testCaseId, canEdit, canDelete = false, onCreated, onDeleted } = props;
   const { t } = useTranslation();
   // router
   const router = useAppRouter();
@@ -387,7 +394,7 @@ export function TestCaseEditor(props: Props) {
   }, [workspaceSlug, projectId, applyErrors, onCreated, t]);
 
   const remove = useCallback(async () => {
-    if (!testCaseId) return;
+    if (!testCaseId || !canDelete) return;
     setIsDeleting(true);
     try {
       await testCaseService.deleteCase(workspaceSlug, projectId, testCaseId);
@@ -402,7 +409,7 @@ export function TestCaseEditor(props: Props) {
       setIsDeleting(false);
       setIsDeleteModalOpen(false);
     }
-  }, [workspaceSlug, projectId, testCaseId, onDeleted, t]);
+  }, [workspaceSlug, projectId, testCaseId, canDelete, onDeleted, t]);
 
   // ------------------------------------------------------------------
   // The view
@@ -480,7 +487,7 @@ export function TestCaseEditor(props: Props) {
               {isCreating ? t("project_test_case.editor.creating") : t("project_test_case.editor.create_button")}
             </Button>
           ) : (
-            canEdit && (
+            canDelete && (
               <Button
                 variant="error-outline"
                 size="lg"
@@ -573,19 +580,23 @@ export function TestCaseEditor(props: Props) {
         }}
       />
 
-      <AlertModalCore
-        isOpen={isDeleteModalOpen}
-        handleClose={() => setIsDeleteModalOpen(false)}
-        handleSubmit={remove}
-        isSubmitting={isDeleting}
-        title={t("project_test_case.editor.delete_confirm_title")}
-        content={t("project_test_case.editor.delete_confirm_description")}
-        primaryButtonText={{
-          default: t("project_test_case.editor.delete_button"),
-          loading: t("project_test_case.editor.delete_button"),
-        }}
-        secondaryButtonText={t("common.cancel")}
-      />
+      {/* The confirm dialog only exists for a reader who may delete: with the
+          flag false there is no button to open it and no path around it. */}
+      {canDelete && (
+        <AlertModalCore
+          isOpen={isDeleteModalOpen}
+          handleClose={() => setIsDeleteModalOpen(false)}
+          handleSubmit={remove}
+          isSubmitting={isDeleting}
+          title={t("project_test_case.editor.delete_confirm_title")}
+          content={t("project_test_case.editor.delete_confirm_description")}
+          primaryButtonText={{
+            default: t("project_test_case.editor.delete_button"),
+            loading: t("project_test_case.editor.delete_button"),
+          }}
+          secondaryButtonText={t("common.cancel")}
+        />
+      )}
     </div>
   );
 }
