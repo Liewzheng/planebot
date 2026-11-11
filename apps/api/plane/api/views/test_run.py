@@ -15,6 +15,10 @@ rules the app surface enforces — the validity functions live in
 
 * a case that is added to a batch is **snapshotted** — a later edit of
   the case never rewrites the history of the batch;
+* a case enters a batch only if it still passes the authoring rules:
+  the same check the write surface runs is run again at add time, so a
+  case written before the rules existed (or written through a path that
+  skips them) cannot bring an unfinished step table into an execution;
 * while the batch is open a case that was never executed may be taken
   out of it again — the removal edits the composition of the batch and
   leaves the case itself and its other batches alone; a record that
@@ -69,7 +73,7 @@ from plane.api.views.test_case import (
     UpdateOnExistingRowMixin,
     project_admin,
 )
-from plane.app.testcase_validity import build_run_data, describe_reasons
+from plane.app.testcase_validity import build_run_data, check_authoring, describe_reasons
 from plane.db.models import (
     FileAsset,
     Project,
@@ -412,12 +416,21 @@ class TestRunCaseEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, Bas
             )
 
         # Every case is checked before the first one is added: a batch
-        # add is all or nothing.
+        # add is all or nothing. The same id twice in one payload is the
+        # same refusal as a case that is already in the batch — without
+        # this, the first copy would be inserted before the second one
+        # fails.
         cases = []
+        selected_case_ids = set()
         for case_id in case_ids:
-            case = TestCase.objects.filter(
-                pk=case_id, project_id=project_id, workspace__slug=slug
-            ).first()
+            case = (
+                TestCase.objects.filter(
+                    pk=case_id, project_id=project_id, workspace__slug=slug
+                )
+                .select_related("module")
+                .prefetch_related("steps")
+                .first()
+            )
             if case is None:
                 return Response(
                     {
@@ -427,7 +440,10 @@ class TestRunCaseEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, Bas
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            if TestRunCase.objects.filter(test_run=run, test_case=case).exists():
+            if (
+                case.pk in selected_case_ids
+                or TestRunCase.objects.filter(test_run=run, test_case=case).exists()
+            ):
                 return Response(
                     {
                         "error": "The test case is already in this batch.",
@@ -436,7 +452,58 @@ class TestRunCaseEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, Bas
                     },
                     status=status.HTTP_409_CONFLICT,
                 )
+            selected_case_ids.add(case.pk)
             cases.append(case)
+
+        # The authoring rules run a second time here, on the state of the
+        # case as it is at this moment. They are *not* duplicated code:
+        # :func:`check_authoring` is the one implementation, called from
+        # the write surface (create / update / replace the step table) and
+        # from here. Both call sites are needed and neither replaces the
+        # other. The write surface guards the cases written after the
+        # rules existed; this call guards the cases written before them,
+        # or written through a path that bypasses the serializer. Without
+        # it such a case enters the batch and only fails at ``finalize``,
+        # where nobody can act on an unfinished step table any more —
+        # STD-SW-003 §5.6 says such a case is not written yet and must
+        # not enter an execution batch at all.
+        authoring_reasons: list[str] = []
+        for case in cases:
+            header = {
+                "title": case.title,
+                "purpose": case.purpose,
+                "object_overview": case.object_overview,
+                "priority": case.priority,
+                "preconditions": case.preconditions,
+                "environment": case.environment,
+            }
+            steps = [
+                {"action": step.action, "expected_result": step.expected_result}
+                for step in case.steps.all()
+            ]
+            # The case number decorates the reason (``<number>|…``) the
+            # same way a finalize entry is decorated, so every entry names
+            # the offending case and, when there is one, the step.
+            authoring_reasons.extend(
+                f"{case.number}|{reason}"
+                for reason in check_authoring(
+                    case.module.code, header, steps, number=case.number
+                )
+            )
+
+        if authoring_reasons:
+            # 400, not 409: the batch itself is fine and its state does not
+            # contradict the payload — the *cases* the client selected are
+            # not executable yet, so the payload is not acceptable until
+            # they are corrected.
+            return Response(
+                {
+                    "error": "The test case is not valid.",
+                    "code": "invalid_test_case",
+                    "errors": describe_reasons(authoring_reasons),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         created = []
         actor_id = actor_id_for_request(request)
