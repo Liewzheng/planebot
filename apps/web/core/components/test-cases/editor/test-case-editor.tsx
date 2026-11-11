@@ -20,6 +20,7 @@ import { TestCaseConflictModal } from "./test-case-conflict-modal";
 import { TestCaseHeaderForm } from "./test-case-header-form";
 import { TestCaseModuleModal } from "./test-case-module-modal";
 import { TestCasePropertiesRail } from "./test-case-properties-rail";
+import { refusalNamesRailField, unreadableReasons } from "./test-case-refusals";
 import { TestCaseStepsForm } from "./test-case-steps-form";
 // constants
 import { TEST_CASE_AUTOSAVE_DEBOUNCE_MS, TEST_CASE_DETAIL, TEST_CASE_LINKS, TEST_CASE_MODULES } from "../constants";
@@ -153,7 +154,7 @@ export function TestCaseEditor(props: Props) {
   // ------------------------------------------------------------------
 
   /** The reasons of a refused write, addressed by the field they belong to. */
-  const applyErrors = useCallback((envelope?: ITestCaseErrorResponse) => {
+  const applyErrors = useCallback((envelope?: ITestCaseErrorResponse): TTestCaseFieldErrors => {
     const nextFields: TTestCaseFieldErrors = {};
     const nextSteps: TTestCaseStepErrors = {};
 
@@ -181,6 +182,8 @@ export function TestCaseEditor(props: Props) {
 
     setFieldErrors(nextFields);
     setStepErrors(nextSteps);
+
+    return nextFields;
   }, []);
 
   /**
@@ -247,8 +250,12 @@ export function TestCaseEditor(props: Props) {
           setConflict(envelope.current);
           setSaveState("conflict");
         } else {
-          applyErrors(envelope);
+          const refused = applyErrors(envelope);
           setSaveState("error");
+          // A reason named for a field of the rail is read next to its row, so
+          // the rail has to be on screen for it — it is closed on a narrow
+          // viewport, and a reader may have collapsed it on a wide one.
+          if (refusalNamesRailField(refused)) setIsRailOpen(true);
         }
       } finally {
         inFlightRef.current = false;
@@ -379,14 +386,16 @@ export function TestCaseEditor(props: Props) {
       const envelope = error as ITestCaseErrorResponse | undefined;
       const reasons = envelope?.errors ?? [];
 
-      applyErrors(envelope);
+      const refused = applyErrors(envelope);
       setSaveState("error");
+      if (refusalNamesRailField(refused)) setIsRailOpen(true);
 
-      // A refusal that names the fields speaks through them: the Chinese
-      // sentence of the server stands next to the field it belongs to. A
-      // refusal without such a sentence (the request did not reach the
-      // server) has nothing to show there — that one is worth a toast,
-      // and the toast says what it was.
+      // A refusal that names a field speaks through it: the sentence of the
+      // server stands next to the field it belongs to, and the reading column
+      // lists the ones the reader cannot see there right now (see
+      // `unreadableReasons`). A refusal without such a sentence (the request
+      // did not reach the server) has nothing to show inline — that one is
+      // worth a toast, and the toast says what it was.
       if (reasons.length === 0) {
         setToast({
           type: TOAST_TYPE.ERROR,
@@ -440,6 +449,18 @@ export function TestCaseEditor(props: Props) {
   if (!draft) return null;
 
   const isCreateMode = !testCaseId;
+
+  // What the reader cannot see next to a control right now: the reasons of the
+  // rail while it is closed, and the reasons of a field that neither the
+  // column nor the rail renders. They are listed in the column instead, so a
+  // refused write always ends in something visible — the create path has no
+  // save indicator at all.
+  const railFieldLabels: Record<string, string> = {
+    module: t("project_test_case.editor.field_module"),
+    priority: t("project_test_case.editor.field_priority"),
+    status: t("project_test_case.editor.field_status"),
+  };
+  const unreadable = unreadableReasons(fieldErrors, isRailOpen);
 
   // The shell of the work-item detail: a reading column and a rail of
   // properties on its right. The column scrolls on its own, the rail does not
@@ -514,6 +535,19 @@ export function TestCaseEditor(props: Props) {
                 </li>
               ))}
             </ul>
+          )}
+
+          {unreadable.length > 0 && (
+            <div role="status" className="flex flex-col gap-1 rounded-md border border-subtle-1 bg-layer-2 px-3 py-2">
+              <p className="text-11 font-medium text-secondary">{t("project_test_case.editor.refusal_summary")}</p>
+              <ul className="flex flex-col gap-0.5">
+                {unreadable.map(({ field, message }) => (
+                  <li key={`${field}:${message}`} className="text-11 text-danger-primary">
+                    {railFieldLabels[field] ? `${railFieldLabels[field]} — ${message}` : message}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {isCreateMode && (
