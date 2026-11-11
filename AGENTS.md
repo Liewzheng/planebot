@@ -50,14 +50,14 @@ Remotes on this checkout: `planebot` = our home repo, `origin` = upstream `makep
 Branch policy:
 
 - `main` — stable line: what is deployed and verified on the self-host instance. Fast-forward only.
-- `dev` — development line: local `integration/selfhost` tracks `planebot/dev`, and this checkout sets `push.default=upstream`, so a plain `git push` from that branch lands on `dev`.
+- `dev` — development line: this checkout's `dev` branch tracks `planebot/dev`, and this checkout sets `push.default=upstream`, so a plain `git push` from `dev` lands on `planebot/dev`. (Historical note: the branch used to be named `integration/selfhost`; it was renamed to `dev` on 2026-11-11 so local names match the home repo.)
 - Any other branch on `planebot` is a short-lived topic branch and gets deleted once merged.
 
 ```bash
 # ordinary development push (upstream is already configured)
 git push
 # promote the current tip to stable, fast-forward only
-git push planebot integration/selfhost:main
+git push planebot dev:main
 ```
 
 ## Upstream is no longer maintained (2026-11-09)
@@ -66,14 +66,14 @@ We do **not** maintain the official `makeplane/plane` repo any more — not the 
 
 - Do not open, update, reply on, or re-submit anything upstream (PRs, issues, discussions). The upstream PRs filed earlier (#9761, #9780, #9798, …) are archived history; leave them as they are.
 - **But do not dismiss upstream review comments either.** A finding written against one of those PRs describes code that also lives here. Treat it as a lead that must be verified against **this** repository — locate the file:line, check whether the described behaviour actually exists here, and only then decide. Two examples from 2026-11-09 where the lead was real: PR #9780's comment exposed an authorization bypass in `apps/live`'s `issue-events` channel (tracked as PLANE-115, fixed by mission M69), and PR #9798's two CodeRabbit items were both present in our locale files (PLANE-116).
-- Every fix lands here: topic branch → review → `integration/selfhost` (deploys) → `planebot/dev`, with `main` fast-forward only. Nothing goes upstream.
+- Every fix lands here: topic branch → review → `dev` (deploys) → `planebot/dev`, with `main` fast-forward only. Nothing goes upstream.
 
-## Self-host images (integration/selfhost only)
+## Self-host images (dev only)
 
-The deployment in `~/docker/plane` runs images built from the `integration/selfhost` branch. Rebuild and redeploy procedure:
+The deployment in `~/docker/plane` runs images built from the `dev` branch. Rebuild and redeploy procedure:
 
 ```bash
-git checkout integration/selfhost
+git checkout dev
 
 # Build only what changed (repo root is the build context for the frontends)
 docker build -f apps/api/Dockerfile.api -t plane-api:latest apps/api
@@ -90,4 +90,4 @@ docker exec api python manage.py migrate
 Notes:
 
 - The web/admin Caddy static rate limit is raised to 3000 req/min on this branch (`apps/*/caddy/Caddyfile`); rebuilding from any other branch restores the upstream 300/min and cold-cache page loads will 429.
-- When upstream `preview` moves forward, re-merge the source branches (`feat/*`, `fix/*`) into `integration/selfhost` before rebuilding.
+- When upstream `preview` moves forward, re-merge the source branches (`feat/*`, `fix/*`) into `dev` before rebuilding.
