@@ -1523,3 +1523,386 @@ class TestReTestReadCost:
         # The link is a join: the detail read costs the same before and
         # after the row names an original.
         assert linked == unlinked
+
+
+# --------------------------------------------------------------------------- #
+# The summary of a batch (M91 / TCASE-V1-SUMMARY)                             #
+# --------------------------------------------------------------------------- #
+
+#: The step table of REC-SW-001's filled sample, in the words of the
+#: sample. The app contract test builds the same record; this surface
+#: answers the same numbers over the same stored rows.
+SAMPLE_STEPS = [
+    {
+        "action": "Look at the switch in the second row of the right pane",
+        "expected_result": "Off: the knob sits at the left end and the track is grey",
+    },
+    {
+        "action": "Look at the switch in the next row",
+        "expected_result": "Inoperable: lighter than the switch of step 1, a click does nothing",
+    },
+    {
+        "action": "Click the first switch once",
+        "expected_result": "On: the knob moves to the right end, the second switch turns darker",
+    },
+    {
+        "action": "Click the second switch once",
+        "expected_result": 'On, and the line reads "每天 09:00 汇总一次" word for word',
+    },
+    {
+        "action": "Close the settings window and open it again",
+        "expected_result": "Both switches are still on",
+    },
+    {
+        "action": "Quit the app and start it again, then open the settings window",
+        "expected_result": "Both switches are still on",
+    },
+    {
+        "action": "Developer closes the notification permission of the app, then steps 1 and 3",
+        "expected_result": 'A notice reads "系统通知权限已关闭" and the switch cannot be clicked',
+    },
+]
+
+#: The one-line phenomenon the tester wrote on the sample's case.
+SAMPLE_PHENOMENON = "步骤 4：点「每日摘要」后未出现说明文字；步骤 7 未执行"
+
+
+def summary_url(workspace, project, run_id):
+    return f"{runs_url(workspace.slug, project.id)}{run_id}/summary/"
+
+
+def _mark_step(client, workspace, project, run_id, run_case_id, sequence_id, **payload):
+    response = client.patch(
+        f"{runs_url(workspace.slug, project.id)}{run_id}"
+        f"/cases/{run_case_id}/steps/{sequence_id}/",
+        payload,
+        format="json",
+    )
+    assert response.status_code == status.HTTP_200_OK, response.content
+    return response.json()
+
+
+def _conclude(client, workspace, project, run_id, run_case_id, **payload):
+    response = client.patch(
+        _run_case_url(workspace, project, run_id, run_case_id), payload, format="json"
+    )
+    assert response.status_code == status.HTTP_200_OK, response.content
+    return response.json()
+
+
+def _write_case(client, workspace, project, module, **overrides):
+    """One more case on an already registered module."""
+    response = client.post(
+        cases_url(workspace.slug, project.id),
+        case_payload(module, **overrides),
+        format="json",
+    )
+    assert response.status_code == status.HTTP_201_CREATED, response.content
+    return response.json()
+
+
+def _build_sample_batch(client, workspace, project, executor):
+    """REC-SW-001's filled sample as a v1 record.
+
+    One case, step 4 ✘, step 7 never executed (measured value only),
+    concluded FAIL with the tester's one-line summary. The standard's own
+    sample prints ``PASS 0 | FAIL 1 | N/A 0 | 需人工 1 | 总数 1`` for it.
+    """
+    _module, case = _build_case(
+        client,
+        workspace,
+        project,
+        title="通知区总开关关闭时子开关不可操作，打开后恢复",
+        steps=SAMPLE_STEPS,
+    )
+    run = _build_run(client, workspace, project, executor)
+    run_case = _add_case(client, workspace, project, run["id"], case["id"])
+
+    for sequence_id in (1, 2, 3, 5, 6):
+        _mark_step(
+            client, workspace, project, run["id"], run_case["id"], sequence_id,
+            conclusion="pass",
+        )
+    _mark_step(
+        client, workspace, project, run["id"], run_case["id"], 4,
+        conclusion="fail",
+        actual_value="开关已变为开启态；该行下方无任何说明文字",
+    )
+    # Step 7 is the 需人工 step: both boxes blank, the reason in the
+    # measured value (§6.1 rule 1). It is written but not concluded.
+    _mark_step(
+        client, workspace, project, run["id"], run_case["id"], 7,
+        actual_value="未准备系统通知权限，本步未执行",
+    )
+    _conclude(
+        client, workspace, project, run["id"], run_case["id"],
+        conclusion="FAIL",
+        evidence="docs/evidence/2026-11-09/TC-NET-001/step4-after-toggle.png",
+        remarks="步骤 4 勾了 ✘；步骤 7 需开发准备环境，按 需人工 记。",
+        actual_result_summary=SAMPLE_PHENOMENON,
+    )
+    return run, run_case
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestTheSummaryOfABatch:
+    """``GET …/test-runs/<id>/summary/`` — the four counts and the
+    deviation list of §6.2 rule 3 / §6.3.
+
+    The answer is computed by :func:`plane.db.testcase_summary.summarize_run`
+    on both surfaces; these tests pin the numbers and the shape the CLI
+    reports, and that a client cannot make a number up.
+    """
+
+    def test_the_sample_batch_summarises_like_the_sample(
+        self, workspace, create_user, project, human_client
+    ):
+        run, _ = _build_sample_batch(human_client, workspace, project, create_user)
+
+        response = human_client.get(summary_url(workspace, project, run["id"]))
+        assert response.status_code == status.HTTP_200_OK, response.content
+        body = response.json()
+        assert body["total"] == 1
+        assert body["pass"] == 0
+        assert body["fail"] == 1
+        assert body["na"] == 0
+        assert body["manual"] == 1
+        assert body["deviations"] == [
+            {"case_number": "TC-NET-001", "summary": SAMPLE_PHENOMENON}
+        ]
+
+    def test_an_empty_batch_summarises_to_zero(
+        self, workspace, create_user, project, human_client
+    ):
+        run = _build_run(human_client, workspace, project, create_user)
+
+        response = human_client.get(summary_url(workspace, project, run["id"]))
+        assert response.status_code == status.HTTP_200_OK, response.content
+        assert response.json() == {
+            "total": 0,
+            "pass": 0,
+            "fail": 0,
+            "na": 0,
+            "manual": 0,
+            "deviations": [],
+        }
+
+    def test_the_summary_carries_exactly_the_documented_keys(
+        self, workspace, create_user, project, human_client
+    ):
+        run, _ = _build_sample_batch(human_client, workspace, project, create_user)
+
+        body = human_client.get(summary_url(workspace, project, run["id"])).json()
+        assert set(body) == {"total", "pass", "fail", "na", "manual", "deviations"}
+        assert set(body["deviations"][0]) == {"case_number", "summary"}
+
+    def test_the_counts_of_a_mixed_batch(
+        self, workspace, create_user, project, human_client
+    ):
+        # One module carries the four cases: a module code is registered
+        # once per project, so only the first case writes the module.
+        module, passing = _build_case(human_client, workspace, project)
+        assert module["code"] == "NET"
+        failing = _write_case(human_client, workspace, project, module)
+        not_applicable = _write_case(human_client, workspace, project, module)
+        manual = _write_case(human_client, workspace, project, module)
+
+        run = _build_run(human_client, workspace, project, create_user)
+        pass_case = _add_case(human_client, workspace, project, run["id"], passing["id"])
+        fail_case = _add_case(human_client, workspace, project, run["id"], failing["id"])
+        na_case = _add_case(
+            human_client, workspace, project, run["id"], not_applicable["id"]
+        )
+        manual_case = _add_case(
+            human_client, workspace, project, run["id"], manual["id"]
+        )
+
+        _mark_step(
+            human_client, workspace, project, run["id"], pass_case["id"], 1,
+            conclusion="pass", actual_value="the settings window opened at 300 ms",
+        )
+        _conclude(
+            human_client, workspace, project, run["id"], pass_case["id"],
+            conclusion="PASS", evidence="docs/evidence/pass.png",
+        )
+
+        _mark_step(
+            human_client, workspace, project, run["id"], fail_case["id"], 1,
+            conclusion="fail", actual_value="the login button stayed grey",
+        )
+        _conclude(
+            human_client, workspace, project, run["id"], fail_case["id"],
+            conclusion="FAIL", evidence="docs/evidence/fail.png",
+        )
+
+        _conclude(
+            human_client, workspace, project, run["id"], na_case["id"],
+            conclusion="N/A",
+            na_reason="the notification pane does not exist on this build",
+            na_criteria_source="requirement REQ-7 section 2",
+            evidence="not applicable",
+        )
+
+        _conclude(
+            human_client, workspace, project, run["id"], manual_case["id"],
+            conclusion="MANUAL",
+            manual_executor="Li Si",
+            manual_condition="after the developer prepares the environment",
+            evidence="pending",
+        )
+
+        body = human_client.get(summary_url(workspace, project, run["id"])).json()
+        assert body["total"] == 4
+        assert body["pass"] == 1
+        assert body["fail"] == 1
+        assert body["na"] == 1
+        assert body["manual"] == 1
+        # Only the failed case is a deviation; its one-line phenomenon is
+        # the measured value of its ✘ step, since no case-level summary
+        # was written.
+        assert body["deviations"] == [
+            {"case_number": "TC-NET-002", "summary": "the login button stayed grey"}
+        ]
+
+    def test_an_unexecuted_step_of_a_failing_case_counts_as_manual(
+        self, workspace, create_user, project, human_client
+    ):
+        """§6.1 rule 1: two blank boxes mean the step was not executed,
+        and the case is counted 需人工 next to FAIL — the sample's numbers
+        add up to more than the total, which is deliberate."""
+        run, _ = _build_sample_batch(human_client, workspace, project, create_user)
+
+        body = human_client.get(summary_url(workspace, project, run["id"])).json()
+        assert body["total"] == 1
+        assert body["fail"] == 1
+        assert body["manual"] == 1
+
+    def test_a_client_cannot_supply_a_count(
+        self, workspace, create_user, project, human_client
+    ):
+        run, _ = _build_sample_batch(human_client, workspace, project, create_user)
+        url = summary_url(workspace, project, run["id"])
+
+        # A query parameter is not an input of the summary.
+        response = human_client.get(
+            url + "?total=99&pass=99&fail=0&na=0&manual=0"
+        )
+        assert response.status_code == status.HTTP_200_OK, response.content
+        body = response.json()
+        assert body["total"] == 1
+        assert body["pass"] == 0
+        assert body["fail"] == 1
+        assert body["manual"] == 1
+
+        # A JSON body on the GET is not an input either: the endpoint has
+        # no body field, and a count on the wire is a report of the
+        # stored record.
+        response = human_client.generic(
+            "GET",
+            url,
+            data='{"total": 99, "pass": 99, "fail": 0, "na": 0, "manual": 0}',
+            content_type="application/json",
+        )
+        assert response.status_code == status.HTTP_200_OK, response.content
+        body = response.json()
+        assert body["total"] == 1
+        assert body["fail"] == 1
+        assert body["manual"] == 1
+
+    @pytest.mark.parametrize("method", ["post", "put", "patch", "delete"])
+    def test_the_endpoint_is_read_only(
+        self, workspace, create_user, project, human_client, method
+    ):
+        run = _build_run(human_client, workspace, project, create_user)
+        response = getattr(human_client, method)(
+            summary_url(workspace, project, run["id"]), {}, format="json"
+        )
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED, response.content
+
+    def test_an_unknown_batch_is_a_404(self, workspace, project, human_client):
+        response = human_client.get(summary_url(workspace, project, uuid4()))
+        assert response.status_code == status.HTTP_404_NOT_FOUND, response.content
+
+    def test_a_batch_of_another_project_is_not_visible(
+        self, workspace, create_user, project, human_client
+    ):
+        other = Project.objects.create(
+            name="Other Project",
+            identifier="OTP",
+            workspace=workspace,
+            created_by=create_user,
+            network=2,
+        )
+        ProjectMember.objects.create(
+            project=other, member=create_user, role=20, is_active=True
+        )
+        foreign = _build_run(human_client, workspace, other, create_user)
+
+        response = human_client.get(summary_url(workspace, project, foreign["id"]))
+        assert response.status_code == status.HTTP_404_NOT_FOUND, response.content
+
+    def test_the_summary_of_a_draft_batch_works_too(
+        self, workspace, create_user, project, human_client
+    ):
+        """The summary is a report, not a gate: it answers while the batch
+        is still being written."""
+        run, _ = _build_sample_batch(human_client, workspace, project, create_user)
+
+        # Not finalized: the batch is still open.
+        assert human_client.get(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/"
+        ).json()["status"] != "completed"
+
+        response = human_client.get(summary_url(workspace, project, run["id"]))
+        assert response.status_code == status.HTTP_200_OK, response.content
+        assert response.json()["fail"] == 1
+
+
+@pytest.mark.contract
+@pytest.mark.django_db
+class TestTheSummaryPermission:
+    """The summary is a read of the batch: the same role floor and the
+    same service-principal read scope as every other v1 batch read."""
+
+    def test_a_service_principal_with_the_read_scope_reads_the_summary(
+        self, workspace, project, granted_sp, sp_client
+    ):
+        bot = granted_sp.ensure_bot_user()
+        run, _ = _build_sample_batch(sp_client, workspace, project, bot)
+
+        response = sp_client.get(summary_url(workspace, project, run["id"]))
+        assert response.status_code == status.HTTP_200_OK, response.content
+        body = response.json()
+        assert body["total"] == 1
+        assert body["fail"] == 1
+        assert body["deviations"][0]["summary"] == SAMPLE_PHENOMENON
+
+    def test_a_service_principal_without_the_read_scope_is_refused(
+        self, workspace, create_user, project, sp, sp_client, human_client
+    ):
+        """The scope step answers, with the wording and the remedy of the
+        v1 deny body. The principal holds the three write scopes: the
+        refusal is about ``read test_run``, not about the feature."""
+        for action in ("create", "update", "delete"):
+            _scope(sp, project, "test_run", action)
+        _grant(sp, project, role_cap=15)
+
+        run = _build_run(human_client, workspace, project, create_user)
+        response = sp_client.get(summary_url(workspace, project, run["id"]))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN, response.content
+        detail = response.json()["detail"]
+        assert "lacks scope for read test_run" in detail, detail
+        assert "Manage scopes" in detail, detail
+
+    def test_a_project_guest_reads_the_summary(
+        self, workspace, create_user, project, human_client, guest_client
+    ):
+        """GUEST is the role floor of every v1 batch read, and the summary
+        is a read."""
+        run, _ = _build_sample_batch(human_client, workspace, project, create_user)
+
+        response = guest_client.get(summary_url(workspace, project, run["id"]))
+        assert response.status_code == status.HTTP_200_OK, response.content
+        assert response.json()["total"] == 1
