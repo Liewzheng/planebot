@@ -20,6 +20,7 @@ from plane.api.views.test_run import (
     TestRunListCreateEndpoint,
     TestRunStepAttachmentEndpoint,
     TestRunStepRecordEndpoint,
+    TestRunSummaryEndpoint,
 )
 
 
@@ -73,5 +74,10 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/test-runs/<uuid:test_run_id>/finalize/",
         TestRunFinalizeEndpoint.as_view(http_method_names=["post"]),
         name="test-run-finalize",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/test-runs/<uuid:test_run_id>/summary/",
+        TestRunSummaryEndpoint.as_view(http_method_names=["get"]),
+        name="test-run-summary",
     ),
 ]

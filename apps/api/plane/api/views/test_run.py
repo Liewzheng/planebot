@@ -26,6 +26,9 @@ rules the app surface enforces — the validity functions live in
   running the case again in a new batch;
 * ``finalize`` runs the validity rules and reports every problem it
   finds, one entry per problem;
+* ``summary`` answers the four counts and the deviation list of §6.2
+  rule 3 / §6.3 — read-only, computed by the pure function of the db
+  layer, never from a number the client sends;
 * a **completed batch is frozen**: every write returns 409.
 
 The **field names are the contract** of the feature: they are the fields
@@ -75,6 +78,7 @@ from plane.db.models import (
     TestRunCase,
     TestRunStepRecord,
 )
+from plane.db.testcase_summary import summarize_run
 from plane.db.testcase_validity import (
     DUPLICATE_CASE_NUMBER,
     RUN_STATUS_COMPLETED,
@@ -727,6 +731,58 @@ class TestRunFinalizeEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin,
             .first()
         )
         return Response(TestRunSerializer(run).data, status=status.HTTP_200_OK)
+
+
+class TestRunSummaryEndpoint(BaseAPIView):
+    """The summary of a batch (STD-SW-003 §6.2 rule 3, §6.3) — read-only.
+
+    The four counts and the deviation list are computed by
+    :func:`plane.db.testcase_summary.summarize_run` over the same
+    dataclasses the validity rules read; the view loads the rows and hands
+    the result on, it never counts anything itself. Nothing the client
+    sends is an input: a count on the wire is a report of the stored
+    record, not a value a caller can choose — a query parameter or a body
+    carrying ``total`` is therefore ignored, not validated.
+
+    The answer is a plain object of five numbers and a list, so there is
+    no serializer to import for it: the keys of
+    :func:`summarize_run` are the contract.
+    """
+
+    resource_type = "test_run"
+
+    permission_classes = [ProjectEntityPermission]
+
+    def get(self, request, slug, project_id, test_run_id):
+        run = (
+            TestRun.objects.filter(
+                pk=test_run_id, project_id=project_id, workspace__slug=slug
+            )
+            .select_related("executed_by")
+            .first()
+        )
+        if run is None:
+            return Response({"error": "Test run not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        run_cases = (
+            TestRunCase.objects.filter(test_run=run)
+            .select_related("test_case")
+            .prefetch_related(
+                "assets",
+                Prefetch(
+                    "step_records",
+                    queryset=TestRunStepRecord.objects.order_by("sequence_id").prefetch_related(
+                        "assets"
+                    ),
+                ),
+            )
+            .order_by("created_at")
+        )
+
+        return Response(
+            summarize_run(build_run_data(run, list(run_cases))),
+            status=status.HTTP_200_OK,
+        )
 
 
 class TestRunAttachmentEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, BaseAPIView):
