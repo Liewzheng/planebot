@@ -58,19 +58,19 @@ export function TestCaseStepsForm(props: Props) {
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-2.5">
       {draft.steps.length === 0 ? (
         <div className="flex flex-col items-start gap-2 rounded-md border border-dashed border-subtle-1 bg-layer-2/40 px-4 py-6">
           <p className="text-13 text-secondary">{t("project_test_case.editor.steps_empty")}</p>
           <p className="text-11 text-tertiary">{t("project_test_case.editor.steps_empty_hint")}</p>
         </div>
       ) : (
-        <ul className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-2.5">
           {draft.steps.map((step, index) => {
             const stepErrors = errors[index] ?? {};
 
             return (
-              <li key={step.key} className="flex flex-col gap-3 rounded-md border border-subtle-1 bg-layer-1 p-3">
+              <li key={step.key} className="flex flex-col gap-2.5 rounded-md border border-subtle-1 bg-layer-1 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-11 font-medium text-secondary">
                     {t("project_test_case.editor.step_title", { number: index + 1 })}
@@ -109,7 +109,7 @@ export function TestCaseStepsForm(props: Props) {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
                   <div className="flex min-w-0 flex-col gap-1.5">
                     <label className="text-11 font-medium text-secondary" htmlFor={`step-action-${step.key}`}>
                       {t("project_test_case.editor.step_action")}
