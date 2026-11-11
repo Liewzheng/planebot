@@ -17,6 +17,10 @@ behaviour the standard (STD-SW-003) demands:
 * ``finalize`` runs the validity rules of the standard and reports
   every problem on its own — the field path, the stable reason code and
   the Chinese sentence;
+* a case enters a batch only when it still passes the authoring rules:
+  a case written before the rules existed (or through a path that skips
+  them) is refused at add time with the code, the sentence and the field
+  path of the write surface, and a batch add stays all-or-nothing;
 * a **completed batch is frozen**: every write returns 409;
 * a case that was selected into a batch can be taken out again — the
   removal takes it out of that batch only, and a completed batch refuses
@@ -41,13 +45,16 @@ from plane.db.models import (
     Project,
     ProjectMember,
     State,
+    TestCase,
     TestCaseModule,
+    TestCaseStep,
     TestRun,
     TestRunCase,
     TestRunStepRecord,
     User,
     WorkspaceMember,
 )
+from plane.db.testcase_validity import EXPECTED_IS_UNJUDGEABLE
 from plane.service_principals.constants import PrincipalType
 from plane.service_principals.models import (
     ProjectGrant,
@@ -1175,6 +1182,46 @@ class TestAttachments:
 # --------------------------------------------------------------------------- #
 
 
+def make_stored_case(project, module, create_user, steps=None):
+    """Write a case straight into the database, bypassing the serializer.
+
+    This is the state the add-time check exists for: a case written
+    before the authoring rules existed, or written through a path that
+    never runs them. Going through the case API would be refused by the
+    write-side rule first, so the case is constructed at the model level
+    to exercise the add path.
+    """
+    case = TestCase.objects.create(
+        project=project,
+        module=module,
+        title="Switch the language",
+        purpose="Make sure the language switch of the settings page works",
+        object_overview="The language menu of the settings page",
+        priority="P1",
+        preconditions="The settings page is open",
+        environment="Windows 10, pbot 1.2.3",
+        created_by=create_user,
+    )
+    for index, step in enumerate(
+        steps
+        or [
+            {
+                "action": "Switch the language to English",
+                "expected_result": "切换语言后界面显示正常",
+            }
+        ],
+        start=1,
+    ):
+        TestCaseStep.objects.create(
+            project=project,
+            test_case=case,
+            sequence_id=index,
+            action=step["action"],
+            expected_result=step["expected_result"],
+        )
+    return case
+
+
 @pytest.mark.contract
 @pytest.mark.django_db
 class TestAddCases:
@@ -1202,6 +1249,118 @@ class TestAddCases:
         )
         assert response.status_code == status.HTTP_409_CONFLICT
         assert "duplicate_case_number" in error_codes(response)
+
+    def test_a_case_with_an_unjudgeable_expected_result_is_refused(
+        self, session_client, workspace, project, module, create_user
+    ):
+        """§5.6: an unfinished case must not enter an execution batch.
+
+        The case is written at the model level, so the write-side rule
+        could not have refused it — the case the add-time check exists
+        for.
+        """
+        case = make_stored_case(project, module, create_user)
+        run = create_run(session_client, workspace, project, create_user)
+
+        response = session_client.post(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/",
+            {"test_case_ids": [str(case.id)]},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.content
+        body = response.json()
+        assert body["code"] == "invalid_test_case", body
+        entry = next(
+            entry for entry in body["errors"] if entry["code"] == EXPECTED_IS_UNJUDGEABLE
+        )
+        # The entry names the case and the step it was refused for.
+        assert entry["case_number"] == case.number, entry
+        assert entry["step_sequence"] == 1, entry
+        assert entry["path"] == f"cases[{case.number}].steps[1].expected_result", entry
+
+        # The sentence is the one the write surface returns for the same
+        # wording: same code, same sentence, whichever side refuses.
+        refused = session_client.post(
+            cases_url(workspace.slug, project.id),
+            case_payload(
+                module,
+                steps=[
+                    {"action": "Switch the language", "expected_result": "切换语言后界面显示正常"}
+                ],
+            ),
+            format="json",
+        )
+        assert refused.status_code == status.HTTP_400_BAD_REQUEST, refused.content
+        write_entry = next(
+            entry
+            for entry in refused.json()["errors"]
+            if entry["code"] == EXPECTED_IS_UNJUDGEABLE
+        )
+        assert entry["message"] == write_entry["message"], entry
+        assert "§5.6" in entry["message"], entry
+
+        # Nothing entered the batch.
+        assert TestRunCase.objects.filter(test_run_id=run["id"]).count() == 0
+
+    def test_a_stored_case_with_an_observable_expected_result_is_added(
+        self, session_client, workspace, project, module, create_user
+    ):
+        """The add-time check refuses the wording, not the case itself."""
+        case = make_stored_case(
+            project,
+            module,
+            create_user,
+            steps=[
+                {
+                    "action": "Switch the language to English",
+                    "expected_result": "The menu shows Settings, Language and Done in that order",
+                }
+            ],
+        )
+        run = create_run(session_client, workspace, project, create_user)
+
+        run_case = add_case(session_client, workspace, project, run["id"], case.id)
+        assert run_case["case_number"] == case.number
+        assert run_case["steps"][0]["action_snapshot"] == "Switch the language to English"
+        assert run_case["steps"][0]["expected_result_snapshot"] == (
+            "The menu shows Settings, Language and Done in that order"
+        )
+
+    def test_a_mixed_add_of_a_bad_and_a_good_case_adds_neither(
+        self, session_client, workspace, project, module, create_user
+    ):
+        good = create_case(session_client, workspace, project, module)
+        bad = make_stored_case(project, module, create_user)
+        run = create_run(session_client, workspace, project, create_user)
+
+        response = session_client.post(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/",
+            {"test_case_ids": [str(good["id"]), str(bad.id)]},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.content
+        assert error_codes(response) == {EXPECTED_IS_UNJUDGEABLE}, response.content
+        assert TestRunCase.objects.filter(test_run_id=run["id"]).count() == 0
+
+        # The good case is not poisoned: it still adds on its own.
+        added = add_case(session_client, workspace, project, run["id"], good["id"])
+        assert added["case_number"] == good["number"]
+
+    def test_the_same_case_twice_in_one_payload_adds_nothing(
+        self, session_client, workspace, project, module, create_user
+    ):
+        """The duplicate is found before the first insert, not after it."""
+        case = create_case(session_client, workspace, project, module)
+        run = create_run(session_client, workspace, project, create_user)
+
+        response = session_client.post(
+            f"{runs_url(workspace.slug, project.id)}{run['id']}/cases/",
+            {"test_case_ids": [str(case["id"]), str(case["id"])]},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_409_CONFLICT, response.content
+        assert "duplicate_case_number" in error_codes(response), response.content
+        assert TestRunCase.objects.filter(test_run_id=run["id"]).count() == 0
 
     def test_a_completed_batch_may_not_be_deleted(
         self, session_client, workspace, project, module, create_user
