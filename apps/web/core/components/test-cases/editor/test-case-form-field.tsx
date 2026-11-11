@@ -33,7 +33,7 @@ export function TestCaseFormField(props: Props) {
   return (
     <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
       <div className="flex items-center gap-2">
-        <label htmlFor={htmlFor} className="text-11 font-medium text-secondary">
+        <label htmlFor={htmlFor} className="text-13 font-medium text-secondary">
           {label}
         </label>
         {required && (

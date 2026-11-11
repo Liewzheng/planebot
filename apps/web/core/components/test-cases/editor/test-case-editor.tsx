@@ -18,8 +18,8 @@ import { useAppRouter } from "@/hooks/use-app-router";
 import { TestCaseSaveIndicator } from "../shared/save-indicator";
 import { TestCaseConflictModal } from "./test-case-conflict-modal";
 import { TestCaseHeaderForm } from "./test-case-header-form";
-import { TestCaseLinksForm } from "./test-case-links-form";
 import { TestCaseModuleModal } from "./test-case-module-modal";
+import { TestCasePropertiesRail } from "./test-case-properties-rail";
 import { TestCaseStepsForm } from "./test-case-steps-form";
 // constants
 import { TEST_CASE_AUTOSAVE_DEBOUNCE_MS, TEST_CASE_DETAIL, TEST_CASE_LINKS, TEST_CASE_MODULES } from "../constants";
@@ -73,6 +73,12 @@ export function TestCaseEditor(props: Props) {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  // The rail is a column of the page on a wide screen. On a narrow one it is a
+  // drawer over the content, so it starts closed there — and the reading
+  // column keeps its width instead of being squeezed. A case being created
+  // keeps it open even there: the module and the priority are mandatory items
+  // and both of them live in the rail.
+  const [isRailOpen, setIsRailOpen] = useState(() => !testCaseId || window.innerWidth >= 768);
   // refs
   const draftRef = useRef<TTestCaseDraft | null>(null);
   const versionRef = useRef<string | undefined>(undefined);
@@ -416,8 +422,6 @@ export function TestCaseEditor(props: Props) {
   // ------------------------------------------------------------------
 
   const moduleList = useMemo<ITestCaseModule[]>(() => modules ?? [], [modules]);
-  const selectedModule = moduleList.find((module) => module.id === draft?.module);
-  const numberPreview = selectedModule ? `TC-${selectedModule.code}-NNN` : "";
 
   const headerComplete = draft ? isHeaderComplete(draft) : false;
   const stepsComplete = draft ? isStepTableComplete(draft) : false;
@@ -437,124 +441,130 @@ export function TestCaseEditor(props: Props) {
 
   const isCreateMode = !testCaseId;
 
+  // The shell of the work-item detail: a reading column and a rail of
+  // properties on its right. The column scrolls on its own, the rail does not
+  // move with it.
   return (
-    <div className="flex h-full w-full flex-col gap-6 overflow-y-auto px-4 py-4 pb-24">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="self-start text-11 text-tertiary hover:text-secondary"
-          >
-            ← {t("project_test_case.editor.back")}
-          </button>
-          <h1 className="truncate text-18 font-semibold text-primary">
-            {isCreateMode
-              ? t("project_test_case.editor.create_title")
-              : draft.title || testCase?.number || t("project_test_case.editor.title")}
-          </h1>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-11 text-tertiary">
-              {isCreateMode ? t("project_test_case.editor.number_preview") : t("project_test_case.editor.number")}
-            </span>
-            {testCase?.number && (
-              <span className="font-mono rounded-sm bg-layer-3 px-1.5 py-0.5 text-11 text-secondary">
-                {testCase.number}
-              </span>
-            )}
-            {isCreateMode && numberPreview && (
-              <span className="font-mono rounded-sm bg-layer-3 px-1.5 py-0.5 text-11 text-tertiary">
-                {numberPreview}
-              </span>
-            )}
-            {isCreateMode && !numberPreview && (
-              <span className="text-11 text-tertiary">{t("project_test_case.editor.number_pending")}</span>
-            )}
-            {!isCreateMode && <TestCaseSaveIndicator state={saveState} />}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {isCreateMode ? (
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={create}
-              loading={isCreating}
-              disabled={!canEdit || !headerComplete || !stepsComplete}
-              prependIcon={<AddOutline className="size-3.5" />}
-            >
-              {isCreating ? t("project_test_case.editor.creating") : t("project_test_case.editor.create_button")}
-            </Button>
-          ) : (
-            canDelete && (
-              <Button
-                variant="error-outline"
-                size="lg"
-                onClick={() => setIsDeleteModalOpen(true)}
-                prependIcon={<DeleteOutline className="size-3.5" />}
+    <div className="flex h-full w-full overflow-hidden">
+      <div className="h-full w-full space-y-6 overflow-y-auto px-9 py-5">
+        {/* `max-w-3xl` caps the measure of the reading column — the prose of a
+            case is read line by line, not scanned across the window. */}
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pb-24">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => router.back()}
+                className="text-11 text-tertiary hover:text-secondary"
               >
-                {t("project_test_case.editor.delete_button")}
-              </Button>
-            )
+                ← {t("project_test_case.editor.back")}
+              </button>
+              {!isCreateMode && <TestCaseSaveIndicator state={saveState} />}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {!isRailOpen && (
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  onClick={() => setIsRailOpen(true)}
+                  aria-controls="test-case-properties"
+                  aria-expanded={false}
+                >
+                  {t("project_test_case.editor.sidebar_show")}
+                </Button>
+              )}
+              {isCreateMode ? (
+                <Button
+                  variant="primary"
+                  size="lg"
+                  onClick={create}
+                  loading={isCreating}
+                  disabled={!canEdit || !headerComplete || !stepsComplete}
+                  prependIcon={<AddOutline className="size-3.5" />}
+                >
+                  {isCreating ? t("project_test_case.editor.creating") : t("project_test_case.editor.create_button")}
+                </Button>
+              ) : (
+                canDelete && (
+                  <Button
+                    variant="error-outline"
+                    size="lg"
+                    onClick={() => setIsDeleteModalOpen(true)}
+                    prependIcon={<DeleteOutline className="size-3.5" />}
+                  >
+                    {t("project_test_case.editor.delete_button")}
+                  </Button>
+                )
+              )}
+            </div>
+          </div>
+
+          {!canEdit && (
+            <p className="rounded-md border border-subtle-1 bg-layer-2 px-3 py-2 text-12 text-secondary">
+              {t("project_test_case.editor.read_only")}
+            </p>
           )}
+
+          {fieldErrors.__form__ && (
+            <ul className="flex flex-col gap-0.5">
+              {fieldErrors.__form__.map((error) => (
+                <li key={error} className="text-11 text-danger-primary">
+                  {error}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {isCreateMode && (
+            <p className="text-11 font-medium text-tertiary">{t("project_test_case.editor.create_title")}</p>
+          )}
+
+          <TestCaseHeaderForm
+            draft={draft}
+            errors={fieldErrors}
+            disabled={!canEdit}
+            onChange={applyPatch}
+            onBlur={flush}
+          />
+
+          <section className="flex flex-col gap-3">
+            <h2 className="text-13 font-semibold text-primary">{t("project_test_case.editor.section_steps")}</h2>
+            <TestCaseStepsForm
+              draft={draft}
+              errors={stepErrors}
+              disabled={!canEdit}
+              onChange={applyPatch}
+              onBlur={flush}
+            />
+            {fieldErrors.steps && (
+              <ul className="flex flex-col gap-0.5">
+                {fieldErrors.steps.map((error) => (
+                  <li key={error} className="text-11 text-danger-primary">
+                    {error}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </div>
       </div>
 
-      {!canEdit && (
-        <p className="rounded-md border border-subtle-1 bg-layer-2 px-3 py-2 text-12 text-secondary">
-          {t("project_test_case.editor.read_only")}
-        </p>
-      )}
-
-      <section className="flex flex-col gap-3">
-        <h2 className="text-13 font-semibold text-primary">{t("project_test_case.editor.section_header")}</h2>
-        <TestCaseHeaderForm
+      {isRailOpen && (
+        <TestCasePropertiesRail
+          workspaceSlug={workspaceSlug}
+          projectId={projectId}
+          testCase={testCase}
           draft={draft}
           modules={moduleList}
+          links={links ?? []}
           errors={fieldErrors}
           disabled={!canEdit}
           onChange={applyPatch}
-          onBlur={flush}
           onCreateModule={() => setIsModuleModalOpen(true)}
+          onLinksChange={(nextLinks: ITestCaseIssueLink[]) => void mutateLinks(nextLinks, { revalidate: false })}
+          onCollapse={() => setIsRailOpen(false)}
         />
-        {fieldErrors.__form__ && (
-          <ul className="flex flex-col gap-0.5">
-            {fieldErrors.__form__.map((error) => (
-              <li key={error} className="text-11 text-danger-primary">
-                {error}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="text-13 font-semibold text-primary">{t("project_test_case.editor.section_steps")}</h2>
-        <TestCaseStepsForm draft={draft} errors={stepErrors} disabled={!canEdit} onChange={applyPatch} onBlur={flush} />
-        {fieldErrors.steps && (
-          <ul className="flex flex-col gap-0.5">
-            {fieldErrors.steps.map((error) => (
-              <li key={error} className="text-11 text-danger-primary">
-                {error}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {!isCreateMode && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-13 font-semibold text-primary">{t("project_test_case.editor.section_work_items")}</h2>
-          <TestCaseLinksForm
-            workspaceSlug={workspaceSlug}
-            projectId={projectId}
-            testCaseId={testCaseId as string}
-            links={links ?? []}
-            disabled={!canEdit}
-            onLinksChange={(nextLinks: ITestCaseIssueLink[]) => void mutateLinks(nextLinks, { revalidate: false })}
-          />
-        </section>
       )}
 
       <TestCaseConflictModal

@@ -5,119 +5,36 @@
  */
 
 import { useTranslation } from "@plane/i18n";
-import { CustomSelect, Input, TextArea } from "@plane/ui";
-import type { ITestCaseModule } from "@plane/types";
+import { Input, TextArea } from "@plane/ui";
 // components
 import { TestCaseFormField } from "./test-case-form-field";
-// constants
-import { TEST_CASE_PRIORITIES, TEST_CASE_STATUSES } from "../constants";
 // types
 import type { TTestCaseDraft } from "../types";
 
 type Props = {
   draft: TTestCaseDraft;
-  modules: ITestCaseModule[];
   errors: Record<string, string[]>;
   disabled: boolean;
   onChange: (patch: Partial<TTestCaseDraft>) => void;
   onBlur: () => void;
-  onCreateModule: () => void;
 };
 
 /**
- * The eight items of the case header.
+ * What the reading column carries: the title, then the four prose sections of
+ * the case, one under the other.
  *
- * The server refuses a case that misses one of the mandatory items, so
- * the editor marks them and shows the reason the server sent back. The
- * reasons are never replaced by a wording of the front end — the sentence
- * of the error envelope is what the tester has to read.
+ * The properties of the case — module, priority, state and the linked work
+ * items — sit in the rail next to this column, the same split the work-item
+ * detail makes. The server refuses a case that misses one of the mandatory
+ * items, so each field marks itself and shows the reason the server sent back;
+ * the reasons are never replaced by a wording of the front end.
  */
 export function TestCaseHeaderForm(props: Props) {
-  const { draft, modules, errors, disabled, onChange, onBlur, onCreateModule } = props;
+  const { draft, errors, disabled, onChange, onBlur } = props;
   const { t } = useTranslation();
 
-  const selectedModule = modules.find((module) => module.id === draft.module);
-  const priorityLabel = draft.priority || t("project_test_case.editor.priority_placeholder");
-  const statusLabel = draft.status ? t(`project_test_case.status.${draft.status}`) : "";
-
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <TestCaseFormField
-          label={t("project_test_case.editor.field_module")}
-          required
-          errors={errors.module}
-          hint={selectedModule?.code ? undefined : t("project_test_case.module.code_hint")}
-        >
-          <div className="flex flex-col gap-1.5">
-            {modules.length === 0 ? (
-              <p className="text-11 text-tertiary">{t("project_test_case.module.empty")}</p>
-            ) : (
-              <CustomSelect
-                value={draft.module}
-                onChange={(value: string) => onChange({ module: value })}
-                disabled={disabled}
-                input
-                label={
-                  <span className={draft.module ? "text-primary" : "text-tertiary"}>
-                    {selectedModule?.code ?? t("project_test_case.module.picker_placeholder")}
-                  </span>
-                }
-                className="w-full"
-              >
-                {modules.map((module) => (
-                  <CustomSelect.Option key={module.id} value={module.id}>
-                    {module.code}
-                  </CustomSelect.Option>
-                ))}
-              </CustomSelect>
-            )}
-            <button
-              type="button"
-              onClick={onCreateModule}
-              disabled={disabled}
-              className="self-start text-11 text-accent-primary hover:underline disabled:cursor-not-allowed disabled:text-tertiary"
-            >
-              + {t("project_test_case.module.create_button")}
-            </button>
-          </div>
-        </TestCaseFormField>
-
-        <TestCaseFormField label={t("project_test_case.editor.field_priority")} required errors={errors.priority}>
-          <CustomSelect
-            value={draft.priority}
-            onChange={(value: string) => onChange({ priority: value })}
-            disabled={disabled}
-            input
-            label={<span className={draft.priority ? "text-primary" : "text-tertiary"}>{priorityLabel}</span>}
-            className="w-full"
-          >
-            {TEST_CASE_PRIORITIES.map((priority) => (
-              <CustomSelect.Option key={priority} value={priority}>
-                {priority}
-              </CustomSelect.Option>
-            ))}
-          </CustomSelect>
-        </TestCaseFormField>
-
-        <TestCaseFormField label={t("project_test_case.editor.field_status")} errors={errors.status}>
-          <CustomSelect
-            value={draft.status}
-            onChange={(value: string) => onChange({ status: value })}
-            disabled={disabled}
-            input
-            label={<span className="text-primary">{statusLabel}</span>}
-            className="w-full"
-          >
-            {TEST_CASE_STATUSES.map((status) => (
-              <CustomSelect.Option key={status} value={status}>
-                {t(`project_test_case.status.${status}`)}
-              </CustomSelect.Option>
-            ))}
-          </CustomSelect>
-        </TestCaseFormField>
-      </div>
-
+    <div className="flex flex-col gap-6">
       <TestCaseFormField
         label={t("project_test_case.editor.field_title")}
         htmlFor="test-case-title"
@@ -126,17 +43,19 @@ export function TestCaseHeaderForm(props: Props) {
       >
         <Input
           id="test-case-title"
+          mode="true-transparent"
+          inputSize="md"
           value={draft.title}
           onChange={(event) => onChange({ title: event.target.value })}
           onBlur={onBlur}
           disabled={disabled}
           placeholder={t("project_test_case.editor.placeholder_title")}
           hasError={Boolean(errors.title?.length)}
-          className="w-full"
+          className="w-full px-0 py-1 text-18 font-semibold"
         />
       </TestCaseFormField>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="flex flex-col gap-5">
         <TestCaseFormField
           label={t("project_test_case.editor.field_purpose")}
           htmlFor="test-case-purpose"
@@ -151,7 +70,7 @@ export function TestCaseHeaderForm(props: Props) {
             disabled={disabled}
             placeholder={t("project_test_case.editor.placeholder_purpose")}
             hasError={Boolean(errors.purpose?.length)}
-            className="w-full"
+            className="min-h-20 w-full"
           />
         </TestCaseFormField>
 
@@ -169,7 +88,7 @@ export function TestCaseHeaderForm(props: Props) {
             disabled={disabled}
             placeholder={t("project_test_case.editor.placeholder_object_overview")}
             hasError={Boolean(errors.object_overview?.length)}
-            className="w-full"
+            className="min-h-20 w-full"
           />
         </TestCaseFormField>
 
@@ -187,7 +106,7 @@ export function TestCaseHeaderForm(props: Props) {
             disabled={disabled}
             placeholder={t("project_test_case.editor.placeholder_preconditions")}
             hasError={Boolean(errors.preconditions?.length)}
-            className="w-full"
+            className="min-h-20 w-full"
           />
         </TestCaseFormField>
 
@@ -205,7 +124,7 @@ export function TestCaseHeaderForm(props: Props) {
             disabled={disabled}
             placeholder={t("project_test_case.editor.placeholder_environment")}
             hasError={Boolean(errors.environment?.length)}
-            className="w-full"
+            className="min-h-20 w-full"
           />
         </TestCaseFormField>
       </div>

@@ -422,6 +422,8 @@
       "load_failed": "The case could not be loaded.",
       "not_found": "This test case does not exist or has been deleted.",
       "read_only": "You have read-only access to this project.",
+      "sidebar_show": "Show properties",
+      "sidebar_hide": "Hide properties",
       "delete_button": "Delete the test case",
       "delete_confirm_title": "Delete this test case?",
       "delete_confirm_description": "The case and its step table are removed. Its number is not given back.",
