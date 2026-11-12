@@ -778,6 +778,157 @@
             "sentence_3_final": "。"
           }
         }
+      },
+      "plugins": {
+        "title": "插件",
+        "description": "每个插件都作为整体安装、使能、关闭与卸载，每次变更都会写入只读审计记录。",
+        "install_plugin": "安装插件",
+        "list": {
+          "state_installed": "已安装",
+          "state_enabled": "已使能",
+          "state_disabled": "已关闭",
+          "kind_builtin": "内置",
+          "kind_package": "外部包",
+          "installed_by": "安装者：{name}",
+          "installed_by_unknown": "安装者已不在本工作区",
+          "installed_at": "安装于 {date}",
+          "enable": "使能",
+          "disable": "关闭",
+          "uninstall": "卸载",
+          "view_manifest": "查看清单",
+          "export_manifest": "导出清单",
+          "show_audit": "显示审计记录",
+          "hide_audit": "收起审计记录",
+          "disabled_note": "已关闭：贡献点已卸载，但清单、配置和审计记录都会保留。关闭不会删除数据。",
+          "contract_drifted_badge": "契约已变更",
+          "contract_drifted": "该插件安装后内核契约已变更，重新安装前无法使能。"
+        },
+        "audit": {
+          "heading": "审计记录",
+          "read_only": "仅追加：记录不可编辑、不可删除",
+          "loading": "正在加载审计记录…",
+          "load_failed": "审计记录加载失败。",
+          "empty": "暂无审计记录。",
+          "reason": "原因：{reason}",
+          "request": "请求 {id}",
+          "manifest": "清单 {hash}",
+          "actor_human": "成员",
+          "actor_service": "服务主体",
+          "actor_system": "内核（系统）",
+          "actor_unknown": "未知操作者",
+          "state_none": "无",
+          "state_deleted": "已删除",
+          "actions": {
+            "install": "安装",
+            "enable": "使能",
+            "disable": "关闭",
+            "uninstall": "卸载",
+            "upgrade": "升级",
+            "import": "导入",
+            "contract_rematch": "契约重匹配"
+          }
+        },
+        "removed": {
+          "heading": "已卸载的插件",
+          "description": "这些插件已被卸载。上方列表只显示现存的插件；由于审计记录仅追加，它们的记录保留在此，key 也会一直被占用、不能再次使用。",
+          "uninstalled_at": "卸载于 {date}",
+          "load_failed": "工作区审计记录加载失败，无法列出已卸载的插件。"
+        },
+        "add_modal": {
+          "title": "安装插件",
+          "description": "粘贴清单。内核会校验它——kind、key、版本、契约范围、范围（scopes）与贡献点——并把结果写入审计记录。",
+          "source_label": "来源",
+          "source_install": "安装内置插件",
+          "source_install_hint": "随本次构建一起评审的清单。审计记录为「安装」。",
+          "source_import": "导入清单",
+          "source_import_hint": "来自本工作区之外的清单，规则相同。审计记录为「导入」。",
+          "manifest_label": "清单（JSON）",
+          "manifest_placeholder": "在此粘贴插件清单 JSON",
+          "use_example": "填入示例清单",
+          "preview_title": "将添加为",
+          "invalid_json": "清单必须是 JSON 对象。修正 JSON 后才能继续。",
+          "package_unavailable": "该清单声明 kind 为 \"package\"。外部包插件需要插件运行时（runtime），本次构建未提供，安装会被拒绝（runtime_unavailable）。请改用内置清单。",
+          "submit_install": "安装插件",
+          "submit_import": "导入清单",
+          "audit_note_install": "本操作将在审计记录中记为「安装」。",
+          "audit_note_import": "本操作将在审计记录中记为「导入」。"
+        },
+        "uninstall_modal": {
+          "title": "卸载 {name}？",
+          "description": "插件将从本工作区移除。它的审计记录仍可在下方查看，key 也会一直被占用：不能再用同一 key 安装。",
+          "enabled_hint": "该插件当前已使能，会先被关闭；这一步会单独写一条审计记录。",
+          "confirm_label": "输入插件 key 以确认：{key}",
+          "confirm_placeholder": "{key}",
+          "reason_label": "原因（必填）",
+          "reason_placeholder": "为什么要移除这个插件？",
+          "reason_hint": "会随审计记录一起保存，之后不可编辑。",
+          "submit": "卸载插件"
+        },
+        "manifest_modal": {
+          "title": "清单：{name}",
+          "description": "安装时原样保存的清单，以及用于标识它的哈希。只读。",
+          "load_failed": "清单加载失败。",
+          "loading": "正在加载清单…",
+          "drifted": "该插件安装后内核契约已变更，重新安装前无法使能。",
+          "manifest_hash": "清单哈希（sha256）",
+          "contract_hash": "安装时的契约哈希（sha256）",
+          "kernel_contract_hash": "当前内核契约哈希（sha256）",
+          "close": "关闭"
+        },
+        "toasts": {
+          "installed": {
+            "title": "插件已安装",
+            "message": "以「已安装」状态加入：使能后才会挂载贡献点。"
+          },
+          "not_installed": {
+            "title": "插件未安装",
+            "message": "安装请求被拒绝。"
+          },
+          "imported": {
+            "title": "清单已导入",
+            "message": "以「已安装」状态加入：使能后才会挂载贡献点。"
+          },
+          "not_imported": {
+            "title": "清单未导入",
+            "message": "导入请求被拒绝。"
+          },
+          "enabled": {
+            "title": "插件已使能",
+            "message": "贡献点已挂载。"
+          },
+          "not_enabled": {
+            "title": "插件未使能",
+            "message": "使能请求被拒绝。"
+          },
+          "disabled": {
+            "title": "插件已关闭",
+            "message": "贡献点已卸载；数据保留。"
+          },
+          "not_disabled": {
+            "title": "插件未关闭",
+            "message": "关闭请求被拒绝。"
+          },
+          "uninstalled": {
+            "title": "插件已卸载",
+            "message": "已从列表移除；审计记录仍可查看。"
+          },
+          "not_uninstalled": {
+            "title": "插件未卸载",
+            "message": "卸载请求被拒绝。"
+          },
+          "manifest_exported": {
+            "title": "清单已导出",
+            "message": "已下载 {filename}。"
+          },
+          "manifest_export_failed": {
+            "title": "清单未导出",
+            "message": "清单下载失败。"
+          },
+          "load_failed": {
+            "title": "插件加载失败",
+            "message": "插件列表加载失败，请重试。"
+          }
+        }
       }
     },
     "empty_state": {

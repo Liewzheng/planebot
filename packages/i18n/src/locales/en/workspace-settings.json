@@ -444,6 +444,157 @@
           }
         }
       },
+      "plugins": {
+        "title": "Plugins",
+        "description": "Every plugin is installed, enabled, disabled and removed as a whole, and each change is written to a read-only audit trail.",
+        "install_plugin": "Install plugin",
+        "list": {
+          "state_installed": "Installed",
+          "state_enabled": "Enabled",
+          "state_disabled": "Disabled",
+          "kind_builtin": "Built-in",
+          "kind_package": "Package (external)",
+          "installed_by": "Installed by {name}",
+          "installed_by_unknown": "Installed by a member who is no longer in this workspace",
+          "installed_at": "Installed {date}",
+          "enable": "Enable",
+          "disable": "Disable",
+          "uninstall": "Uninstall",
+          "view_manifest": "View manifest",
+          "export_manifest": "Export manifest",
+          "show_audit": "Show audit trail",
+          "hide_audit": "Hide audit trail",
+          "disabled_note": "Disabled: its contributions are unmounted, but its manifest, config and audit trail are kept. Disabling never deletes data.",
+          "contract_drifted_badge": "Contract changed",
+          "contract_drifted": "The kernel contract changed after this plugin was installed, so enabling it is refused until it is re-installed."
+        },
+        "audit": {
+          "heading": "Audit trail",
+          "read_only": "Append-only: entries cannot be edited or deleted",
+          "loading": "Loading the audit trail…",
+          "load_failed": "The audit trail could not be loaded.",
+          "empty": "No audit entries yet.",
+          "reason": "Reason: {reason}",
+          "request": "request {id}",
+          "manifest": "manifest {hash}",
+          "actor_human": "Member",
+          "actor_service": "Service principal",
+          "actor_system": "Kernel (system)",
+          "actor_unknown": "Unknown actor",
+          "state_none": "none",
+          "state_deleted": "deleted",
+          "actions": {
+            "install": "Install",
+            "enable": "Enable",
+            "disable": "Disable",
+            "uninstall": "Uninstall",
+            "upgrade": "Upgrade",
+            "import": "Import",
+            "contract_rematch": "Contract rematch"
+          }
+        },
+        "removed": {
+          "heading": "Removed plugins",
+          "description": "These plugins were uninstalled. The list above only shows live plugins; their records stay here because the audit trail is append-only, and their keys stay reserved and cannot be reused.",
+          "uninstalled_at": "Uninstalled {date}",
+          "load_failed": "The workspace audit trail could not be loaded, so removed plugins cannot be listed."
+        },
+        "add_modal": {
+          "title": "Install a plugin",
+          "description": "Paste a manifest. The kernel validates it — kind, key, version, contract range, scopes and contributions — and records the outcome in the audit trail.",
+          "source_label": "Source",
+          "source_install": "Install a built-in plugin",
+          "source_install_hint": "A manifest reviewed together with this build. Recorded as an install.",
+          "source_import": "Import a manifest",
+          "source_import_hint": "A manifest that came from outside this workspace. Same rules; recorded as an import.",
+          "manifest_label": "Manifest (JSON)",
+          "manifest_placeholder": "Paste the plugin manifest JSON here",
+          "use_example": "Use example manifest",
+          "preview_title": "Will be added as",
+          "invalid_json": "The manifest must be a JSON object. Fix the JSON to continue.",
+          "package_unavailable": "This manifest declares kind \"package\". Package plugins need the plugin runtime, which this build does not ship, so the install would be refused (runtime_unavailable). Use a built-in manifest.",
+          "submit_install": "Install plugin",
+          "submit_import": "Import manifest",
+          "audit_note_install": "Recorded in the audit trail as an install.",
+          "audit_note_import": "Recorded in the audit trail as an import."
+        },
+        "uninstall_modal": {
+          "title": "Uninstall {name}?",
+          "description": "The plugin is removed from this workspace. Its audit trail stays readable below, and its key stays reserved: it cannot be installed again under that key.",
+          "enabled_hint": "This plugin is enabled, so it is disabled first; that transition gets its own audit entry.",
+          "confirm_label": "Type the plugin key to confirm: {key}",
+          "confirm_placeholder": "{key}",
+          "reason_label": "Reason (required)",
+          "reason_placeholder": "Why is this plugin being removed?",
+          "reason_hint": "Stored with the audit entry; it is never editable afterwards.",
+          "submit": "Uninstall plugin"
+        },
+        "manifest_modal": {
+          "title": "Manifest: {name}",
+          "description": "The manifest exactly as it was stored at install time, with the hashes that identify it. Read-only.",
+          "load_failed": "The manifest could not be loaded.",
+          "loading": "Loading the manifest…",
+          "drifted": "The kernel contract changed after this plugin was installed. Enabling it is refused until it is re-installed.",
+          "manifest_hash": "Manifest hash (sha256)",
+          "contract_hash": "Contract hash at install (sha256)",
+          "kernel_contract_hash": "Current kernel contract hash (sha256)",
+          "close": "Close"
+        },
+        "toasts": {
+          "installed": {
+            "title": "Plugin installed",
+            "message": "It was added in the installed state: enable it to mount its contributions."
+          },
+          "not_installed": {
+            "title": "Plugin not installed",
+            "message": "The install was refused."
+          },
+          "imported": {
+            "title": "Manifest imported",
+            "message": "It was added in the installed state: enable it to mount its contributions."
+          },
+          "not_imported": {
+            "title": "Manifest not imported",
+            "message": "The import was refused."
+          },
+          "enabled": {
+            "title": "Plugin enabled",
+            "message": "Its contributions are mounted."
+          },
+          "not_enabled": {
+            "title": "Plugin not enabled",
+            "message": "The enable request was refused."
+          },
+          "disabled": {
+            "title": "Plugin disabled",
+            "message": "Its contributions are unmounted; its data is kept."
+          },
+          "not_disabled": {
+            "title": "Plugin not disabled",
+            "message": "The disable request was refused."
+          },
+          "uninstalled": {
+            "title": "Plugin uninstalled",
+            "message": "It was removed from the list; its audit trail is still readable."
+          },
+          "not_uninstalled": {
+            "title": "Plugin not uninstalled",
+            "message": "The uninstall was refused."
+          },
+          "manifest_exported": {
+            "title": "Manifest exported",
+            "message": "{filename} was downloaded."
+          },
+          "manifest_export_failed": {
+            "title": "Manifest not exported",
+            "message": "The manifest could not be downloaded."
+          },
+          "load_failed": {
+            "title": "Could not load plugins",
+            "message": "The plugin list could not be loaded. Try again."
+          }
+        }
+      },
       "api_tokens": {
         "heading": "Access Tokens",
         "description": "Generate secure API tokens to integrate your data with external systems and applications.",

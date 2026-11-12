@@ -5,7 +5,7 @@
  */
 
 import type { LucideIcon } from "lucide-react";
-import { Bot } from "lucide-react";
+import { Bot, Puzzle } from "lucide-react";
 import { BuildingOutline, ExportOutline, MembersOutline, WebhooksOutline } from "@makeplane/propel/icons";
 // plane imports
 import type { ISvgIcons } from "@plane/propel/icons";
@@ -17,4 +17,5 @@ export const WORKSPACE_SETTINGS_ICONS: Record<TWorkspaceSettingsTabs, LucideIcon
   export: ExportOutline,
   webhooks: WebhooksOutline,
   "service-principals": Bot,
+  plugins: Puzzle,
 };

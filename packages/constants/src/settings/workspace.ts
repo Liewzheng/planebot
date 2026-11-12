@@ -62,6 +62,13 @@ export const WORKSPACE_SETTINGS: Record<TWorkspaceSettingsTabs, TWorkspaceSettin
     access: [EUserWorkspaceRoles.ADMIN],
     highlight: (pathname: string, baseUrl: string) => pathname === `${baseUrl}/settings/service-principals/`,
   },
+  plugins: {
+    key: "plugins",
+    i18n_label: "workspace_settings.settings.plugins.title",
+    href: `/settings/plugins`,
+    access: [EUserWorkspaceRoles.ADMIN],
+    highlight: (pathname: string, baseUrl: string) => pathname === `${baseUrl}/settings/plugins/`,
+  },
 };
 
 export const WORKSPACE_SETTINGS_ACCESS = Object.fromEntries(
@@ -75,5 +82,9 @@ export const GROUPED_WORKSPACE_SETTINGS: Record<WORKSPACE_SETTINGS_CATEGORY, TWo
     WORKSPACE_SETTINGS["export"],
   ],
   [WORKSPACE_SETTINGS_CATEGORY.FEATURES]: [],
-  [WORKSPACE_SETTINGS_CATEGORY.DEVELOPER]: [WORKSPACE_SETTINGS["webhooks"], WORKSPACE_SETTINGS["service-principals"]],
+  [WORKSPACE_SETTINGS_CATEGORY.DEVELOPER]: [
+    WORKSPACE_SETTINGS["webhooks"],
+    WORKSPACE_SETTINGS["service-principals"],
+    WORKSPACE_SETTINGS["plugins"],
+  ],
 };
