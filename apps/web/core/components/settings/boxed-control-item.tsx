@@ -12,10 +12,12 @@ type Props = {
   control?: React.ReactNode;
   description?: React.ReactNode;
   title: React.ReactNode;
+  /** Optional trailing slot rendered after the description, as a sibling of the description paragraph. */
+  actions?: React.ReactNode;
 };
 
 export function SettingsBoxedControlItem(props: Props) {
-  const { className, control, description, title } = props;
+  const { className, control, description, title, actions } = props;
 
   return (
     <div
@@ -27,6 +29,7 @@ export function SettingsBoxedControlItem(props: Props) {
       <div className="flex flex-col gap-1.5">
         <h4 className="text-body-sm-medium text-primary">{title}</h4>
         {description && <p className="text-caption-md-regular text-tertiary">{description}</p>}
+        {actions}
       </div>
       {control && <div className="shrink-0">{control}</div>}
     </div>
