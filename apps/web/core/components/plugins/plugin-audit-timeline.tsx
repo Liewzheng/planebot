@@ -7,6 +7,7 @@
 // plane imports
 import { useTranslation } from "@plane/i18n";
 import { Badge } from "@plane/propel/badge";
+import { Button } from "@plane/propel/button";
 import { renderFormattedDate } from "@plane/utils";
 import { Lock } from "lucide-react";
 // hooks
@@ -25,17 +26,34 @@ type Props = {
   events: TPluginAuditEvent[];
   isLoading?: boolean;
   error?: unknown;
+  /** True when the server says older entries remain behind a cursor. */
+  hasOlder?: boolean;
+  isLoadingOlder?: boolean;
+  olderError?: unknown;
+  onLoadOlder?: () => void;
 };
 
 /**
- * The audit trail of one plugin, exactly as the server returns it (oldest first).
+ * The audit trail of one plugin, newest first, exactly as the server returns it.
  *
  * Deliberately immutable in the UI as well as on the server: there is no input,
  * no toggle, no menu and no destructive control anywhere in this tree, and the
  * heading states that entries cannot be edited — a reader must not be left
  * guessing whether this is a record or a control surface.
+ *
+ * Older entries are paged in on demand: the newest page is what loads, and the
+ * button at the bottom follows the server's cursor, so a long trail is never
+ * silently cut at a fixed number of rows.
  */
-export function PluginAuditTimeline({ events, isLoading = false, error = null }: Props) {
+export function PluginAuditTimeline({
+  events,
+  isLoading = false,
+  error = null,
+  hasOlder = false,
+  isLoadingOlder = false,
+  olderError = null,
+  onLoadOlder,
+}: Props) {
   const { t } = useTranslation();
   const { getWorkspaceMemberDetails } = useMember().workspace;
 
@@ -104,6 +122,24 @@ export function PluginAuditTimeline({ events, isLoading = false, error = null }:
             </li>
           ))}
         </ol>
+      )}
+
+      {hasOlder && !isLoading && (
+        <div className="flex flex-col gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="self-start"
+            onClick={onLoadOlder}
+            loading={isLoadingOlder}
+            disabled={isLoadingOlder}
+          >
+            {t("common.load_more")}
+          </Button>
+          {olderError ? (
+            <p className="text-11 text-danger-primary">{t("workspace_settings.settings.plugins.audit.load_failed")}</p>
+          ) : null}
+        </div>
       )}
     </div>
   );

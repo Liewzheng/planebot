@@ -92,6 +92,26 @@ export type TPluginAuditEvent = {
 export type TPluginAuditQuery = {
   key?: string;
   limit?: number;
+  /** Exclusive cursor: only events with an id below this one are returned. */
+  before_id?: number;
+  action?: TPluginAuditAction;
+  /** Collapse the (filtered) trail to one row per plugin key — its newest event. */
+  distinct?: "key";
+};
+
+/**
+ * One page of the read-only audit listing.
+ *
+ * The response body is still the plain list of events the endpoint has always
+ * returned; the cursor comes from the `X-Audit-Next-Cursor` /
+ * `X-Audit-Has-More` response headers. When a proxy strips those headers the
+ * page is still walked correctly: a full page means "there may be more".
+ */
+export type TPluginAuditPage = {
+  events: TPluginAuditEvent[];
+  /** Send back as `before_id` to fetch the next (older) page; null when done. */
+  nextCursor: number | null;
+  hasMore: boolean;
 };
 
 export type TPluginUninstallPayload = {

@@ -18,7 +18,7 @@ import { useMember } from "@/hooks/store/use-member";
 import { pluginService } from "@/services/plugins";
 import type { TPlugin } from "@/services/plugins";
 // local imports
-import { PLUGINS_LIST, PLUGIN_AUDIT, PLUGIN_AUDIT_LIST } from "./constants";
+import { PLUGINS_LIST, PLUGIN_AUDIT, PLUGIN_REMOVALS } from "./constants";
 import { PluginKindBadge, PluginStateBadge } from "./plugin-badges";
 import { PluginAuditPanel } from "./plugin-audit-panel";
 import { PluginManifestModal } from "./plugin-manifest-modal";
@@ -71,7 +71,7 @@ export function PluginListItem({ plugin, workspaceSlug }: Props) {
         ),
       });
       void mutate(PLUGINS_LIST(workspaceSlug));
-      void mutate(PLUGIN_AUDIT_LIST(workspaceSlug));
+      void mutate(PLUGIN_REMOVALS(workspaceSlug));
       void mutate(PLUGIN_AUDIT(workspaceSlug, plugin.key));
     } catch (error) {
       setToast({
