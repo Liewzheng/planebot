@@ -58,7 +58,7 @@ export const useNavigationItems = ({
         href: `/${workspaceSlug}/projects/${projectId}/cycles`,
         icon: CyclesOutline,
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
-        shouldRender: !!project?.cycle_view,
+        shouldRender: project?.cycle_view ?? false,
         sortOrder: 2,
       },
       {
@@ -68,7 +68,7 @@ export const useNavigationItems = ({
         href: `/${workspaceSlug}/projects/${projectId}/modules`,
         icon: ModuleOutline,
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
-        shouldRender: !!project?.module_view,
+        shouldRender: project?.module_view ?? false,
         sortOrder: 3,
       },
       {
@@ -78,7 +78,7 @@ export const useNavigationItems = ({
         href: `/${workspaceSlug}/projects/${projectId}/views`,
         icon: ViewsOutline,
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
-        shouldRender: !!project?.issue_views_view,
+        shouldRender: project?.issue_views_view ?? false,
         sortOrder: 4,
       },
       {
@@ -88,7 +88,7 @@ export const useNavigationItems = ({
         href: `/${workspaceSlug}/projects/${projectId}/pages`,
         icon: PagesOutline,
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
-        shouldRender: !!project?.page_view,
+        shouldRender: project?.page_view ?? false,
         sortOrder: 5,
       },
       {
@@ -98,7 +98,7 @@ export const useNavigationItems = ({
         href: `/${workspaceSlug}/projects/${projectId}/intake`,
         icon: IntakeOutline,
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
-        shouldRender: !!project?.inbox_view,
+        shouldRender: project?.inbox_view ?? false,
         sortOrder: 6,
       },
       {
@@ -110,7 +110,9 @@ export const useNavigationItems = ({
         activePaths: [`/${workspaceSlug}/projects/${projectId}/test-runs`],
         icon: CheckSquareOutline,
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
-        shouldRender: true,
+        // Absent flag means the project payload has not carried it yet — keep
+        // the entry visible then, the way the sidebar copy does.
+        shouldRender: project?.test_view ?? true,
         sortOrder: 7,
       },
     ],
