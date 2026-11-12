@@ -16,7 +16,7 @@ import { EModalPosition, EModalWidth, ModalCore, TextArea } from "@plane/ui";
 import { pluginService } from "@/services/plugins";
 import type { TPlugin } from "@/services/plugins";
 // local imports
-import { PLUGINS_LIST, PLUGIN_AUDIT, PLUGIN_AUDIT_LIST } from "./constants";
+import { PLUGINS_LIST, PLUGIN_AUDIT, PLUGIN_REMOVALS } from "./constants";
 import { getPluginErrorSentence } from "./helper";
 
 type Props = {
@@ -71,7 +71,7 @@ export function UninstallPluginModal({ plugin, isOpen, onClose, workspaceSlug }:
         message: t("workspace_settings.settings.plugins.toasts.uninstalled.message"),
       });
       void mutate(PLUGINS_LIST(workspaceSlug));
-      void mutate(PLUGIN_AUDIT_LIST(workspaceSlug));
+      void mutate(PLUGIN_REMOVALS(workspaceSlug));
       void mutate(PLUGIN_AUDIT(workspaceSlug, plugin.key));
       handleClose();
     } catch (error) {

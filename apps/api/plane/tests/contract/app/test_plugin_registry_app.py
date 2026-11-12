@@ -471,12 +471,13 @@ class TestPluginAuditListing:
 
         response = session_client.get(f"{plugins_url(workspace.slug)}audit/")
         assert response.status_code == status.HTTP_200_OK
+        # Newest first: the page a reader sees must start at the latest event.
         assert [row["action"] for row in response.data] == [
-            AuditAction.INSTALL,
             AuditAction.ENABLE,
+            AuditAction.INSTALL,
         ]
         assert [row["id"] for row in response.data] == sorted(
-            row["id"] for row in response.data
+            (row["id"] for row in response.data), reverse=True
         )
 
         response = session_client.get(f"{plugins_url(workspace.slug)}audit/?key={PLUGIN_KEY}")

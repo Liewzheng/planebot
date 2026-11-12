@@ -15,7 +15,7 @@ import { EModalPosition, EModalWidth, ModalCore, TextArea } from "@plane/ui";
 import { pluginService } from "@/services/plugins";
 import type { TPluginManifest } from "@/services/plugins";
 // local imports
-import { EXAMPLE_PLUGIN_MANIFEST, PLUGINS_LIST, PLUGIN_AUDIT_LIST } from "./constants";
+import { EXAMPLE_PLUGIN_MANIFEST, PLUGINS_LIST, PLUGIN_REMOVALS } from "./constants";
 import { PluginKindBadge } from "./plugin-badges";
 import { getPluginErrorSentence } from "./helper";
 
@@ -96,7 +96,7 @@ export function AddPluginModal({ isOpen, onClose, workspaceSlug }: Props) {
         ),
       });
       void mutate(PLUGINS_LIST(workspaceSlug));
-      void mutate(PLUGIN_AUDIT_LIST(workspaceSlug));
+      void mutate(PLUGIN_REMOVALS(workspaceSlug));
       handleClose();
     } catch (error) {
       setServerError(
