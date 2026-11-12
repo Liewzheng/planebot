@@ -45,15 +45,23 @@ The config applies to all TypeScript and JavaScript files across:
 
 ## Rules Overview
 
-OxLint uses category-based configuration:
+OxLint uses category-based configuration. The levels below are the ones this
+repo sets in `.oxlintrc.json`:
 
-| Category        | Level | What It Catches                                    |
-| --------------- | ----- | -------------------------------------------------- |
-| **correctness** | error | Real bugs that will cause runtime errors            |
-| **suspicious**  | warn  | Code patterns that are likely mistakes              |
-| **perf**        | warn  | Performance anti-patterns                           |
+| Category        | Level | What It Catches                          |
+| --------------- | ----- | ---------------------------------------- |
+| **correctness** | warn  | Real bugs that will cause runtime errors |
+| **suspicious**  | warn  | Code patterns that are likely mistakes   |
+| **perf**        | warn  | Performance anti-patterns                |
+
+All three categories are set to `warn`, so a rule finding is reported as a
+warning rather than an error. That matches OxLint's own default resolution as
+well (an empty config resolves correctness rules to `warn`), so the `error`
+this table used to list for `correctness` never described the actual
+behaviour.
 
 Additional rule overrides:
+
 - `react/prop-types` off (TypeScript handles prop validation)
 - `no-unused-vars` warns with `_` prefix pattern ignored
 - Several noisy unicorn rules disabled
@@ -82,9 +90,30 @@ const data = response;
 Lint-staged runs automatically on commit via Husky:
 
 - oxfmt formats your staged files
-- OxLint fixes what it can (with `--deny-warnings`)
+- OxLint fixes what it can (errors only — the hook does not reject warnings)
 
 If the commit fails due to lint errors, fix them before committing.
+
+### The hook does not gate warnings
+
+The hook runs OxLint over the whole staged file, not over your diff. It
+therefore sees warnings that were already in the file before you touched it, so
+it deliberately does **not** fail the commit on warnings (`--deny-warnings` is
+not used here). Warnings that `--fix` can fix are still fixed automatically;
+leaving a pre-existing warning alone is not a commit blocker.
+
+Because `.oxlintrc.json` sets every rule category to `warn`, rule findings
+never fail the hook; only syntax/scope errors (a file that fails to parse, or
+an illegal redeclaration) do.
+
+The warning budget is enforced by each package's own `check:lint` script
+(`oxlint --max-warnings=N .`), which is what CI runs. That budget is the gate —
+do not treat the hook's tolerance of warnings as a misconfiguration to "fix",
+and do not raise a package's `--max-warnings` budget to make the hook happy.
+
+If a package is over its budget, `pnpm check:lint` (or
+`pnpm turbo run check:lint --filter=@plane/<package>`) reports the exact
+warnings to fix.
 
 ## Reference Files
 
