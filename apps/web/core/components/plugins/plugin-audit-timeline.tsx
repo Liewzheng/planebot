@@ -8,7 +8,6 @@
 import { useTranslation } from "@plane/i18n";
 import { Badge } from "@plane/propel/badge";
 import { Button } from "@plane/propel/button";
-import { renderFormattedDate } from "@plane/utils";
 import { Lock } from "lucide-react";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
@@ -17,6 +16,7 @@ import type { TPluginAuditEvent } from "@/services/plugins";
 import {
   PLUGIN_AUDIT_ACTION_LABEL_KEY,
   PLUGIN_AUDIT_STATE_LABEL_KEY,
+  formatPluginTimestamp,
   getMemberDisplayName,
   getPluginActorLabel,
   shortenHash,
@@ -54,7 +54,7 @@ export function PluginAuditTimeline({
   olderError = null,
   onLoadOlder,
 }: Props) {
-  const { t } = useTranslation();
+  const { t, currentLocale } = useTranslation();
   const { getWorkspaceMemberDetails } = useMember().workspace;
 
   const getActorLabel = (event: TPluginAuditEvent) => {
@@ -95,7 +95,7 @@ export function PluginAuditTimeline({
                     PLUGIN_AUDIT_STATE_LABEL_KEY[event.to_state]
                   )}`}
                 </Badge>
-                <span className="text-11 text-tertiary">{renderFormattedDate(event.at, "MMM dd, yyyy HH:mm")}</span>
+                <span className="text-11 text-tertiary">{formatPluginTimestamp(event.at, currentLocale)}</span>
                 <span className="text-11 text-secondary">{getActorLabel(event)}</span>
               </div>
               {event.reason && (

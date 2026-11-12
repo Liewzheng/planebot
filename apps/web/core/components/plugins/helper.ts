@@ -63,6 +63,23 @@ export const PLUGIN_ACTOR_KIND_LABEL_KEY: Record<TPluginActorKind, string> = {
 export const shortenHash = (hash: string | null | undefined, length = 12): string =>
   hash ? `${hash.slice(0, length)}…` : "";
 
+/**
+ * A plugin timestamp keeps its time of day.
+ *
+ * The audit trail is read as a timeline, so a timestamp has to carry the hour
+ * and the minute: two transitions a few minutes apart must not look identical,
+ * and "when did this happen" has to have an answer.
+ *
+ * `renderFormattedDate` (@plane/utils) cannot be used for that. It parses
+ * through `getDate`, which keeps only the first ten characters of the string
+ * and rebuilds it as local midnight (`new Date(year, month - 1, day)`), so
+ * every audit event rendered as "Nov 12, 2026 00:00" — the date was right and
+ * the clock was always zero. `getDate` and `renderFormattedDate` keep their
+ * semantics, because the whole app reads dates through them;
+ * `renderFormattedTimestamp` is the one that keeps the clock.
+ */
+export { renderFormattedTimestamp as formatPluginTimestamp } from "@plane/utils";
+
 export const getMemberDisplayName = (member: IUserLite | null | undefined): string | null => {
   if (!member) return null;
   const fullName = [member.first_name, member.last_name].filter(Boolean).join(" ").trim();
