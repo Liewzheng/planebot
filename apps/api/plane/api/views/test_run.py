@@ -74,6 +74,7 @@ from plane.api.views.test_case import (
     project_admin,
 )
 from plane.app.testcase_validity import build_run_data, check_authoring, describe_reasons
+from plane.app.views.test_run.export import AssetUrlSigner, export_document
 from plane.db.models import (
     FileAsset,
     Project,
@@ -848,6 +849,65 @@ class TestRunSummaryEndpoint(BaseAPIView):
 
         return Response(
             summarize_run(build_run_data(run, list(run_cases))),
+            status=status.HTTP_200_OK,
+        )
+
+
+class TestRunExportEndpoint(BaseAPIView):
+    """The raw data of one batch as one versioned JSON document — read-only.
+
+    The document is the one the app surface answers with, and it is built
+    by the same code: :func:`plane.app.views.test_run.export.export_document`
+    and :class:`plane.app.views.test_run.export.AssetUrlSigner` are imported
+    here, not re-derived, so the two surfaces cannot drift. Only the layer
+    in front of those builders differs — the authorization below, and the
+    v1 URL — while the loader mirrors that of ``/summary/`` so the summary
+    block of the document is counted over the same rows.
+
+    A consumer of this endpoint is the pbot CLI, which talks only to v1,
+    so the readers are the readers of the v1 batch reads: a project member
+    (PROJECT level, at least GUEST) or a service principal holding the
+    ``read test_run`` scope. A batch of another project, or one that does
+    not exist, is a 404; the endpoint is a GET, so a write is a 405.
+    """
+
+    resource_type = "test_run"
+
+    permission_classes = [ProjectEntityPermission]
+
+    # The app surface declares this flag for its permission layer; on v1
+    # the service-principal gate above (``resource_type``) is the one that
+    # admits a scoped principal, and the flag carries the same intent here.
+    allow_service_principal = True
+
+    def get(self, request, slug, project_id, test_run_id):
+        run = (
+            TestRun.objects.filter(
+                pk=test_run_id, project_id=project_id, workspace__slug=slug
+            )
+            .select_related("executed_by", "retest_of")
+            .first()
+        )
+        if run is None:
+            return Response({"error": "Test run not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        run_cases = list(
+            TestRunCase.objects.filter(test_run=run)
+            .select_related("test_case")
+            .prefetch_related(
+                "assets",
+                Prefetch(
+                    "step_records",
+                    queryset=TestRunStepRecord.objects.order_by("sequence_id").prefetch_related(
+                        "assets"
+                    ),
+                ),
+            )
+            .order_by("created_at")
+        )
+
+        return Response(
+            export_document(run, run_cases, AssetUrlSigner(request, slug)),
             status=status.HTTP_200_OK,
         )
 
