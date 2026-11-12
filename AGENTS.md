@@ -41,6 +41,18 @@ Known test-stack issue: `requirements/test.txt` pins httpx 0.24.1, which breaks 
 docker compose -f docker-compose-test.yml run --rm api-tests sh -c 'pip install -q "anyio<4.15" && pytest <args>'
 ```
 
+Known suite issue: running the v1 contract tests in bulk without raising the API-key throttle produces exactly **61 failures in `plane/tests/contract/api/`**, all `assert 429 == 404`. Cause is not the code: every v1 contract test shares one API token, and `API_KEY_RATE_LIMIT` defaults to `60/minute` (`plane/api/rate_limit.py`, keyed on `X-Api-Key`). Raise it for the run and they pass:
+
+```bash
+docker compose -f docker-compose-test.yml run --rm -e API_KEY_RATE_LIMIT=10000/minute \
+  api-tests pytest plane/tests/contract plane/tests/unit -q --create-db
+# → 1928 passed
+```
+
+Do not go hunting those 61 as regressions; a change that introduces new failures will show up on top of this pattern, not as this pattern.
+
+Also note `pytest.ini` uses `--nomigrations`, so the suite never runs the migration chain. Migration correctness (defaults, backfills) has to be proven separately: assert the migration's operations directly, and/or do a real `manage.py migrate` up/down/up against the test database.
+
 ## Repo topology and branch policy (planebot)
 
 This fork's own home is **https://github.com/Liewzheng/planebot** (git remote `planebot`) — it is our repo, independent of `makeplane/plane`. Do not confuse the two nearby names: `planebot` is this fork's home repo, `planebotcli` (`Liewzheng/planebotcli`) is the Rust CLI that gets driven as `pbot`.
@@ -72,11 +84,11 @@ We do **not** maintain the official `makeplane/plane` repo any more — not the 
 
 Three surfaces, three different promises. Do not mix them up:
 
-| Surface | Callers | Promise |
-|---|---|---|
-| `/api/v1/...` | pbot CLI, scripts, external tools, service principals | **Additive only.** Fields and semantics may be added, never changed or removed; a deprecation runs at least two minor releases. This is the only external face. |
-| `/api/workspaces/...` (the "app" surface) | our own web UI | No external promise — it moves with the UI. **The CLI must not call it**, and internals may change without notice. |
-| `/api/assets/v2/...` | file upload/download | The *asset subsystem's* own version number, unrelated to API versioning. |
+| Surface                                   | Callers                                               | Promise                                                                                                                                                         |
+| ----------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/v1/...`                             | pbot CLI, scripts, external tools, service principals | **Additive only.** Fields and semantics may be added, never changed or removed; a deprecation runs at least two minor releases. This is the only external face. |
+| `/api/workspaces/...` (the "app" surface) | our own web UI                                        | No external promise — it moves with the UI. **The CLI must not call it**, and internals may change without notice.                                              |
+| `/api/assets/v2/...`                      | file upload/download                                  | The _asset subsystem's_ own version number, unrelated to API versioning.                                                                                        |
 
 Rules:
 
