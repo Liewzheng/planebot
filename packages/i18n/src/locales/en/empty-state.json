@@ -231,6 +231,11 @@
       "description": "Create service principals to let automated agents and integrations access your workspace with scoped permissions.",
       "cta_primary": "Add service principal"
     },
+    "plugins": {
+      "title": "No plugins installed yet",
+      "description": "A plugin is a reviewed package of declarations that adds behaviour to this workspace as a whole: install it once, enable it to turn it on, disable it to turn it off without losing data. External package plugins need the plugin runtime, which this build does not ship yet.",
+      "cta_primary": "Install plugin"
+    },
     "work_item_types": {
       "title": "Create and customize work item types",
       "description": "Define unique work item types for your project. Each type can have its own properties, workflows, and fields - tailored to your project and team's needs.",

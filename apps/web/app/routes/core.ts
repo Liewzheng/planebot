@@ -335,6 +335,10 @@ export const coreRoutes: RouteConfigEntry[] = [
             ":workspaceSlug/settings/service-principals",
             "./(all)/[workspaceSlug]/(settings)/settings/(workspace)/service-principals/page.tsx"
           ),
+          route(
+            ":workspaceSlug/settings/plugins",
+            "./(all)/[workspaceSlug]/(settings)/settings/(workspace)/plugins/page.tsx"
+          ),
         ]),
 
         // --------------------------------------------------------------------
