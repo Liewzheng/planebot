@@ -151,7 +151,7 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
         activePaths: [`/${workspaceSlug}/projects/${projectId}/test-runs`],
         icon: CheckSquareOutline,
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
-        shouldRender: true,
+        shouldRender: project?.test_view ?? true,
         sortOrder: 7,
       },
     ],

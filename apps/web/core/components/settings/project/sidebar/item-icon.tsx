@@ -6,6 +6,7 @@
 
 import type { LucideIcon } from "lucide-react";
 import {
+  CheckSquareOutline,
   CyclesOutline,
   EstimateOutline,
   IntakeOutline,
@@ -31,6 +32,7 @@ export const PROJECT_SETTINGS_ICONS: Record<TProjectSettingsTabs, LucideIcon | R
   features_views: ViewsOutline,
   features_pages: PagesOutline,
   features_intake: IntakeOutline,
+  features_tests: CheckSquareOutline,
   states: StateOutline,
   labels: LabelsOutline,
   estimates: EstimateOutline,
