@@ -422,8 +422,6 @@
         "description": "为项目编写测试用例并执行，验证工作的实际表现。",
         "toggle_title": "启用测试",
         "toggle_description": "项目成员将能够创建并执行测试用例。",
-        "open_title": "测试用例",
-        "open_description": "打开本项目的测试用例页面，编写、编辑并执行测试。",
         "open_action": "打开测试用例"
       },
       "time_tracking": {
