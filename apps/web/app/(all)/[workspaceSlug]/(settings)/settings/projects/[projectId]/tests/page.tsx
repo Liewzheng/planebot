@@ -51,18 +51,16 @@ function TestsSettingsPage({ params }: Route.ComponentProps) {
         <div className="mt-7">
           <ProjectSettingsFeatureControlItem
             title={t("project_settings.features.tests.toggle_title")}
-            description={
-              <span className="flex flex-col gap-1.5">
-                <span>{t("project_settings.features.tests.toggle_description")}</span>
-                {isTestViewEnabled && (
-                  <Link
-                    href={`/${workspaceSlug}/projects/${projectId}/test-cases`}
-                    className="self-start text-13 text-accent-primary hover:underline"
-                  >
-                    {t("project_settings.features.tests.open_action")}
-                  </Link>
-                )}
-              </span>
+            description={t("project_settings.features.tests.toggle_description")}
+            actions={
+              isTestViewEnabled ? (
+                <Link
+                  href={`/${workspaceSlug}/projects/${projectId}/test-cases`}
+                  className="self-start text-caption-md-regular text-accent-primary hover:underline"
+                >
+                  {t("project_settings.features.tests.open_action")}
+                </Link>
+              ) : undefined
             }
             featureProperty="test_view"
             projectId={projectId}

@@ -419,7 +419,7 @@
       "tests": {
         "title": "Tests",
         "short_title": "Tests",
-        "description": "Write test cases for your project and run them to see how your work behaves.",
+        "description": "Write test cases for your project and run them to verify how the work actually performs.",
         "toggle_title": "Enable tests",
         "toggle_description": "Project members will be able to create and run test cases.",
         "open_action": "Open test cases"

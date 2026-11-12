@@ -16,6 +16,7 @@ import { SettingsBoxedControlItem } from "@/components/settings/boxed-control-it
 import { useProject } from "@/hooks/store/use-project";
 
 type Props = {
+  actions?: React.ReactNode;
   description?: React.ReactNode;
   disabled?: boolean;
   projectId: string;
@@ -26,7 +27,7 @@ type Props = {
 };
 
 export const ProjectSettingsFeatureControlItem = observer(function ProjectSettingsFeatureControlItem(props: Props) {
-  const { description, disabled, featureProperty, projectId, title, value, workspaceSlug } = props;
+  const { actions, description, disabled, featureProperty, projectId, title, value, workspaceSlug } = props;
   // store hooks
   const { getProjectById, updateProject } = useProject();
   // translation
@@ -63,6 +64,7 @@ export const ProjectSettingsFeatureControlItem = observer(function ProjectSettin
     <SettingsBoxedControlItem
       title={title}
       description={description}
+      actions={actions}
       control={
         <Switch
           size="sm"
