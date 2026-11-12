@@ -8,6 +8,7 @@ from plane.app.views.test_run import (
     TestRunAttachmentEndpoint,
     TestRunCaseDetailEndpoint,
     TestRunCaseEndpoint,
+    TestRunExportEndpoint,
     TestRunFinalizeEndpoint,
     TestRunStepAttachmentEndpoint,
     TestRunStepRecordEndpoint,
@@ -77,5 +78,10 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/test-runs/<uuid:test_run_id>/summary/",
         TestRunSummaryEndpoint.as_view(),
         name="test-run-summary",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/test-runs/<uuid:test_run_id>/export/",
+        TestRunExportEndpoint.as_view(),
+        name="test-run-export",
     ),
 ]
