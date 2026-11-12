@@ -12,6 +12,7 @@ from .base import (
     TestRunSummaryEndpoint,
     TestRunViewSet,
 )
+from .export import TestRunExportEndpoint
 
 __all__ = [
     "TestRunViewSet",
@@ -22,4 +23,5 @@ __all__ = [
     "TestRunSummaryEndpoint",
     "TestRunAttachmentEndpoint",
     "TestRunStepAttachmentEndpoint",
+    "TestRunExportEndpoint",
 ]
