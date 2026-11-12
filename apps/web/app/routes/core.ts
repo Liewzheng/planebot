@@ -380,6 +380,11 @@ export const coreRoutes: RouteConfigEntry[] = [
               ":workspaceSlug/settings/projects/:projectId/features/intake",
               "./(all)/[workspaceSlug]/(settings)/settings/projects/[projectId]/features/intake/page.tsx"
             ),
+            // Project Tests
+            route(
+              ":workspaceSlug/settings/projects/:projectId/tests",
+              "./(all)/[workspaceSlug]/(settings)/settings/projects/[projectId]/tests/page.tsx"
+            ),
             // Project States
             route(
               ":workspaceSlug/settings/projects/:projectId/states",

@@ -416,6 +416,16 @@
           }
         }
       },
+      "tests": {
+        "title": "Tests",
+        "short_title": "Tests",
+        "description": "Write test cases for your project and run them to see how your work behaves.",
+        "toggle_title": "Enable tests",
+        "toggle_description": "Project members will be able to create and run test cases.",
+        "open_title": "Test cases",
+        "open_description": "Open the test cases of this project to write, edit and run them.",
+        "open_action": "Open test cases"
+      },
       "time_tracking": {
         "title": "Time tracking",
         "short_title": "Time tracking",
