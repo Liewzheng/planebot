@@ -68,6 +68,23 @@ We do **not** maintain the official `makeplane/plane` repo any more — not the 
 - **But do not dismiss upstream review comments either.** A finding written against one of those PRs describes code that also lives here. Treat it as a lead that must be verified against **this** repository — locate the file:line, check whether the described behaviour actually exists here, and only then decide. Two examples from 2026-11-09 where the lead was real: PR #9780's comment exposed an authorization bypass in `apps/live`'s `issue-events` channel (tracked as PLANE-115, fixed by mission M69), and PR #9798's two CodeRabbit items were both present in our locale files (PLANE-116).
 - Every fix lands here: topic branch → review → `dev` (deploys) → `planebot/dev`, with `main` fast-forward only. Nothing goes upstream.
 
+## API surface policy (2026-11-12)
+
+Three surfaces, three different promises. Do not mix them up:
+
+| Surface | Callers | Promise |
+|---|---|---|
+| `/api/v1/...` | pbot CLI, scripts, external tools, service principals | **Additive only.** Fields and semantics may be added, never changed or removed; a deprecation runs at least two minor releases. This is the only external face. |
+| `/api/workspaces/...` (the "app" surface) | our own web UI | No external promise — it moves with the UI. **The CLI must not call it**, and internals may change without notice. |
+| `/api/assets/v2/...` | file upload/download | The *asset subsystem's* own version number, unrelated to API versioning. |
+
+Rules:
+
+- A capability the **CLI** needs ships on **v1 in the same change**. If it exists only on the app surface, either add the thin v1 mirror or do not use it from the CLI.
+- A rule that both surfaces must enforce lives in **one implementation** (for example `check_authoring`), called from both — never copy-pasted. We have already paid for this twice (M9: internal API bypassed the SP scope gate; M94: the add-to-batch authoring gate landed on the app surface only).
+- A new **major** version (`/api/v2/`) is reserved for an unavoidable incompatible change, and it comes with a written migration window in which v1 keeps working. Never open one for tidiness.
+- pbot CLI: **v1 only.**
+
 ## Self-host images (dev only)
 
 The deployment in `~/docker/plane` runs images built from the `dev` branch. Rebuild and redeploy procedure:
