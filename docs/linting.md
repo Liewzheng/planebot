@@ -45,13 +45,20 @@ The config applies to all TypeScript and JavaScript files across:
 
 ## Rules Overview
 
-OxLint uses category-based configuration:
+OxLint uses category-based configuration. The levels below are the ones this
+repo sets in `.oxlintrc.json`:
 
 | Category        | Level | What It Catches                          |
 | --------------- | ----- | ---------------------------------------- |
-| **correctness** | error | Real bugs that will cause runtime errors |
+| **correctness** | warn  | Real bugs that will cause runtime errors |
 | **suspicious**  | warn  | Code patterns that are likely mistakes   |
 | **perf**        | warn  | Performance anti-patterns                |
+
+All three categories are set to `warn`, so a rule finding is reported as a
+warning rather than an error. That matches OxLint's own default resolution as
+well (an empty config resolves correctness rules to `warn`), so the `error`
+this table used to list for `correctness` never described the actual
+behaviour.
 
 Additional rule overrides:
 
@@ -96,7 +103,8 @@ not used here). Warnings that `--fix` can fix are still fixed automatically;
 leaving a pre-existing warning alone is not a commit blocker.
 
 Because `.oxlintrc.json` sets every rule category to `warn`, rule findings
-never fail the hook; only parse errors (a syntax error in a staged file) do.
+never fail the hook; only syntax/scope errors (a file that fails to parse, or
+an illegal redeclaration) do.
 
 The warning budget is enforced by each package's own `check:lint` script
 (`oxlint --max-warnings=N .`), which is what CI runs. That budget is the gate —
