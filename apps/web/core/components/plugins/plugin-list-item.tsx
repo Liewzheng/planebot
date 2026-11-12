@@ -11,7 +11,6 @@ import { useTranslation } from "@plane/i18n";
 import { Badge } from "@plane/propel/badge";
 import { Button } from "@plane/propel/button";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
-import { renderFormattedDate } from "@plane/utils";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
 // services
@@ -23,7 +22,7 @@ import { PluginKindBadge, PluginStateBadge } from "./plugin-badges";
 import { PluginAuditPanel } from "./plugin-audit-panel";
 import { PluginManifestModal } from "./plugin-manifest-modal";
 import { UninstallPluginModal } from "./uninstall-plugin-modal";
-import { exportPluginManifest, getMemberDisplayName, getPluginErrorSentence } from "./helper";
+import { exportPluginManifest, formatPluginTimestamp, getMemberDisplayName, getPluginErrorSentence } from "./helper";
 
 type Props = {
   plugin: TPlugin;
@@ -43,7 +42,7 @@ export function PluginListItem({ plugin, workspaceSlug }: Props) {
   const [isManifestOpen, setIsManifestOpen] = useState(false);
   const [isUninstallOpen, setIsUninstallOpen] = useState(false);
   // hooks
-  const { t } = useTranslation();
+  const { t, currentLocale } = useTranslation();
   const { getWorkspaceMemberDetails } = useMember().workspace;
   // derived values
   const isEnabled = plugin.state === "enabled";
@@ -158,7 +157,7 @@ export function PluginListItem({ plugin, workspaceSlug }: Props) {
               </span>
               <span>
                 {t("workspace_settings.settings.plugins.list.installed_at", {
-                  date: renderFormattedDate(plugin.installed_at, "MMM dd, yyyy HH:mm"),
+                  date: formatPluginTimestamp(plugin.installed_at, currentLocale),
                 })}
               </span>
             </div>

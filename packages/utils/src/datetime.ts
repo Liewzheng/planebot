@@ -106,6 +106,77 @@ export const renderFormattedTime = (date: string | Date, timeFormat: "12-hour" |
   return formattedTime;
 };
 
+// Timestamp Helpers
+/**
+ * @returns {string | undefined} a timestamp written as "MMM dd, yyyy HH:mm"
+ * @description Renders the date and the time of day of a timestamp, in the reader's own timezone.
+ * @param {string | Date} date a full ISO instant (e.g. "2026-11-12T01:25:34.996080Z") or a Date
+ * @param {string} locale (optional) UI language code (e.g. "zh-CN"); defaults to English
+ * @example renderFormattedTimestamp("2026-11-12T01:25:34.996080Z") // Nov 12, 2026 09:25
+ * @example renderFormattedTimestamp("2026-11-12T01:25:34.996080Z", "zh-CN") // 11月 12, 2026 09:25
+ */
+export const renderFormattedTimestamp = (
+  date: string | Date | undefined | null,
+  locale?: string
+): string | undefined => {
+  // Parse the timestamp; the time of day has to survive the parse
+  const parsedDate = parseTimestamp(date);
+  if (!parsedDate) return;
+
+  const { date: datePart, time: timePart } = getTimestampFormatters(locale);
+  return `${datePart.format(parsedDate)} ${timePart.format(parsedDate)}`;
+};
+
+/**
+ * Parse a timestamp into the instant it names. A full ISO string keeps its
+ * time of day; a bare date is read as local midnight.
+ */
+const parseTimestamp = (date: string | Date | undefined | null): Date | undefined => {
+  if (!date) return undefined;
+  const parsedDate = typeof date === "string" ? parseISO(date) : date;
+  return isValid(parsedDate) ? parsedDate : undefined;
+};
+
+type TimestampFormatters = {
+  date: Intl.DateTimeFormat;
+  time: Intl.DateTimeFormat;
+};
+
+const TIMESTAMP_FORMATTERS = new Map<string, TimestampFormatters>();
+
+/**
+ * The formatters a timestamp is written from, cached per language: building an
+ * `Intl.DateTimeFormat` is expensive enough to notice in a long list.
+ */
+const getTimestampFormatters = (locale?: string): TimestampFormatters => {
+  const language = resolveTimestampLanguage(locale);
+  const cached = TIMESTAMP_FORMATTERS.get(language);
+  if (cached) return cached;
+
+  const formatters: TimestampFormatters = {
+    date: new Intl.DateTimeFormat(language, { year: "numeric", month: "short", day: "2-digit" }),
+    time: new Intl.DateTimeFormat(language, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }),
+  };
+  TIMESTAMP_FORMATTERS.set(language, formatters);
+  return formatters;
+};
+
+/**
+ * The language a timestamp is written in. A tag the runtime does not know (the
+ * app's "ua" for Ukrainian, for one) silently falls back to the browser's own
+ * language, which would read in a language nobody chose — so an unsupported tag
+ * falls back to English here.
+ */
+const resolveTimestampLanguage = (locale?: string): string => {
+  if (!locale) return "en";
+  try {
+    const [supported] = Intl.DateTimeFormat.supportedLocalesOf(locale);
+    return supported ?? "en";
+  } catch {
+    return "en";
+  }
+};
+
 // Date Difference Helpers
 /**
  * @returns {number} total number of days in range

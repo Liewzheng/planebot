@@ -9,13 +9,12 @@ import { useMemo } from "react";
 import { useTranslation } from "@plane/i18n";
 import { Badge } from "@plane/propel/badge";
 import { Button } from "@plane/propel/button";
-import { renderFormattedDate } from "@plane/utils";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
 // local imports
 import { PLUGIN_REMOVALS } from "./constants";
 import { PluginAuditPanel } from "./plugin-audit-panel";
-import { getMemberDisplayName, getPluginActorLabel } from "./helper";
+import { formatPluginTimestamp, getMemberDisplayName, getPluginActorLabel } from "./helper";
 import { usePluginAuditPages } from "./use-plugin-audit-pages";
 
 type Props = {
@@ -41,7 +40,7 @@ type Props = {
  */
 export function PluginRemovedSection({ workspaceSlug, activeKeys }: Props) {
   // hooks
-  const { t } = useTranslation();
+  const { t, currentLocale } = useTranslation();
   const { getWorkspaceMemberDetails } = useMember().workspace;
   const { events, isLoading, error, hasOlder, isLoadingOlder, olderError, loadOlder } = usePluginAuditPages({
     workspaceSlug,
@@ -83,7 +82,7 @@ export function PluginRemovedSection({ workspaceSlug, activeKeys }: Props) {
               </Badge>
               <span className="text-11 text-secondary">
                 {t("workspace_settings.settings.plugins.removed.uninstalled_at", {
-                  date: renderFormattedDate(removal.at, "MMM dd, yyyy HH:mm"),
+                  date: formatPluginTimestamp(removal.at, currentLocale),
                 })}
               </span>
               <span className="text-11 text-secondary">
