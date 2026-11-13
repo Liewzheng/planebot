@@ -21,6 +21,7 @@ from plane.db.models import (
     User,
 )
 from plane.db.testcase_validity import RUN_STATUS_COMPLETED
+from plane.utils.testcase_api import evidence_header as render_evidence_header
 
 from .base import BaseSerializer
 from .test_case import FileAssetAttachmentSerializer, actor_id, live_assets
@@ -56,6 +57,11 @@ class TestRunCaseSerializer(BaseSerializer):
 
     steps = TestRunStepRecordSerializer(source="step_records", many=True, read_only=True)
     attachments = serializers.SerializerMethodField()
+    # The canonical evidence header of the batch (its number, the version
+    # under test, the day and the executor). The server renders it, so
+    # the batch number of a record is never written by hand — and it
+    # cannot name a batch that is not this one.
+    evidence_header = serializers.SerializerMethodField()
 
     class Meta:
         model = TestRunCase
@@ -72,6 +78,7 @@ class TestRunCaseSerializer(BaseSerializer):
             "case_environment",
             "conclusion",
             "evidence",
+            "evidence_header",
             "remarks",
             "actual_result_summary",
             "na_reason",
@@ -87,6 +94,9 @@ class TestRunCaseSerializer(BaseSerializer):
 
     def get_attachments(self, record):
         return FileAssetAttachmentSerializer(live_assets(record), many=True).data
+
+    def get_evidence_header(self, record):
+        return render_evidence_header(record.test_run)
 
 
 class TestRunSerializer(BaseSerializer):
