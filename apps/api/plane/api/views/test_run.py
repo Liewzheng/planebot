@@ -75,6 +75,7 @@ from plane.api.views.test_case import (
 )
 from plane.app.testcase_validity import build_run_data, check_authoring, describe_reasons
 from plane.app.views.test_run.export import AssetUrlSigner, export_document
+from plane.app.views.test_run.retest import create_run
 from plane.db.models import (
     FileAsset,
     Project,
@@ -95,7 +96,10 @@ from plane.service_principals.attribution import actor_id_for_request
 from plane.utils.permissions.project import ProjectEntityPermission
 from plane.utils.testcase_api import (
     bindable_asset,
+    describe_gate_reasons,
     error_entry,
+    evidence_write_refusal,
+    finalize_gate_reasons,
     object_body,
     run_conflict_response,
     same_date,
@@ -188,7 +192,7 @@ class TestRunListCreateEndpoint(BaseAPIView):
             .prefetch_related(
                 Prefetch(
                     "run_cases",
-                    queryset=TestRunCase.objects.select_related("test_case").prefetch_related(
+                    queryset=TestRunCase.objects.select_related("test_case", "test_run").prefetch_related(
                         "assets",
                         Prefetch(
                             "step_records",
@@ -224,14 +228,9 @@ class TestRunListCreateEndpoint(BaseAPIView):
         if project is None:
             return Response({"error": "Project not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = TestRunWriteSerializer(data=request.data, context={"request": request})
-        if not serializer.is_valid():
-            return serializer_error_response(serializer)
-
-        try:
-            run = serializer.save(project=project, workspace=project.workspace)
-        except DjangoValidationError as exc:
-            return validation_error_response(exc, "The batch could not be saved.")
+        run, refusal = create_run(request, project, slug)
+        if refusal is not None:
+            return refusal
 
         return Response(TestRunSerializer(run).data, status=status.HTTP_201_CREATED)
 
@@ -375,7 +374,7 @@ class TestRunCaseEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin, Bas
             return Response({"error": "Test run not found"}, status=status.HTTP_404_NOT_FOUND)
         run_cases = (
             TestRunCase.objects.filter(test_run=run)
-            .select_related("test_case")
+            .select_related("test_case", "test_run")
             .prefetch_related(
                 "assets",
                 Prefetch(
@@ -607,6 +606,21 @@ class TestRunCaseDetailEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixi
         if run_case.test_run.status == RUN_STATUS_COMPLETED:
             return run_conflict_response("A completed batch is frozen.")
 
+        # The evidence of a case record is written once per execution, and
+        # it is the one field a client may copy from another batch: the
+        # twin a re-test is supposed to replace. The two rules below keep
+        # the record honest — the batch number is written by the server,
+        # and an evidence that is a copy of another batch's evidence is
+        # refused.
+        #
+        # A body that is not a JSON object carries no evidence field; the
+        # serializer refuses such a body below.
+        body = request.data
+        if isinstance(body, dict) and "evidence" in body:
+            refusal = evidence_write_refusal(run_case, body.get("evidence"))
+            if refusal is not None:
+                return refusal
+
         serializer = TestRunCaseWriteSerializer(
             run_case, data=request.data, partial=True, context={"request": request}
         )
@@ -747,7 +761,7 @@ class TestRunFinalizeEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin,
 
         run_cases = (
             TestRunCase.objects.filter(test_run=run)
-            .select_related("test_case")
+            .select_related("test_case", "test_run")
             .prefetch_related(
                 "assets",
                 Prefetch(
@@ -762,13 +776,19 @@ class TestRunFinalizeEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin,
 
         run_data = build_run_data(run, list(run_cases))
         reasons = validate_run_write(run_data) + validate_run(run_data)
+        # The gates of the batch (M111): a step that was never touched and
+        # a 需人工 conclusion without a 依据. They are reported with the
+        # same envelope as the rules of the standard, one entry per
+        # problem, so the CLI and the front end can put every message
+        # next to the input it belongs to.
+        gate_reasons = finalize_gate_reasons(run_data)
 
-        if reasons:
+        if reasons or gate_reasons:
             return Response(
                 {
                     "error": "The batch is not valid.",
                     "code": "invalid_batch",
-                    "errors": describe_reasons(reasons),
+                    "errors": describe_reasons(reasons) + describe_gate_reasons(gate_reasons),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -785,7 +805,7 @@ class TestRunFinalizeEndpoint(ProjectScopedAuthzMixin, UpdateOnExistingRowMixin,
             .prefetch_related(
                 Prefetch(
                     "run_cases",
-                    queryset=TestRunCase.objects.select_related("test_case").prefetch_related(
+                    queryset=TestRunCase.objects.select_related("test_case", "test_run").prefetch_related(
                         "assets",
                         Prefetch(
                             "step_records",
@@ -834,7 +854,7 @@ class TestRunSummaryEndpoint(BaseAPIView):
 
         run_cases = (
             TestRunCase.objects.filter(test_run=run)
-            .select_related("test_case")
+            .select_related("test_case", "test_run")
             .prefetch_related(
                 "assets",
                 Prefetch(
@@ -893,7 +913,7 @@ class TestRunExportEndpoint(BaseAPIView):
 
         run_cases = list(
             TestRunCase.objects.filter(test_run=run)
-            .select_related("test_case")
+            .select_related("test_case", "test_run")
             .prefetch_related(
                 "assets",
                 Prefetch(

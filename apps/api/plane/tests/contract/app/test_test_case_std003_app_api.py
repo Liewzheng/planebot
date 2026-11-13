@@ -881,6 +881,16 @@ class TestSummary:
             evidence="not applicable",
         )
 
+        mark_step(
+            session_client,
+            workspace,
+            project,
+            run["id"],
+            manual_case["id"],
+            1,
+            conclusion="pass",
+            actual_value="the settings window opened at 300 ms",
+        )
         conclude(
             session_client,
             workspace,
@@ -890,6 +900,10 @@ class TestSummary:
             conclusion="MANUAL",
             manual_executor="Li Si",
             manual_condition="after the developer prepares the environment",
+            # 需人工 needs a 依据 (M111): why the case cannot be judged by
+            # the machine. Without it the conclusion is a default that
+            # lets a batch close over a case nobody executed.
+            na_reason="the case needs a physical device, the script cannot drive it",
             evidence="pending",
         )
 

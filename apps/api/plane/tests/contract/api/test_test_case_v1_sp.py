@@ -1394,6 +1394,10 @@ class TestTheWireFormatIsPinned:
                 "case_environment",
                 "conclusion",
                 "evidence",
+                # M111: the canonical evidence header of the batch — the
+                # server renders it, so the batch number of a record is
+                # never written by hand.
+                "evidence_header",
                 "remarks",
                 "actual_result_summary",
                 "na_reason",
